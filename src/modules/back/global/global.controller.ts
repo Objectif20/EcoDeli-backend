@@ -1,0 +1,34 @@
+import { Body, Controller, Get, Post } from '@nestjs/common';
+import { GlobalService } from './global.service';
+import { Test } from 'src/common/schemas/test.schema';
+import { RoleList } from 'src/common/entities/role_list.entity';
+
+@Controller('admin/global') 
+export class GlobalController {
+  constructor(private readonly globalService: GlobalService) {}
+
+  // API : GET /admin/global/test
+  @Get('test')
+  getTestMessage(): string {
+    return this.globalService.getHello(); 
+  }
+
+    // API : GET /admin/global/mongodb
+  @Get('mongodb')
+  async getTestData(): Promise<Test[]> {
+    return this.globalService.mongoDbTest();
+  }
+
+    // API : GET /admin/global/postgres
+  @Get('postgres')
+    async getPostgresData(): Promise<RoleList> {
+        return this.globalService.postgresTest();
+    }
+
+    // API : POST /admin/global/email
+  @Post('email')
+  async sendEmail(@Body('to') to: string): Promise<void> {
+    return this.globalService.sendEmail(to);
+  }
+
+}
