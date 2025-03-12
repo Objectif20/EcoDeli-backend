@@ -45,15 +45,13 @@ import { GlobalModule } from './modules/back/global/global.module';
     GlobalModule
 
 
-
-
     ],
     providers: [
       {
         // Configuration du transporteur Gmail pour l'envoi de mails
         provide: 'NodeMailer', 
         useFactory: async (secretsService: SecretsService) => {
-          const gmailUser = await secretsService.loadSecret('GMAIL_USER');
+          const gmailUser = process.env.GMAIL_USER;
           const gmailPass = await secretsService.loadSecret('GMAIL_PASS');
   
           if (!gmailUser || !gmailPass) {

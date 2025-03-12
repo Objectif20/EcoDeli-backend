@@ -11,13 +11,10 @@ export class SecretsService {
 
   private secretsList = [
     'STRIPE_SK_SECRET',
-    'GMAIL_USER',
     'GMAIL_PASS',
     'MONGO_URL',
     'DATABASE_URL',
-    'MINIO_ACCESS_KEY',
     'MINIO_SECRET_KEY',
-    'MINIO_ENDPOINT',
   ];
 
   private limiter = new Bottleneck({
@@ -40,12 +37,13 @@ export class SecretsService {
         const secret = this.configService.get<string>(secretName);
         return secret;
       } else {
+        const keyVaultSecret = this.mapSecretName(secretName);
         const cachedSecret = await this.cacheManager.get<string>(secretName);
         if (cachedSecret) {
           this.logger.log(`Secret ${secretName} trouvé dans le cache.`);
           return cachedSecret;
         } else {
-          const secret = await this.azureKeyVaultService.getSecret(secretName);
+          const secret = await this.azureKeyVaultService.getSecret(keyVaultSecret);
           await this.cacheManager.set(secretName, secret, 86400);
           this.logger.log(`Secret ${secretName} chargé depuis Azure Key Vault et mis en cache.`);
           return secret;
@@ -69,7 +67,7 @@ export class SecretsService {
   async loadSecret(secretName: string): Promise<string | null> {
     const env = this.configService.get<string>('NODE_ENV');
     const cachedSecret = await this.cacheManager.get<string>(secretName);
-    
+
     if (cachedSecret) {
       this.logger.log(`Secret ${secretName} trouvé dans le cache.`);
       return cachedSecret;
@@ -82,7 +80,8 @@ export class SecretsService {
       secret = this.configService.get<string>(secretName) || '';
       this.logger.log(`Secret ${secretName} chargé depuis la configuration.`);
     } else {
-      secret = await this.azureKeyVaultService.getSecret(secretName);
+      const keyVaultSecret = this.mapSecretName(secretName);
+      secret = await this.azureKeyVaultService.getSecret(keyVaultSecret);
       this.logger.log(`Secret ${secretName} chargé depuis Azure Key Vault.`);
     }
 
@@ -99,5 +98,22 @@ export class SecretsService {
   hasSecret(name: string): boolean {
     const exists = !!this.cacheManager.get<string>(name);
     return exists;
+  }
+
+  private mapSecretName(secretName: string): string {
+    switch (secretName) {
+      case 'STRIPE_SK_SECRET':
+        return 'key-StripeSkSecret-prod';
+      case 'GMAIL_PASS':
+        return 'key-GmailPass-prod';
+      case 'MINIO_SECRET_KEY':
+        return 'key-MinIo-prod';
+      case 'MONGO_URL':
+        return 'key-MongoUrl-prod';
+      case 'DATABASE_URL':
+        return 'key-DataBaseUrl-prod';
+      default:
+        throw new Error(`Secret name ${secretName} is not mapped.`);
+    }
   }
 }

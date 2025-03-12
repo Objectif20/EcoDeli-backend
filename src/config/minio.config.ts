@@ -9,19 +9,17 @@ export default class MinioConfigService {
   constructor(private secretsService: SecretsService) {}
 
   async createMinioClient() {
-    const minioEndpoint = await this.secretsService.loadSecret('MINIO_ENDPOINT');
-    const minioAccessKey = await this.secretsService.loadSecret('MINIO_ACCESS_KEY');
     const minioSecretKey = await this.secretsService.loadSecret('MINIO_SECRET_KEY');
 
-    if (!minioEndpoint || !minioAccessKey || !minioSecretKey) {
+    if (!minioSecretKey) {
       throw new Error('Impossible de récupérer les secrets MinIO.');
     }
 
     this.minioClient = new Client({
-      endPoint: minioEndpoint,
+      endPoint: process.env.MINIO_ENDPOINT || 'localhost',
       port: parseInt(process.env.MINIO_PORT || '9000'),
       useSSL: process.env.MINIO_USE_SSL === 'true' || false,
-      accessKey: minioAccessKey,
+      accessKey: process.env.MINIO_ACCESS_KEY || '',
       secretKey: minioSecretKey,
     });
 
