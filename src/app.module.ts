@@ -10,6 +10,7 @@ import { MailService } from './common/services/mail/mail.service';
 import MinioConfigService from './config/minio.config';
 import { BackModule } from './modules/back/back.module';
 import { GlobalModule } from './modules/back/global/global.module';
+import { AdminAuthModule } from './modules/back/auth/auth.module';
 
 @Global()
 @Module({
@@ -42,7 +43,8 @@ import { GlobalModule } from './modules/back/global/global.module';
     /* Module du BackOffice */
 
     BackModule,
-    GlobalModule
+    GlobalModule,
+    AdminAuthModule
 
 
     ],

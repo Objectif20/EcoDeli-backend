@@ -22,7 +22,8 @@ export class GlobalController {
     // API : GET /admin/global/postgres
   @Get('postgres')
     async getPostgresData(): Promise<RoleList> {
-        return this.globalService.postgresTest();
+      this.globalService.postgresTest();
+        return { role_id: "1", role_name: 'Super Admin' };
     }
 
     // API : POST /admin/global/email
