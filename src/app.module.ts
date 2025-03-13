@@ -10,6 +10,8 @@ import { MailService } from './common/services/mail/mail.service';
 import MinioConfigService from './config/minio.config';
 import { BackModule } from './modules/back/back.module';
 import { GlobalModule } from './modules/back/global/global.module';
+import { TicketModule } from './modules/back/ticket/ticket.module';
+import { Ticket } from './common/entities/ticket.entity';
 
 @Global()
 @Module({
@@ -42,37 +44,38 @@ import { GlobalModule } from './modules/back/global/global.module';
     /* Module du BackOffice */
 
     BackModule,
-    GlobalModule
+    GlobalModule,
+    TicketModule,
 
 
-    ],
-    providers: [
-      {
-        // Configuration du transporteur Gmail pour l'envoi de mails
-        provide: 'NodeMailer', 
-        useFactory: async (secretsService: SecretsService) => {
-          const gmailUser = process.env.GMAIL_USER;
-          const gmailPass = await secretsService.loadSecret('GMAIL_PASS');
-  
-          if (!gmailUser || !gmailPass) {
-            throw new Error('Impossible de récupérer les secrets pour le transporteur Gmail.');
-          }
-  
-          return nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-              user: gmailUser, 
-              pass: gmailPass, 
-            },
-          });
-        },
-        inject: [SecretsService],  
+  ],
+  providers: [
+    {
+      // Configuration du transporteur Gmail pour l'envoi de mails
+      provide: 'NodeMailer',
+      useFactory: async (secretsService: SecretsService) => {
+        const gmailUser = process.env.GMAIL_USER;
+        const gmailPass = await secretsService.loadSecret('GMAIL_PASS');
+
+        if (!gmailUser || !gmailPass) {
+          throw new Error('Impossible de récupérer les secrets pour le transporteur Gmail.');
+        }
+
+        return nodemailer.createTransport({
+          service: 'gmail',
+          auth: {
+            user: gmailUser,
+            pass: gmailPass,
+          },
+        });
       },
+      inject: [SecretsService],
+    },
 
-      // Services
-      MailService,
-      MinioConfigService,
-    ],
-    exports: ['NodeMailer', MailService, MinioConfigService],
+    // Services
+    MailService,
+    MinioConfigService,
+  ],
+  exports: ['NodeMailer', MailService, MinioConfigService],
 })
-export class AppModule {}
+export class AppModule { }
