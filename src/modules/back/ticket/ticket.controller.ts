@@ -8,12 +8,12 @@ import { Ticket } from 'src/common/entities/ticket.entity';
 export class TicketController {
     constructor(private readonly ticketService: TicketService) { }
 
-    // API : GET /admin/ticket
-    @Get()
-    getPoulet(): string {
-        return this.ticketService.getPoulet();
-    }
-
+    // // API : GET /admin/ticket
+    // @Get()
+    // async getTickets() {
+    //   return await this.ticketService.getTickets();
+    // }
+  
     // API : POST /admin/ticket
     @Post()
     async createTicket(@Body() data: TicketDto): Promise<Ticket> {

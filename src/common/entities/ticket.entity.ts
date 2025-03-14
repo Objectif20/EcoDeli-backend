@@ -6,11 +6,11 @@ import { Admin } from './admin.entity';
 // Correspond à la table des tickets
 
 
-@Entity({ name: 'ticket' })
+@Entity({ name: 'tickets' })
 export class Ticket {
 
     @PrimaryGeneratedColumn("uuid")
-    admin_id: string;
+    ticket_id: string;
 
     @Column({ length: 50 })
     status: string;

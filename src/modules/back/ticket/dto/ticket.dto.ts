@@ -14,7 +14,6 @@ export class TicketDto {
     assignment?: string;
 
     @IsString()
-    @IsOptional()
     state?: string;
 
     @IsString()
