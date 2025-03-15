@@ -1,43 +1,43 @@
-import { Entity, PrimaryGeneratedColumn, Column, Timestamp, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
 import { Admin } from './admin.entity';
-
-// Table tickets
-
-// Correspond à la table des tickets
-
 
 @Entity({ name: 'tickets' })
 export class Ticket {
-
     @PrimaryGeneratedColumn("uuid")
-    ticket_id: string;
+    ticket_id: string;  // ✅ Correction : Retrait de nullable: false qui était invalide
 
-    @Column({ length: 50 })
+    @Column({ length: 50, nullable: false })
     status: string;
 
-    @Column({ length: 50 })
-    state: string;
+    @Column({ length: 50, nullable: true })
+    state?: string;
 
-    @Column({ type: 'json' })
+    @Column({ type: 'json', nullable: false })
     description: any;
 
-    @Column({ length: 255 })
+    @Column({ length: 255, nullable: false })
     title: string;
 
-    @Column({ type: 'timestamp' })
-    creation_date: Date;
+    @Column({ type: 'timestamp', nullable: true })
+    creation_date?: Date;
 
-    @Column({ type: 'timestamp' })
-    resolution_date: Date;
+    @Column({ type: 'timestamp', nullable: true })
+    resolution_date?: Date;
 
-    @Column({ length: 50 })
+    @Column({ length: 50, nullable: false })
     priority: string;
 
-    @ManyToOne(() => Admin)
-    @JoinColumn({ name: 'admin_id_attribute' })
-    adminAttribute: Admin;
+    @Column({ type: 'uuid', nullable: true })
+    admin_id_attribute?: string;
 
-    @ManyToOne(() => Admin)
+    @Column({ type: 'uuid', nullable: true })
+    admin_id_get?: string;
+
+    @ManyToOne(() => Admin, { nullable: true })
+    @JoinColumn({ name: 'admin_id_attribute' })
+    adminAttribute?: Admin;
+
+    @ManyToOne(() => Admin, { nullable: true })
     @JoinColumn({ name: 'admin_id_get' })
-    adminGet: Admin;
+    adminGet?: Admin;
 }

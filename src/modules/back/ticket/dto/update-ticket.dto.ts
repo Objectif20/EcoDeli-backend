@@ -1,31 +1,28 @@
-import { IsString, IsNotEmpty, IsUUID, IsOptional, IsDate } from 'class-validator';
+import { IsString, IsUUID, IsOptional, IsDate } from 'class-validator';
 
-export class TicketDto {
-    @IsUUID()
-    @IsOptional()
-    ticket_id?: string;
-
+export class UpdateTicketDto {
     @IsString({ message: 'Status must be a string' })
-    @IsNotEmpty({ message: 'Status is required' })
-    status: string;
+    @IsOptional()
+    status?: string;
 
     @IsString({ message: 'Assignement must be a string' })
     @IsOptional()
     assignment?: string;
 
     @IsString({ message: 'State must be a string' })
+    @IsOptional()
     state?: string;
 
     @IsString({ message: 'Description must be a JSON' })
-    @IsNotEmpty({ message: 'Description is required' })
-    description: string;
+    @IsOptional()
+    description?: string;
 
     @IsString({ message: 'Title must be a string' })
-    @IsNotEmpty({ message: 'Title is required' })
-    title: string;
+    @IsOptional()
+    title?: string;
 
     @IsDate({ message: 'Creation date must be a date' })
-    @IsOptional({ message: 'Creation date is required' })
+    @IsOptional()
     creation_date?: Date;
 
     @IsDate()
@@ -33,8 +30,8 @@ export class TicketDto {
     resolution_date?: Date;
 
     @IsString({ message: 'Priority must be a string' })
-    @IsNotEmpty({ message: 'Priority is required' })
-    priority: string;
+    @IsOptional()
+    priority?: string;
 
     @IsUUID()
     @IsOptional()
