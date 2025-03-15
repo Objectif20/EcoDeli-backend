@@ -1,10 +1,14 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException, ForbiddenException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import { JwtService as NestJwtService } from '@nestjs/jwt';
 import { Request } from 'express';
+import { JwtService } from 'src/config/jwt.service';
 
 @Injectable()
 export class AdminJwtGuard implements CanActivate {
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: NestJwtService,
+    private readonly configService: JwtService, 
+  ) {}
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<Request>();
@@ -14,8 +18,9 @@ export class AdminJwtGuard implements CanActivate {
       throw new UnauthorizedException('Token JWT manquant');
     }
 
+    const accessToken = this.configService.getJwtAccessSecret();
     try {
-      const payload = this.jwtService.verify(token, { secret: process.env.JWT_ACCESS_SECRET });
+      const payload = this.jwtService.verify(token, { secret: accessToken });
 
       if (!payload.roles || !payload.roles.includes('ADMIN') && !payload.roles.includes('SUPER_ADMIN')) {
         throw new ForbiddenException('Accès réservé aux administrateurs');

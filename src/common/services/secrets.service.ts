@@ -15,6 +15,8 @@ export class SecretsService {
     'MONGO_URL',
     'DATABASE_URL',
     'MINIO_SECRET_KEY',
+    'JWT_REFRESH_SECRET',
+    'JWT_ACCESS_SECRET'
   ];
 
   private limiter = new Bottleneck({
@@ -112,6 +114,10 @@ export class SecretsService {
         return 'key-MongoUrl-prod';
       case 'DATABASE_URL':
         return 'key-DataBaseUrl-prod';
+        case 'JWT_ACCESS_SECRET':
+          return 'key-JwtAccessSecret-prod';  
+        case 'JWT_REFRESH_SECRET':
+          return 'key-JwtRefreshSecret-prod';
       default:
         throw new Error(`Secret name ${secretName} is not mapped.`);
     }
