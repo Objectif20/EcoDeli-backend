@@ -16,6 +16,7 @@ async function bootstrap() {
     .setDescription('Il s\'agit de la documentation de l\'API de l\'application EcoDeli.')
     .setTermsOfService('https://ecodeli.remythibaut.fr')
     .setVersion('1.0')
+    .addServer('https;//app.ecodeli.remythibaut.fr', "Backend de l'application EcoDeli")
     .build();
   const documentFactory = () => SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('swagger', app, documentFactory, {jsonDocumentUrl: 'swagger/json',});
@@ -23,7 +24,7 @@ async function bootstrap() {
   app.use(cookieParser());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
-  await app.listen(3000);
+  await app.listen(process.env.PORT || 3500);
 }
 
 bootstrap().catch(err => {

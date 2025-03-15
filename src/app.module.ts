@@ -1,4 +1,4 @@
-import { Module, Global } from '@nestjs/common';
+import { Module, Global, OnModuleInit } from '@nestjs/common';
 import { SecretsModule } from './config/secrets.module';
 import { SecretsService } from './common/services/secrets.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -9,8 +9,9 @@ import * as nodemailer from 'nodemailer';
 import { MailService } from './common/services/mail/mail.service';
 import MinioConfigService from './config/minio.config';
 import { BackModule } from './modules/back/back.module';
-import { GlobalModule } from './modules/back/global/global.module';
-import { AdminAuthModule } from './modules/back/auth/auth.module';
+import { GuardsModule } from './common/guards/guards.module';
+import { JwtModule } from '@nestjs/jwt';
+import { JwtService } from './config/jwt.service';
 
 @Global()
 @Module({
@@ -38,17 +39,40 @@ import { AdminAuthModule } from './modules/back/auth/auth.module';
       inject: [SecretsService],
     }),
 
+    JwtModule.registerAsync({
+      useFactory: async (secretsService: SecretsService) => {
+        const accessSecret = await secretsService.loadSecret('JWT_ACCESS_SECRET');
+        const refreshSecret = await secretsService.loadSecret('JWT_REFRESH_SECRET');
+        if (!accessSecret || !refreshSecret) {
+          throw new Error('JWT secrets not found.');
+        }
+        return {
+          secret: accessSecret, 
+          signOptions: {
+            expiresIn: '15m', 
+          },
+          refreshToken: {
+            secret: refreshSecret, 
+            signOptions: {
+              expiresIn: '7d', 
+            },
+          },
+        };
+      },
+      inject: [SecretsService],
+    }),
+
     // Importation des différents modules 
 
     /* Module du BackOffice */
-
     BackModule,
-    GlobalModule,
-    AdminAuthModule
 
+    /* Module des guards */
+    GuardsModule
 
     ],
     providers: [
+      JwtService,
       {
         // Configuration du transporteur Gmail pour l'envoi de mails
         provide: 'NodeMailer', 
@@ -75,6 +99,12 @@ import { AdminAuthModule } from './modules/back/auth/auth.module';
       MailService,
       MinioConfigService,
     ],
-    exports: ['NodeMailer', MailService, MinioConfigService],
+    exports: ['NodeMailer', MailService, MinioConfigService, JwtService],
 })
-export class AppModule {}
+export class AppModule implements OnModuleInit {
+  constructor(private readonly jwtService: JwtService) {}
+
+  async onModuleInit() {
+    await this.jwtService.loadSecrets();
+  }
+}

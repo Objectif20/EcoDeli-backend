@@ -1,18 +1,19 @@
 import { Injectable, UnauthorizedException, Response } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import { JwtService as NestJwtService } from '@nestjs/jwt';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Admin } from 'src/common/entities/admin.entity';
 import * as bcrypt from 'bcrypt';
 import * as speakeasy from 'speakeasy';
 import * as qrcode from 'qrcode';
-
+import { JwtService } from 'src/config/jwt.service';
 @Injectable()
 export class AuthService {
   constructor(
     @InjectRepository(Admin)
     private readonly adminRepository: Repository<Admin>,
-    private readonly jwtService: JwtService,
+    private readonly jwtService: NestJwtService,  
+    private readonly configService: JwtService, 
   ) {}
 
   async login(email: string, password: string, @Response() res): Promise<any> {
@@ -50,7 +51,8 @@ export class AuthService {
 
   async refresh(@Response() res, refreshToken: string): Promise<any> {
     try {
-      const decoded = this.jwtService.verify(refreshToken, { secret: process.env.JWT_REFRESH_SECRET });
+      const refreshSecret = this.configService.getJwtRefreshSecret(); 
+      const decoded = this.jwtService.verify(refreshToken, { secret: refreshSecret });
       const admin = await this.adminRepository.findOne({ where: { admin_id: decoded.admin_id } });
       if (!admin) throw new UnauthorizedException('User not found');
       
@@ -118,14 +120,16 @@ export class AuthService {
   }
 
   private async setAuthCookies(res, admin: Admin) {
+    const accessSecret = this.configService.getJwtAccessSecret(); 
     const accessToken = this.jwtService.sign(
       { admin_id: admin.admin_id, roles: admin.super_admin ? ['SUPER_ADMIN'] : ['ADMIN'] },
-      { secret: process.env.JWT_ACCESS_SECRET, expiresIn: '15m' }
+      { secret: accessSecret, expiresIn: '15m' }
     );
 
+    const refreshSecret = this.configService.getJwtRefreshSecret();
     const refreshToken = this.jwtService.sign(
       { admin_id: admin.admin_id },
-      { secret: process.env.JWT_REFRESH_SECRET, expiresIn: '7d' }
+      { secret: refreshSecret, expiresIn: '7d' }
     );
 
     res.cookie('refresh_token', refreshToken, { httpOnly: true, secure: true, sameSite: 'strict', maxAge: 7 * 24 * 60 * 60 * 1000 });

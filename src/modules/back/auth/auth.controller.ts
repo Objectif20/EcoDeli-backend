@@ -1,10 +1,11 @@
-import { Body, Controller, Post, Res } from '@nestjs/common';
+import { Body, Controller, Post, Res, UseGuards,Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { A2FLoginDto } from './dto/a2f-login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { A2FDto } from './dto/a2f.dto';
 import { Response } from 'express';
+import { AdminJwtGuard } from 'src/common/guards/admin-jwt.guard';
 
 @Controller('admin/auth') 
 export class AuthController {
@@ -26,18 +27,25 @@ export class AuthController {
   }
 
   @Post('2fa/enable')
-  async enableA2F(@Body() adminId: string): Promise<any> {
+  @UseGuards(AdminJwtGuard)
+  async enableA2F(@Req() req): Promise<any> {
+    console.log(req.body.admin_id);
+    const adminId = req.body.admin_id;
     return this.authService.enableA2F(adminId);
   }
 
   @Post('2fa/disable')
-  async disableA2F(@Body() a2fDto: A2FDto): Promise<any> {
-    return this.authService.disableA2F(a2fDto.adminId, a2fDto.code);
+  @UseGuards(AdminJwtGuard)
+  async disableA2F(@Body() a2fDto: A2FDto, @Req() req): Promise<any> {
+    const adminId = req.body.admin_id;
+    return this.authService.disableA2F(adminId,a2fDto.code);
   }
 
   @Post('2fa/validate')
-  async validateA2F(@Body() a2fDto: A2FDto): Promise<any> {
-    return this.authService.validateA2F(a2fDto.adminId, a2fDto.code);
+  @UseGuards(AdminJwtGuard)
+  async validateA2F(@Body() a2fDto: A2FDto,@Req() req): Promise<any> {
+    const adminId = req.body.admin_id;
+    return this.authService.validateA2F(adminId, a2fDto.code);
   }
 
   @Post('2fa/login')
