@@ -55,14 +55,21 @@ export class AuthService {
     return this.setAuthCookies(res, admin);
   }
 
-  async refresh(@Response() res, refreshToken: string): Promise<{ access_token: string }> {
+  async refresh(refreshToken: string): Promise<{ access_token: string }> {
     try {
-      const refreshSecret = this.configService.getJwtRefreshSecret(); 
+      const refreshSecret = this.configService.getJwtRefreshSecret();
       const decoded = this.jwtService.verify(refreshToken, { secret: refreshSecret });
+  
       const admin = await this.adminRepository.findOne({ where: { admin_id: decoded.admin_id } });
       if (!admin) throw new UnauthorizedException('User not found');
-      
-      return this.setAuthCookies(res, admin);
+  
+      const accessSecret = this.configService.getJwtAccessSecret();
+      const accessToken = this.jwtService.sign(
+        { admin_id: admin.admin_id, roles: admin.super_admin ? ['SUPER_ADMIN'] : ['ADMIN'] },
+        { secret: accessSecret, expiresIn: '15m' }
+      );
+        
+      return { access_token: accessToken };
     } catch (err) {
       throw new UnauthorizedException('Invalid refresh token');
     }

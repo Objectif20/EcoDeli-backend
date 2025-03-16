@@ -1,4 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Languages } from './languages.entity';
 
 // Table admin
 
@@ -45,4 +46,8 @@ export class Admin {
 
     @Column({ nullable: true, type: 'varchar', default: null })
     password_code?: string | null;
+
+    @ManyToOne(() => Languages, (language) => language.language_id, { onDelete: 'CASCADE' })
+    @JoinColumn({ name: 'language_id' })
+    language: Languages;
 }

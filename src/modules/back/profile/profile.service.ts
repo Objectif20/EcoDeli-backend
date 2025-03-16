@@ -47,6 +47,7 @@ export class AdminProfileService {
             .createQueryBuilder('admin')
             .leftJoin('roles', 'role', 'role.admin_id = admin.admin_id')
             .leftJoin('roles_list', 'roleList', 'role.role_id = roleList.role_id')
+            .leftJoin('languages', 'language', 'language.language_id = admin.language_id') // Join avec la table languages
             .where('admin.admin_id = :admin_id', { admin_id })
             .select([
                 'admin.admin_id AS admin_id',
@@ -55,6 +56,9 @@ export class AdminProfileService {
                 'admin.email AS email',
                 'admin.active AS active',
                 'admin.photo AS photo',
+                'admin.super_admin AS super_admin',
+                'language.language_name AS language',
+                'language.iso_code AS iso_code',
                 'roleList.role_name AS role_name'
             ])
             .getRawMany();
@@ -72,7 +76,7 @@ export class AdminProfileService {
             const imageName = adminInfo.photo.split('admin/')[1];
             photoUrl = await this.minioService.generateImageUrl(bucketName, imageName);
         }
-    
+        
         return {
             admin_id: adminInfo.admin_id,
             last_name: adminInfo.last_name,
@@ -80,7 +84,10 @@ export class AdminProfileService {
             email: adminInfo.email,
             active: adminInfo.active,
             photo: photoUrl,
+            super_admin: adminInfo.super_admin,
             roles,
+            language: adminInfo.language,
+            iso_code: adminInfo.iso_code,
         };
     }
     
