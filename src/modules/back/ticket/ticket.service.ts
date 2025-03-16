@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Not } from 'typeorm';
+import { InjectRepository, } from '@nestjs/typeorm';
+import { Repository, Not, DeleteResult } from 'typeorm';
 
 
 import { TicketDto } from './dto/ticket.dto';
@@ -22,9 +21,15 @@ export class TicketService {
         });
     }
 
-    async getTicketById(id: string):Promise<Ticket | null> {
+    async getTicketById(id: string): Promise<Ticket | null> {
         return await this.ticketRepository.findOne({
             where: { ticket_id: id },
+        });
+    }
+
+    async getStoredTickets(): Promise<Ticket[]> {
+        return await this.ticketRepository.find({
+            where: { status: "closed" },
         });
     }
 
@@ -43,10 +48,15 @@ export class TicketService {
         if (!ticket) {
             return null;
         }
-        
+
         Object.assign(ticket, updateData);
 
         return await this.ticketRepository.save(ticket);
+    }
+
+    async deleteTicket(id: string): Promise<boolean> {
+        const result: DeleteResult = await this.ticketRepository.delete(id);
+        return !!(result.affected && result.affected > 0);
     }
 
 }
