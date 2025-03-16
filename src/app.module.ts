@@ -12,6 +12,7 @@ import { BackModule } from './modules/back/back.module';
 import { GuardsModule } from './common/guards/guards.module';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtService } from './config/jwt.service';
+import { MinioService } from './common/services/file/minio.service';
 
 @Global()
 @Module({
@@ -98,13 +99,23 @@ import { JwtService } from './config/jwt.service';
       // Services
       MailService,
       MinioConfigService,
+      MinioService,
     ],
     exports: ['NodeMailer', MailService, MinioConfigService, JwtService],
 })
 export class AppModule implements OnModuleInit {
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly minioService: MinioService
+  ) {}
 
   async onModuleInit() {
     await this.jwtService.loadSecrets();
+
+    const encryptionKey = process.env.MINIO_ENCRYPTION_KEY;
+    if (!encryptionKey) {
+      throw new Error('MINIO_ENCRYPTION_KEY is not defined.');
+    }
+    await this.minioService.initEncryptionKey(encryptionKey); 
   }
 }
