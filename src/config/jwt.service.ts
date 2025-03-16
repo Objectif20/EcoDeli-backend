@@ -8,7 +8,6 @@ export class JwtService implements OnModuleInit {
 
   constructor(private readonly secretsService: SecretsService) {}
 
-  // Charger les secrets
   async loadSecrets() {
     const accessSecret = await this.secretsService.loadSecret('JWT_ACCESS_SECRET');
     if (!accessSecret) {
@@ -22,7 +21,6 @@ export class JwtService implements OnModuleInit {
     this.jwtRefreshSecret = refreshSecret;
   }
 
-  // Appel de loadSecrets au démarrage de l'application
   async onModuleInit() {
     await this.loadSecrets();
   }

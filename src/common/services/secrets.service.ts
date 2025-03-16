@@ -110,14 +110,16 @@ export class SecretsService {
         return 'key-GmailPass-prod';
       case 'MINIO_SECRET_KEY':
         return 'key-MinIo-prod';
+      case 'MINIO_ENCRYPTION_KEY' : 
+        return 'key-MinIoEncryption-prod';
       case 'MONGO_URL':
         return 'key-MongoUrl-prod';
       case 'DATABASE_URL':
         return 'key-DataBaseUrl-prod';
-        case 'JWT_ACCESS_SECRET':
-          return 'key-JwtAccessSecret-prod';  
-        case 'JWT_REFRESH_SECRET':
-          return 'key-JwtRefreshSecret-prod';
+      case 'JWT_ACCESS_SECRET':
+        return 'key-JwtAccessSecret-prod';  
+      case 'JWT_REFRESH_SECRET':
+        return 'key-JwtRefreshSecret-prod';
       default:
         throw new Error(`Secret name ${secretName} is not mapped.`);
     }

@@ -42,4 +42,7 @@ export class Admin {
 
     @Column({ type: 'timestamp', nullable: true})
     last_login?: Date;
+
+    @Column({ nullable: true, type: 'varchar', default: null })
+    password_code?: string | null;
 }
