@@ -4,7 +4,7 @@ import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 
 // Correspond à table des administrateurs
 
-@Entity({name : 'admin'})
+@Entity({name : 'admins'})
 export class Admin {
 
     @PrimaryGeneratedColumn("uuid")
@@ -29,11 +29,20 @@ export class Admin {
     super_admin: boolean;
 
     @Column({ nullable: true})
-    photo: string;
+    photo?: string;
 
     @Column({ default: false })
     two_factor_enabled: boolean;
 
     @Column({ nullable: true})
-    one_signal_id: string;
+    one_signal_id?: string;
+
+    @Column({ nullable: true})
+    otp?: string;
+
+    @Column({ type: 'timestamp', nullable: true})
+    last_login?: Date;
+
+    @Column({ nullable: true, type: 'varchar', default: null })
+    password_code?: string | null;
 }
