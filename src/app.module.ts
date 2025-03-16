@@ -67,7 +67,7 @@ import { MinioService } from './common/services/file/minio.service';
 
     /* Module du BackOffice */
     BackModule,
-
+    
     /* Module des guards */
     GuardsModule
 
