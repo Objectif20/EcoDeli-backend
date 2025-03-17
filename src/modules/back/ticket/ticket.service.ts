@@ -16,25 +16,61 @@ export class TicketService {
 
 
     async getTickets(): Promise<Ticket[]> {
-        return await this.ticketRepository.find({
-            where: { status: Not("closed") },
-            relations: ['adminAttribute', 'adminGet'],
-        });
+        return await this.ticketRepository.createQueryBuilder('ticket')
+            .leftJoinAndSelect('ticket.adminAttribute', 'adminAttribute')
+            .leftJoinAndSelect('ticket.adminGet', 'adminGet')
+            .select([
+                'ticket',
+                'adminAttribute.first_name',
+                'adminAttribute.last_name',
+                'adminAttribute.photo',
+
+                'adminGet.first_name',
+                'adminGet.last_name',
+                'adminGet.photo'
+            ])
+            .where('ticket.status != :status', { status: "closed" })
+            .getMany();
     }
+
 
     async getTicketById(id: string): Promise<Ticket | null> {
-        return await this.ticketRepository.findOne({
-            where: { ticket_id: id },
-            relations: ['adminAttribute', 'adminGet'],
-        });
+        return await this.ticketRepository.createQueryBuilder('ticket')
+            .leftJoinAndSelect('ticket.adminAttribute', 'adminAttribute')
+            .leftJoinAndSelect('ticket.adminGet', 'adminGet')
+            .select([
+                'ticket',
+                'adminAttribute.first_name',
+                'adminAttribute.last_name',
+                'adminAttribute.photo',
+
+                'adminGet.first_name',
+                'adminGet.last_name',
+                'adminGet.photo'
+            ])
+            .where('ticket.ticket_id = :id', { id })
+            .getOne();
     }
 
+
     async getStoredTickets(): Promise<Ticket[]> {
-        return await this.ticketRepository.find({
-            where: { status: "closed" },
-            relations: ['adminAttribute', 'adminGet'],
-        });
+        return await this.ticketRepository.createQueryBuilder('ticket')
+            .leftJoinAndSelect('ticket.adminAttribute', 'adminAttribute')
+            .leftJoinAndSelect('ticket.adminGet', 'adminGet')
+            .select([
+                'ticket',
+                'adminAttribute.first_name',
+                'adminAttribute.last_name',
+                'adminAttribute.photo',
+
+                'adminGet.first_name',
+                'adminGet.last_name',
+                'adminGet.photo'
+            ])
+            .where('ticket.status = :status', { status: "closed" })
+            .getMany();
     }
+
 
     async createTicket(data: TicketDto): Promise<Ticket> {
         try {
