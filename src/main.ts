@@ -11,7 +11,7 @@ async function bootstrap() {
     origin: [
       'http://localhost:5173',
       'https://ecodeli.remythibaut.fr',
-      'http://admin.ecodeli.remythibaut.fr',
+      'https://admin.ecodeli.remythibaut.fr',
     ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     credentials: true,
