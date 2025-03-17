@@ -18,18 +18,21 @@ export class TicketService {
     async getTickets(): Promise<Ticket[]> {
         return await this.ticketRepository.find({
             where: { status: Not("closed") },
+            relations: ['adminAttribute', 'adminGet'],
         });
     }
 
     async getTicketById(id: string): Promise<Ticket | null> {
         return await this.ticketRepository.findOne({
             where: { ticket_id: id },
+            relations: ['adminAttribute', 'adminGet'],
         });
     }
 
     async getStoredTickets(): Promise<Ticket[]> {
         return await this.ticketRepository.find({
             where: { status: "closed" },
+            relations: ['adminAttribute', 'adminGet'],
         });
     }
 
@@ -43,16 +46,16 @@ export class TicketService {
     }
 
     async updateTicket(id: string, updateData: UpdateTicketDto): Promise<Ticket | null> {
-        const ticket = await this.ticketRepository.findOne({ where: { ticket_id: id } });
+        const result = await this.ticketRepository.update(id, updateData as any);
 
-        if (!ticket) {
+        if (result.affected === 0) {
             return null;
         }
 
-        Object.assign(ticket, updateData);
-
-        return await this.ticketRepository.save(ticket);
+        return await this.ticketRepository.findOne({ where: { ticket_id: id } });
     }
+
+
 
     async deleteTicket(id: string): Promise<boolean> {
         const result: DeleteResult = await this.ticketRepository.delete(id);
