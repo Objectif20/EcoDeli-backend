@@ -15,7 +15,9 @@ export class AuthController {
 
   @Post('login')
   async login(@Body() loginDto: LoginDto, @Res() res: Response): Promise<{ access_token: string } | { two_factor_required: boolean }> {
-    return this.authService.login(loginDto.email, loginDto.password, res);
+    const message =  this.authService.login(loginDto.email, loginDto.password, res);
+    console.log(message);
+    return message;
   }
 
   @Post('logout')

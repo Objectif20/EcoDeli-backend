@@ -4,9 +4,10 @@ import { AdminAuthModule } from './auth/auth.module';
 import { GuardsModule } from 'src/common/guards/guards.module';
 import { AdminProfileModule } from './profile/profile.module';
 import { TicketModule } from './ticket/ticket.module';
+import { ProviderModule } from './provider/provider.module';
 
 @Module({
-  imports: [GlobalModule, AdminAuthModule, AdminProfileModule, GuardsModule, TicketModule],
+  imports: [GlobalModule, AdminAuthModule, AdminProfileModule, GuardsModule, TicketModule, ProviderModule],
   providers: [],
 })
 export class BackModule {}
