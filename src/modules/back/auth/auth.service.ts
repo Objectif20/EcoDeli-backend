@@ -30,7 +30,8 @@ export class AuthService {
     if (!isMatch) throw new UnauthorizedException('Incorrect password');
 
     if (admin.two_factor_enabled) {
-      return { two_factor_required: true };
+      console.log("coucou");
+      return res.json({ two_factor_required: true });
     }
 
     return this.setAuthCookies(res, admin);

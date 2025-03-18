@@ -1,8 +1,8 @@
-import { Column, Entity, PrimaryGeneratedColumn } from "typeorm";
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from "typeorm";
+import { Users } from "./user.entity";
 
-@Entity({name : 'languages'})
+@Entity({ name: 'languages' })
 export class Languages {
-
     @PrimaryGeneratedColumn("uuid")
     language_id: string;
 
@@ -15,5 +15,6 @@ export class Languages {
     @Column({ default: true })
     active: boolean;
 
-
+    @OneToMany(() => Users, user => user.language)
+    users: Users[];
 }

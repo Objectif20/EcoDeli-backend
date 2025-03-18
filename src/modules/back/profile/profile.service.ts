@@ -57,6 +57,7 @@ export class AdminProfileService {
                 'admin.active AS active',
                 'admin.photo AS photo',
                 'admin.super_admin AS super_admin',
+                'admin.two_factor_enabled AS otp',
                 'language.language_name AS language',
                 'language.iso_code AS iso_code',
                 'roleList.role_name AS role_name'
@@ -88,6 +89,7 @@ export class AdminProfileService {
             roles,
             language: adminInfo.language,
             iso_code: adminInfo.iso_code,
+            otp: adminInfo.otp,
         };
     }
     

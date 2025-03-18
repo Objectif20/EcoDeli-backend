@@ -9,4 +9,5 @@ export interface AdminProfile {
     language?: string;
     iso_code?: string;
     roles: string[];
+    otp?: boolean;
 }
