@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Patch, Delete, Param, NotFoundException, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Patch, Delete, Param, NotFoundException, UseGuards, UploadedFile, UseInterceptors } from '@nestjs/common';
 
 import { TicketService } from './ticket.service';
 import { TicketDto } from './dto/ticket.dto';
@@ -7,6 +7,8 @@ import { Ticket } from 'src/common/entities/ticket.entity';
 import { AdminJwtGuard } from 'src/common/guards/admin-jwt.guard';
 import { AdminRole } from 'src/common/decorator/admin-role.decorator';
 import { AdminRoleGuard } from 'src/common/guards/admin-role.guard';
+import { Admin } from 'typeorm';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 @Controller('admin/ticket')
 export class TicketController {
@@ -66,6 +68,15 @@ export class TicketController {
             throw new NotFoundException(`Impossible de supprimer : Ticket avec l'ID ${id} non trouvé.`);
         }
         return { message: `Ticket avec l'ID ${id} supprimé.` };
+    }
+
+
+    @Post('/upload')
+    @AdminRole('TICKET')
+    @UseGuards(AdminJwtGuard, AdminRoleGuard)
+    @UseInterceptors(FileInterceptor('photo'))
+    async uploadFile(@UploadedFile() file: Express.Multer.File): Promise<{ url: string } | { error: string }> {
+        return await this.ticketService.uploadPicture(file);
     }
 
 }
