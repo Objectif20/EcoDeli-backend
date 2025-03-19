@@ -142,11 +142,13 @@ export class AdminProfileService {
             }
     
             admin.photo = filePath;
+
+            if (!admin.photo && Object.keys(admin).length === 0) {
+                throw new Error('No data provided for update');
+            }
         }
     
-        if (!admin.photo && Object.keys(admin).length === 0) {
-            throw new Error('No data provided for update');
-        }
+       
 
     
         const result = await this.adminRepository.update({ admin_id }, admin);
