@@ -116,7 +116,7 @@ export class AdminProfileService {
     async updateProfile(admin_id: string, admin: Partial<Admin>, file?: Express.Multer.File): Promise<Partial<Admin>> {
         const existingAdmin = await this.adminRepository.findOne({
             where: { admin_id },
-            select: ['photo'],
+            select: ['photo', 'admin_id'],
         });
     
         if (!existingAdmin) {
