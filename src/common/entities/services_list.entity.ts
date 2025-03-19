@@ -2,37 +2,53 @@ import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, JoinColum
 import { Admin } from "./admin.entity";
 import { Services } from "./service.entity";
 import { ProviderKeywords } from "./provider_keyword.entity";
+import { ServiceImage } from "./services_image.entity";
 
 @Entity({ name: 'services_list' })
 export class ServicesList {
-    @PrimaryGeneratedColumn("uuid")
-    service_id: string;
+  @PrimaryGeneratedColumn("uuid")
+  service_id: string;
 
-    @Column({ length: 255 })
-    service_type: string;
+  @Column({ length: 255 })
+  service_type: string;
 
-    @Column({ length: 50 })
-    status: string;
+  @Column({ length: 50 })
+  status: string;
 
-    @Column({ default: false })
-    validated: boolean;
+  @Column({ default: false })
+  validated: boolean;
 
-    @Column({ length: 255 })
-    name: string;
+  @Column({ length: 255 })
+  name: string;
 
-    @Column({ type: "text", nullable: true })
-    description: string;
+  @Column({ type: "text", nullable: true })
+  description: string;
 
-    @Column({ length: 100, nullable: true })
-    city: string;
+  @Column({ length: 100, nullable: true })
+  city: string;
 
-    @ManyToOne(() => Admin, { nullable: true })
-    @JoinColumn({ name: "admin_id" })
-    admin: Admin;
+  @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
+  price: number; 
 
-    @OneToMany(() => Services, service => service.serviceList)
-    services: Services[];
+  @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
+  price_admin: number;
 
-    @OneToMany(() => ProviderKeywords, keyword => keyword.service)
-    keywords: ProviderKeywords[];
+  @Column({ type: "int", nullable: true })
+  duration_minute: number; 
+
+  @Column({ default: true })
+  available: boolean; 
+
+  @ManyToOne(() => Admin, { nullable: true })
+  @JoinColumn({ name: "admin_id" })
+  admin: Admin;
+
+  @OneToMany(() => Services, service => service.serviceList)
+  services: Services[];
+
+  @OneToMany(() => ProviderKeywords, keyword => keyword.service)
+  keywords: ProviderKeywords[];
+
+  @OneToMany(() => ServiceImage, image => image.serviceList)
+  images: ServiceImage[];
 }

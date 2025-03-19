@@ -17,6 +17,6 @@ import { JwtService } from 'src/config/jwt.service';
     ],
     providers: [TicketService, JwtService],
     controllers: [TicketController],
-    exports: [TypeOrmModule, TypeOrmModule, JwtModule],
+    exports: [TypeOrmModule, JwtModule],
 })
 export class TicketModule { }
