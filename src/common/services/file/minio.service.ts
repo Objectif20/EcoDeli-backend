@@ -17,7 +17,6 @@ export class MinioService {
     try {
       const minioClient: Client = await this.minioConfigService.createMinioClient();
       await minioClient.putObject(bucketName, filePath, file.buffer);
-      console.log(`Fichier ${file.originalname} uploadé dans le bucket ${bucketName} à ${filePath}`);
       return true;
     } catch (error) {
       console.error(`Erreur lors de l'upload du fichier:`, error);
@@ -45,7 +44,6 @@ export class MinioService {
     try {
       const minioClient: Client = await this.minioConfigService.createMinioClient();
       const presignedUrl = await minioClient.presignedUrl('GET', bucketName, filePath, expiresIn);
-      console.log(`URL temporaire générée pour le fichier ${filePath} avec expiration après ${expiresIn} secondes.`);
       
       if (encrypted) {
         return `${presignedUrl}&decrypt=true`;
@@ -76,12 +74,11 @@ export class MinioService {
 
   async generateImageUrl(bucketName: string, imageName: string): Promise<string> {
     try {
-      const filePath = `admin/${imageName}`;
+      const filePath = `${imageName}`;
       
       const minioBaseUrl = process.env.MINIO_ACCESS_URL; 
       const url = `${minioBaseUrl}/api/v1/buckets/${bucketName}/objects/download?preview=true&prefix=${encodeURIComponent(filePath)}&version_id=null`;
 
-      console.log(`URL générée pour l'image ${imageName} : ${url}`);
       return url;
     } catch (error) {
       console.error(`Erreur lors de la génération de l'URL de l'image:`, error);
@@ -107,6 +104,19 @@ export class MinioService {
     } catch (error) {
       console.error(`Erreur lors de la récupération du fichier déchiffré:`, error);
       throw error;
+    }
+  }
+
+
+  async deleteFileFromBucket(bucketName: string, filePath: string): Promise<boolean> {
+    try {
+      const minioClient: Client = await this.minioConfigService.createMinioClient();
+      await minioClient.removeObject(bucketName, filePath);
+      console.log(`Fichier ${filePath} supprimé du bucket ${bucketName}`);
+      return true;
+    } catch (error) {
+      console.error(`Erreur lors de la suppression du fichier:`, error);
+      return false;
     }
   }
 }

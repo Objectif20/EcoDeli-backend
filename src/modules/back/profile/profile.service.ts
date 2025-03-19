@@ -34,7 +34,7 @@ export class AdminProfileService {
         for (const admin of admins) {
             if (admin.photo) {
                 const bucketName = 'admin-images';
-                const imageName = admin.photo.split('admin/')[1];
+                const imageName = admin.photo;
                 admin.photo = await this.minioService.generateImageUrl(bucketName, imageName);
             }
         }
@@ -47,6 +47,7 @@ export class AdminProfileService {
             .createQueryBuilder('admin')
             .leftJoin('roles', 'role', 'role.admin_id = admin.admin_id')
             .leftJoin('roles_list', 'roleList', 'role.role_id = roleList.role_id')
+            .leftJoin('languages', 'language', 'language.language_id = admin.language_id') // Join avec la table languages
             .where('admin.admin_id = :admin_id', { admin_id })
             .select([
                 'admin.admin_id AS admin_id',
@@ -55,6 +56,10 @@ export class AdminProfileService {
                 'admin.email AS email',
                 'admin.active AS active',
                 'admin.photo AS photo',
+                'admin.super_admin AS super_admin',
+                'admin.two_factor_enabled AS otp',
+                'language.language_name AS language',
+                'language.iso_code AS iso_code',
                 'roleList.role_name AS role_name'
             ])
             .getRawMany();
@@ -69,10 +74,10 @@ export class AdminProfileService {
         let photoUrl = adminInfo.photo;
         if (adminInfo.photo) {
             const bucketName = 'admin-images';
-            const imageName = adminInfo.photo.split('admin/')[1];
+            const imageName = adminInfo.photo;
             photoUrl = await this.minioService.generateImageUrl(bucketName, imageName);
         }
-    
+        
         return {
             admin_id: adminInfo.admin_id,
             last_name: adminInfo.last_name,
@@ -80,7 +85,11 @@ export class AdminProfileService {
             email: adminInfo.email,
             active: adminInfo.active,
             photo: photoUrl,
+            super_admin: adminInfo.super_admin,
             roles,
+            language: adminInfo.language,
+            iso_code: adminInfo.iso_code,
+            otp: adminInfo.otp,
         };
     }
     
@@ -95,7 +104,7 @@ export class AdminProfileService {
     
         if (admin.photo) {
             const bucketName = 'admin-images';
-            const imageName = admin.photo.split('admin/')[1];
+            const imageName = admin.photo;
             admin.photo = await this.minioService.generateImageUrl(bucketName, imageName);
         }
     
@@ -105,23 +114,45 @@ export class AdminProfileService {
 
 
     async updateProfile(admin_id: string, admin: Partial<Admin>, file?: Express.Multer.File): Promise<Partial<Admin>> {
+        const existingAdmin = await this.adminRepository.findOne({
+            where: { admin_id },
+            select: ['photo', 'admin_id'],
+        });
+    
+        if (!existingAdmin) {
+            throw new Error('Admin not found');
+        }
+    
         if (file) {
+            if (existingAdmin.photo) {
+                const oldImagePath = existingAdmin.photo;
+                console.log('oldImagePath', oldImagePath);
+                const bucketName = 'admin-images';
+                const deleteSuccess = await this.minioService.deleteFileFromBucket(bucketName, oldImagePath);
+                if (!deleteSuccess) {
+                    console.warn('Failed to delete the old image, but proceeding with the update');
+                }
+            }
+    
             const filename = `${uuidv4()}.png`;
             const filePath = `admin/${admin_id}/images/${filename}`;
-    
             const uploadSuccess = await this.minioService.uploadFileToBucket('admin-images', filePath, file);
             if (!uploadSuccess) {
                 throw new Error('Failed to upload the image');
             }
     
             admin.photo = filePath;
+
+            if (!admin.photo && Object.keys(admin).length === 0) {
+                throw new Error('No data provided for update');
+            }
         }
     
-        if (!admin.photo && Object.keys(admin).length === 0) {
-            throw new Error('No data provided for update');
-        }
+       
+
     
         const result = await this.adminRepository.update({ admin_id }, admin);
+
         if (result.affected === 0) {
             throw new Error('Admin not found');
         }
@@ -130,13 +161,14 @@ export class AdminProfileService {
     
         if (admin.photo) {
             const bucketName = 'admin-images';
-            const imageName = admin.photo.split('admin/')[1]; 
+            const imageName = admin.photo;
             const imageUrl = await this.minioService.generateImageUrl(bucketName, imageName);
-            updatedAdminProfile.photo = imageUrl;  
+            updatedAdminProfile.photo = imageUrl;
         }
     
         return updatedAdminProfile;
     }
+    
 
 
     async updateRole(admin_id: string, updateRoleDto: UpdateRoleDto): Promise<{ message: string }> {

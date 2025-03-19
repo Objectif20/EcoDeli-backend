@@ -5,5 +5,9 @@ export interface AdminProfile {
     email: string;
     active: boolean;
     photo?: string | null;
+    super_admin?: boolean;
+    language?: string;
+    iso_code?: string;
     roles: string[];
+    otp?: boolean;
 }

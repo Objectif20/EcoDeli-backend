@@ -2,9 +2,8 @@ import { Body, Controller, Post, Res, UseGuards,Req, Patch } from '@nestjs/commo
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { A2FLoginDto } from './dto/a2f-login.dto';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { A2FDto } from './dto/a2f.dto';
-import { Response } from 'express';
+import { Response, Request } from 'express';
 import { AdminJwtGuard } from 'src/common/guards/admin-jwt.guard';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { NewPasswordDto } from './dto/new-password.dto';
@@ -16,7 +15,9 @@ export class AuthController {
 
   @Post('login')
   async login(@Body() loginDto: LoginDto, @Res() res: Response): Promise<{ access_token: string } | { two_factor_required: boolean }> {
-    return this.authService.login(loginDto.email, loginDto.password, res);
+    const message =  this.authService.login(loginDto.email, loginDto.password, res);
+    console.log(message);
+    return message;
   }
 
   @Post('logout')
@@ -25,8 +26,10 @@ export class AuthController {
   }
 
   @Post('refresh')
-  async refresh(@Body() refreshTokenDto: RefreshTokenDto, @Res() res: Response): Promise<{ access_token: string }> {
-    return this.authService.refresh(res, refreshTokenDto.token);
+  async refresh(@Req() req: Request): Promise<{ access_token: string }> {
+      const refreshToken = (req as any).cookies?.refresh_token;
+      const access_token = await this.authService.refresh(refreshToken);
+      return access_token ;
   }
 
   @Post('2fa/enable')
