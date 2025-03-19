@@ -1,4 +1,4 @@
-import {Admin} from './admin.entity';
+import { Admin } from './admin.entity';
 import { RoleList } from './role_list.entity';
 import { Ticket } from './ticket.entity';
 import { Role } from './roles.entity';
@@ -12,5 +12,6 @@ import { ProviderDocuments } from './providers_documents.entity';
 import { ProviderKeywords } from './provider_keyword.entity';
 import { ProviderKeywordsList } from './provider_keywords_list.entity';
 import { Providers } from './provider.entity';
+import { DeliveryPerson } from './delivery_persons.entity';
 
-export const entities = [Admin, RoleList,Role, Ticket, Languages, Users, Services,ServicesList, Themes, ProviderContracts, ProviderDocuments, ProviderKeywords, ProviderKeywordsList, Providers];
+export const entities = [Admin, DeliveryPerson, RoleList, Role, Ticket, Languages, Users, Services, ServicesList, Themes, ProviderContracts, ProviderDocuments, ProviderKeywords, ProviderKeywordsList, Providers];
