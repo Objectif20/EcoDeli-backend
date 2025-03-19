@@ -16,22 +16,61 @@ export class TicketService {
 
 
     async getTickets(): Promise<Ticket[]> {
-        return await this.ticketRepository.find({
-            where: { status: Not("closed") },
-        });
+        return await this.ticketRepository.createQueryBuilder('ticket')
+            .leftJoinAndSelect('ticket.adminAttribute', 'adminAttribute')
+            .leftJoinAndSelect('ticket.adminGet', 'adminGet')
+            .select([
+                'ticket',
+                'adminAttribute.first_name',
+                'adminAttribute.last_name',
+                'adminAttribute.photo',
+
+                'adminGet.first_name',
+                'adminGet.last_name',
+                'adminGet.photo'
+            ])
+            .where('ticket.status != :status', { status: "closed" })
+            .getMany();
     }
+
 
     async getTicketById(id: string): Promise<Ticket | null> {
-        return await this.ticketRepository.findOne({
-            where: { ticket_id: id },
-        });
+        return await this.ticketRepository.createQueryBuilder('ticket')
+            .leftJoinAndSelect('ticket.adminAttribute', 'adminAttribute')
+            .leftJoinAndSelect('ticket.adminGet', 'adminGet')
+            .select([
+                'ticket',
+                'adminAttribute.first_name',
+                'adminAttribute.last_name',
+                'adminAttribute.photo',
+
+                'adminGet.first_name',
+                'adminGet.last_name',
+                'adminGet.photo'
+            ])
+            .where('ticket.ticket_id = :id', { id })
+            .getOne();
     }
 
+
     async getStoredTickets(): Promise<Ticket[]> {
-        return await this.ticketRepository.find({
-            where: { status: "closed" },
-        });
+        return await this.ticketRepository.createQueryBuilder('ticket')
+            .leftJoinAndSelect('ticket.adminAttribute', 'adminAttribute')
+            .leftJoinAndSelect('ticket.adminGet', 'adminGet')
+            .select([
+                'ticket',
+                'adminAttribute.first_name',
+                'adminAttribute.last_name',
+                'adminAttribute.photo',
+
+                'adminGet.first_name',
+                'adminGet.last_name',
+                'adminGet.photo'
+            ])
+            .where('ticket.status = :status', { status: "closed" })
+            .getMany();
     }
+
 
     async createTicket(data: TicketDto): Promise<Ticket> {
         try {
@@ -43,16 +82,16 @@ export class TicketService {
     }
 
     async updateTicket(id: string, updateData: UpdateTicketDto): Promise<Ticket | null> {
-        const ticket = await this.ticketRepository.findOne({ where: { ticket_id: id } });
+        const result = await this.ticketRepository.update(id, updateData as any);
 
-        if (!ticket) {
+        if (result.affected === 0) {
             return null;
         }
 
-        Object.assign(ticket, updateData);
-
-        return await this.ticketRepository.save(ticket);
+        return await this.ticketRepository.findOne({ where: { ticket_id: id } });
     }
+
+
 
     async deleteTicket(id: string): Promise<boolean> {
         const result: DeleteResult = await this.ticketRepository.delete(id);

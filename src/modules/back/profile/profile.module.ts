@@ -8,10 +8,11 @@ import { RoleList } from 'src/common/entities/role_list.entity';
 import { Role } from 'src/common/entities/roles.entity';
 import { JwtService } from 'src/config/jwt.service';
 import { SharedModule } from 'src/common/shared/shared.module';
+import { Languages } from 'src/common/entities/languages.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Admin, RoleList, Role]),
+    TypeOrmModule.forFeature([Admin, RoleList, Role, Languages]),
     JwtModule.register({}),
     SharedModule
   ],
