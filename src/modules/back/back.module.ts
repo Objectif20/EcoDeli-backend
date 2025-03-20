@@ -6,9 +6,10 @@ import { AdminProfileModule } from './profile/profile.module';
 import { TicketModule } from './ticket/ticket.module';
 import { ProviderModule } from './provider/provider.module';
 import { MailModule } from './mail/mail.module';
+import { LanguagesModule } from './languages/languages.module';
 
 @Module({
-  imports: [GlobalModule, AdminAuthModule, AdminProfileModule, GuardsModule, TicketModule, ProviderModule, MailModule],
+  imports: [GlobalModule, AdminAuthModule, AdminProfileModule, GuardsModule, TicketModule, ProviderModule, MailModule,LanguagesModule],
   providers: [],
 })
 export class BackModule {}
