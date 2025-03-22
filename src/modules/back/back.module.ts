@@ -25,6 +25,7 @@ import { ReportModule } from './reports/report.module';
     DeliveryPersonModule,
     MailModule,
     LanguagesModule,
+    ReportModule,
   ],
   providers: [],
 })

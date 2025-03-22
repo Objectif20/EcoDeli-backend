@@ -25,6 +25,7 @@ import { MerchantContract } from './merchant_contract.entity';
 import { MerchantDocument } from './merchant_document.entity';
 import { Plan } from './plan.entity';
 import { Subscription } from './subscription.entity';
+import { AdminReport } from './admin_reports.entity';
 
 export const entities = [
   Admin,
@@ -52,5 +53,7 @@ export const entities = [
   Vehicle,
   Category,
   DeliveryPersonDocument,
-  ServiceImage
+  ServiceImage,
+  Report,
+  AdminReport,
 ];

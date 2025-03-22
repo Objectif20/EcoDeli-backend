@@ -1,8 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 import { Users } from './user.entity';
-import { ManyToOne, JoinColumn } from 'typeorm';
-
-// Table reports (signalements)
+import { ManyToOne, JoinColumn, OneToMany } from 'typeorm';
+import { AdminReport } from './admin_reports.entity';
 
 @Entity({ name: 'reports' })
 export class Report {
@@ -19,7 +18,10 @@ export class Report {
     @Column({ length: 255 })
     state: string;
 
+    @OneToMany(() => AdminReport, adminReport => adminReport.report)
+    adminReports: AdminReport[];
+
     @ManyToOne(() => Users)
     @JoinColumn({ name: 'user_id' })
-    user_id: Users;
+    user: Users;
 }
