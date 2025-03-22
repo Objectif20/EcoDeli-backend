@@ -10,6 +10,7 @@ import { MailModule } from './mail/mail.module';
 import { LanguagesModule } from './languages/languages.module';
 import { MerchantModule } from './merchant/merchant.module';
 import { SubscriptionModule } from './subscriptions/subscription.module';
+import { ReportModule } from './reports/report.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { SubscriptionModule } from './subscriptions/subscription.module';
     DeliveryPersonModule,
     MailModule,
     LanguagesModule,
+    ReportModule,
   ],
   providers: [],
 })
