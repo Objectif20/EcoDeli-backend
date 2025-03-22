@@ -7,6 +7,7 @@ import { TicketModule } from './ticket/ticket.module';
 import { ProviderModule } from './provider/provider.module';
 import { DeliveryPersonModule } from './delivery_person/delivery_person.module';
 import { MailModule } from './mail/mail.module';
+import { LanguagesModule } from './languages/languages.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { MailModule } from './mail/mail.module';
     ProviderModule,
     DeliveryPersonModule,
     MailModule,
+    LanguagesModule,
   ],
   providers: [],
 })

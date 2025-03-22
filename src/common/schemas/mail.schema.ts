@@ -10,6 +10,11 @@ export interface Mail extends Document {
     send: boolean;
     newsletter: boolean;
     profile : string[];
+    scheduled_time?: Date;
+    admin_info?: {
+        full_name: string;
+        photo : string | null;
+      };
 }
 
 export const MailSchema = new Schema<Mail>({
@@ -19,7 +24,7 @@ export const MailSchema = new Schema<Mail>({
     date: { type: Date, required: true },
     send: { type: Boolean, required: true },
     newsletter: { type: Boolean, required: true },
-    profile: { type: [String], required: true },
+    profile: { type: [String], required: false },
+    scheduled_time: { type: Date, required: false },
 }, {collection: 'mail'});
-
 

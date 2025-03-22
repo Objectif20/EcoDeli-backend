@@ -13,6 +13,7 @@ import { GuardsModule } from './common/guards/guards.module';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtService } from './config/jwt.service';
 import { MinioService } from './common/services/file/minio.service';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Global()
 @Module({
@@ -69,7 +70,8 @@ import { MinioService } from './common/services/file/minio.service';
     BackModule,
     
     /* Module des guards */
-    GuardsModule
+    GuardsModule,
+    ScheduleModule.forRoot(),
 
     ],
     providers: [
