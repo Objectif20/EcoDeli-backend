@@ -16,5 +16,26 @@ import { DeliveryPerson } from './delivery_persons.entity';
 import { Vehicle } from './vehicle.entity';
 import { Category } from './category.entity';
 import { DeliveryPersonDocument } from './delivery_person_documents.entity';
+import { ServiceImage } from './services_image.entity';
 
-export const entities = [DeliveryPersonDocument, Vehicle, Category, Admin, DeliveryPerson, RoleList, Role, Ticket, Languages, Users, Services, ServicesList, Themes, ProviderContracts, ProviderDocuments, ProviderKeywords, ProviderKeywordsList, Providers];
+export const entities = [
+  Admin,
+  RoleList,
+  Role,
+  Ticket,
+  Languages,
+  Users,
+  Services,
+  ServicesList,
+  Themes,
+  ProviderContracts,
+  ProviderDocuments,
+  ProviderKeywords,
+  ProviderKeywordsList,
+  Providers,
+  DeliveryPerson,
+  Vehicle,
+  Category,
+  DeliveryPersonDocument,
+  ServiceImage
+];
