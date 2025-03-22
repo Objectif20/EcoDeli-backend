@@ -8,10 +8,14 @@ import { ProviderModule } from './provider/provider.module';
 import { DeliveryPersonModule } from './delivery_person/delivery_person.module';
 import { MailModule } from './mail/mail.module';
 import { LanguagesModule } from './languages/languages.module';
+import { MerchantModule } from './merchant/merchant.module';
+import { SubscriptionModule } from './subscriptions/subscription.module';
 
 @Module({
   imports: [
     GlobalModule,
+    SubscriptionModule,
+    MerchantModule,
     AdminAuthModule,
     AdminProfileModule,
     GuardsModule,
