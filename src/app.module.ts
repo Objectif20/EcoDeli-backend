@@ -49,14 +49,14 @@ import { ScheduleModule } from '@nestjs/schedule';
           throw new Error('JWT secrets not found.');
         }
         return {
-          secret: accessSecret, 
+          secret: accessSecret,
           signOptions: {
-            expiresIn: '15m', 
+            expiresIn: '15m',
           },
           refreshToken: {
-            secret: refreshSecret, 
+            secret: refreshSecret,
             signOptions: {
-              expiresIn: '7d', 
+              expiresIn: '7d',
             },
           },
         };
@@ -68,48 +68,48 @@ import { ScheduleModule } from '@nestjs/schedule';
 
     /* Module du BackOffice */
     BackModule,
-    
+
     /* Module des guards */
     GuardsModule,
     ScheduleModule.forRoot(),
 
-    ],
-    providers: [
-      JwtService,
-      {
-        // Configuration du transporteur Gmail pour l'envoi de mails
-        provide: 'NodeMailer', 
-        useFactory: async (secretsService: SecretsService) => {
-          const gmailUser = process.env.GMAIL_USER;
-          const gmailPass = await secretsService.loadSecret('GMAIL_PASS');
-  
-          if (!gmailUser || !gmailPass) {
-            throw new Error('Impossible de récupérer les secrets pour le transporteur Gmail.');
-          }
-  
-          return nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-              user: gmailUser, 
-              pass: gmailPass, 
-            },
-          });
-        },
-        inject: [SecretsService],  
-      },
+  ],
+  providers: [
+    JwtService,
+    {
+      // Configuration du transporteur Gmail pour l'envoi de mails
+      provide: 'NodeMailer',
+      useFactory: async (secretsService: SecretsService) => {
+        const gmailUser = process.env.GMAIL_USER;
+        const gmailPass = await secretsService.loadSecret('GMAIL_PASS');
 
-      // Services
-      MailService,
-      MinioConfigService,
-      MinioService,
-    ],
-    exports: ['NodeMailer', MailService, MinioConfigService, JwtService],
+        if (!gmailUser || !gmailPass) {
+          throw new Error('Impossible de récupérer les secrets pour le transporteur Gmail.');
+        }
+
+        return nodemailer.createTransport({
+          service: 'gmail',
+          auth: {
+            user: gmailUser,
+            pass: gmailPass,
+          },
+        });
+      },
+      inject: [SecretsService],
+    },
+
+    // Services
+    MailService,
+    MinioConfigService,
+    MinioService,
+  ],
+  exports: ['NodeMailer', MailService, MinioConfigService, JwtService],
 })
 export class AppModule implements OnModuleInit {
   constructor(
     private readonly jwtService: JwtService,
     private readonly minioService: MinioService
-  ) {}
+  ) { }
 
   async onModuleInit() {
     await this.jwtService.loadSecrets();
@@ -118,6 +118,6 @@ export class AppModule implements OnModuleInit {
     if (!encryptionKey) {
       throw new Error('MINIO_ENCRYPTION_KEY is not defined.');
     }
-    await this.minioService.initEncryptionKey(encryptionKey); 
+    await this.minioService.initEncryptionKey(encryptionKey);
   }
 }

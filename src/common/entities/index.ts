@@ -17,9 +17,23 @@ import { Vehicle } from './vehicle.entity';
 import { Category } from './category.entity';
 import { DeliveryPersonDocument } from './delivery_person_documents.entity';
 import { ServiceImage } from './services_image.entity';
+import { Sector } from './sector.entity';
+import { Merchant } from './merchant.entity';
+import { MerchantSector } from './merchant_sector.entity';
+import { MerchantContract } from './merchant_contract.entity';
+import { MerchantDocument } from './merchant_document.entity';
+import { Plan } from './plan.entity';
+import { Subscription } from './subscription.entity';
 
 export const entities = [
   Admin,
+  Subscription,
+  Plan,
+  MerchantDocument,
+  MerchantContract,
+  MerchantSector,
+  Sector,
+  Merchant,
   RoleList,
   Role,
   Ticket,

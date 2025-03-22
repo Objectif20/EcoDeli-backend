@@ -1,7 +1,9 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, OneToMany } from "typeorm";
 import { Themes } from "./theme.entity";
 import { Languages } from "./languages.entity";
-import { Providers } from "./provider.entity";
+import { Merchant } from './merchant.entity';
+import { Subscription } from './subscription.entity';
+
 
 @Entity({ name: 'users' })
 export class Users {
@@ -58,6 +60,9 @@ export class Users {
     @Column({ type: "text", nullable: true })
     secret_totp: string;
 
-    @OneToMany(() => Providers, provider => provider.user)
-    providers: Providers[];
+    @OneToMany(() => Merchant, merchant => merchant.user)
+    providers: Merchant[];
+
+    @OneToMany(() => Subscription, subscription => subscription.user)
+    subscriptions: Subscription[];
 }
