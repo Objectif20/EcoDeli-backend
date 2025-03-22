@@ -4,7 +4,7 @@ import { Admin } from './admin.entity';
 @Entity({ name: 'tickets' })
 export class Ticket {
     @PrimaryGeneratedColumn("uuid")
-    ticket_id: string;  // ✅ Correction : Retrait de nullable: false qui était invalide
+    ticket_id: string;
 
     @Column({ length: 50, nullable: false })
     status: string;
