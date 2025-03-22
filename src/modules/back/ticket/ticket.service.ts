@@ -1,17 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository, } from '@nestjs/typeorm';
 import { Repository, Not, DeleteResult } from 'typeorm';
-
-
+import { v4 as uuidv4 } from 'uuid';
 import { TicketDto } from './dto/ticket.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { Ticket } from 'src/common/entities/ticket.entity';
+import { MinioService } from 'src/common/services/file/minio.service';
+import * as path from 'path';
 
 @Injectable()
 export class TicketService {
     constructor(
         @InjectRepository(Ticket)
         private readonly ticketRepository: Repository<Ticket>,
+        private readonly minioService: MinioService,
     ) { }
 
 
@@ -96,6 +98,22 @@ export class TicketService {
     async deleteTicket(id: string): Promise<boolean> {
         const result: DeleteResult = await this.ticketRepository.delete(id);
         return !!(result.affected && result.affected > 0);
+    }
+
+
+    async uploadPicture(file: Express.Multer.File): Promise<{ url: string } | { error: string }> {
+        const fileExtension = path.extname(file.originalname);
+        
+        const uniqueFileName = `${uuidv4()}${fileExtension}`;
+    
+        const upload = await this.minioService.uploadFileToBucket("ticket", uniqueFileName, file);
+    
+        if (upload) {
+            const url = await this.minioService.generateImageUrl("ticket", uniqueFileName);
+            return { url };
+        } else {
+            return { error: "Erreur lors de l'upload de l'image" };
+        }
     }
 
 }

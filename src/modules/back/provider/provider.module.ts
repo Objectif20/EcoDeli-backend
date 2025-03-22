@@ -15,10 +15,12 @@ import { Providers } from 'src/common/entities/provider.entity';
 import { Services } from 'src/common/entities/service.entity';
 import { ServicesList } from 'src/common/entities/services_list.entity';
 import { Users } from 'src/common/entities/user.entity';
+import { ServiceImage } from 'src/common/entities/services_image.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Admin, Languages, ProviderContracts, ProviderDocuments, ProviderKeywords, ProviderKeywordsList, Providers, Services, ServicesList, Users]),
+    TypeOrmModule.forFeature([Admin, Languages, ProviderContracts, ProviderDocuments, 
+      ProviderKeywords, ProviderKeywordsList, Providers, Services, ServicesList, Users, ServiceImage]),
     JwtModule.register({}),
     SharedModule
   ],
