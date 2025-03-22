@@ -17,7 +17,7 @@ export class ReportDto {
     @IsNotEmpty({ message: 'State is required' })
     state: string;
 
-    @IsUUID('4', { message: 'User ID must be a valid UUID' })
+    @IsUUID()
     @IsNotEmpty({ message: 'User ID is required' })
     user_id: string;
 }

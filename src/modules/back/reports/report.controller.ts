@@ -8,12 +8,12 @@ export class ReportController {
     constructor(private readonly reportService: ReportService) {}
 
     // GET admin/reportings : Liste des signalements avec pagination et filtres
-    @Get('reportings')
+    @Get()
     async getReports(
         @Query('page') page?: number,
         @Query('limit') limit?: number,
         @Query('filter') filter?: string
-    ): Promise<Report[]> {
+    ): Promise<{ data: Partial<Report>[]; meta: { total: number; page: number; limit: number } }> {
         return await this.reportService.getReports(page, limit, filter);
     }
 

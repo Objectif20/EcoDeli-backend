@@ -13,16 +13,32 @@ export class ReportService {
     ) {}
 
     // Récupération des signalements (pagination et filtres)
-    async getReports(page = 1, limit = 10, filter?: string): Promise<Report[]> {
-        const whereCondition = filter
-            ? [{ status: Like(`%${filter}%`) }, { state: Like(`%${filter}%`) }]
-            : {};
+    async getReports(page = 1, limit = 10, filter?: string): Promise<{ data: Partial<Report>[], meta: { total: number; page: number; limit: number } }> {
+        const skip = (page - 1) * limit;
+        const queryBuilder = this.reportRepository.createQueryBuilder('report');
 
-        return await this.reportRepository.find({
-            where: whereCondition,
-            skip: (page - 1) * limit,
-            take: limit,
-        });
+        const [report, total] = await queryBuilder
+        .skip(skip)
+        .take(limit)
+        .getManyAndCount();
+
+        const result = report.map(report => ({
+            report_id: report.report_id,
+            status: report.status,
+            assignment: report.assignment,
+            state: report.state,
+            user_id: report.user_id,
+        }));
+
+        return {
+            data: result,
+            meta: {
+                total,
+                page,
+                limit,
+            },
+        };
+
     }
 
     // Détail d'un signalement
@@ -65,10 +81,10 @@ export class ReportService {
     }
 
     // Optionnel : création d'un signalement
-    async createReport(data: ReportDto): Promise<Report> {
-        const newReport = this.reportRepository.create(data);
-        return await this.reportRepository.save(newReport);
-    }
+    //async createReport(data: ReportDto): Promise<Report> {
+    //    const newReport = this.reportRepository.create(data);
+    //    return await this.reportRepository.save(newReport);
+    //}
 
     // Optionnel : suppression
     async deleteReport(id: string): Promise<boolean> {
