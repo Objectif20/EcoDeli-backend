@@ -9,15 +9,13 @@ export class SubscriptionController {
     constructor(private readonly subscriptionService: SubscriptionService) { }
 
     @Get()
-    @UseGuards(AdminJwtGuard, AdminRoleGuard)
-    @AdminRole('superadmin')
+    @UseGuards(AdminJwtGuard)
     async getSubscriptionStats() {
         return this.subscriptionService.getSubscriptionStats();
     }
 
     @Get('list')
-    @UseGuards(AdminJwtGuard, AdminRoleGuard)
-    @AdminRole('superadmin')
+    @UseGuards(AdminJwtGuard)
     async getSubscribersList(
         @Query('page') page: number = 1,
         @Query('limit') limit: number = 10,
@@ -28,16 +26,15 @@ export class SubscriptionController {
 
 
     @Get(':id')
-    @UseGuards(AdminJwtGuard, AdminRoleGuard)
-    @AdminRole('superadmin')
+    @UseGuards(AdminJwtGuard)
     async getSubscriptionById(@Param('id') id: number) {
         return this.subscriptionService.getSubscriptionById(id);
     }
 
 
     @Patch(':id')
+    @AdminRole('FINANCE')
     @UseGuards(AdminJwtGuard, AdminRoleGuard)
-    @AdminRole('superadmin')
     async updateSubscription(
         @Param('id') id: number,
         @Body() updateSubscriptionDto: any,

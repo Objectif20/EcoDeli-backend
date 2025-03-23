@@ -56,7 +56,7 @@ export class ProvidersController {
     @Param('id') id: string,
     @Body() body: UpdateProviderDto) : Promise<{message: string}> {
     return this.providersService.updateProvider(id, body);  
-    }
+  }
 
   @Patch(':id/service/:service_id')
   @AdminRole('PROVIDER')
@@ -66,7 +66,5 @@ export class ProvidersController {
     @Body() body: UpdateServiceDto) : Promise<{message: string}> {
     return this.providersService.updateService(service_id, body); 
   }
-
-
 
 }
