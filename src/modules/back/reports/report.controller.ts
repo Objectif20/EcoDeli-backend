@@ -6,7 +6,7 @@ import { Report } from 'src/common/entities/report.entity';
 interface ReportResponse {
     report_id: string;
     status: string;
-    assignment?: string;
+    report_message?: string;
     state: string;
     user: {
         user_id: string;

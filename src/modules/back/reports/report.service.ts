@@ -8,11 +8,13 @@ import { Users } from 'src/common/entities/user.entity';
 import { AdminReport } from 'src/common/entities/admin_reports.entity';
 import { Admin } from 'src/common/entities/admin.entity'; // Si tu as une entity Admin séparée
 import { DataSource } from 'typeorm';
+import * as nodemailer from 'nodemailer';
+import { Inject } from '@nestjs/common';
 
 interface ReportResponse {
     report_id: string;
     status: string;
-    assignment?: string;
+    report_message?: string;
     state: string;
     user: {
         user_id: string;
@@ -33,6 +35,8 @@ export class ReportService {
 
         @InjectRepository(AdminReport)
         private readonly adminReportRepository: Repository<AdminReport>,
+
+        @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter, // Injection du mailer
     ) {}
 
     // Récupération des signalements (pagination et filtres)
@@ -54,7 +58,7 @@ export class ReportService {
         const result = report.map(report => ({
             report_id: report.report_id,
             status: report.status,
-            assignment: report.assignment,
+            report_message: report.report_message,
             state: report.state,
             user: {
                 user_id: report.user?.user_id,
@@ -95,7 +99,7 @@ async getReportById(id: string): Promise<ReportResponse | null> {
     const result: ReportResponse = {
         report_id: report.report_id,
         status: report.status,
-        assignment: report.assignment,
+        report_message: report.report_message,
         state: report.state,
         user: {
             user_id: report.user?.user_id,
@@ -112,22 +116,37 @@ async getReportById(id: string): Promise<ReportResponse | null> {
     return result;
 }
 
-    async answerReport(id: string, message: string): Promise<Report | null> {
-        const report = await this.reportRepository.findOne({
-            where: { report_id: id },
-        });
+async answerReport(id: string, message: string): Promise<Report | null> {
+    const report = await this.reportRepository.findOne({
+        where: { report_id: id },
+        relations: ['user'], // Important pour avoir l'email du user
+    });
 
-        if (!report) {
-            return null;
-        }
-
-        // Exemple de traitement métier : changer l'état en "répondu"
-        report.status = 'answered';
-
-        // TODO : envoyer un mail ici si besoin
-
-        return await this.reportRepository.save(report);
+    if (!report) {
+        return null;
     }
+
+    // Changement du statut
+    report.status = 'answered';
+    await this.reportRepository.save(report);
+
+    // Envoi de l'email à l'utilisateur
+    console.log('Tentative d\'envoi de mail à', report.user.email);
+    try {
+        const fromEmail = this.mailer.options.auth.user;
+        await this.mailer.sendMail({
+            from: fromEmail,
+            to: report.user?.email, 
+            subject: 'Votre signalement a reçu une réponse',
+            text: `Bonjour,\n\nVotre signalement a été traité. Voici la réponse :\n\n${message}\n\nMerci.`,
+        });
+        console.log('Email envoyé avec succès');
+    } catch (error) {
+        console.error(`Erreur lors de l'envoi de l'email : ${error.message}`);
+    }
+
+    return report;
+}
 
     async assignReport(reportId: string, adminId: string): Promise<AdminReport | null> {
         // Vérifier si le report existe

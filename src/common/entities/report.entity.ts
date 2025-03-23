@@ -13,7 +13,7 @@ export class Report {
     status: string;
 
     @Column({ length: 255, nullable: true })
-    assignment?: string;
+    report_message?: string;
 
     @Column({ length: 255 })
     state: string;
