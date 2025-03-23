@@ -17,7 +17,16 @@ export class LanguagesService {
     const language = new Languages();
     language.language_name = createLanguageDto.language_name;
     language.iso_code = createLanguageDto.iso_code;
-    language.active = createLanguageDto.active;
+
+    if (createLanguageDto.active === undefined) {
+      language.active = true;
+    } else {
+      if (createLanguageDto.active === 'true') {
+        language.active = true;
+      } else {
+        language.active = false;
+      }
+    }
 
     const fileName = `${language.iso_code}.json`;
     await this.uploadFile(file, fileName);
@@ -37,8 +46,14 @@ export class LanguagesService {
     if (updateLanguageDto.iso_code) {
       language.iso_code = updateLanguageDto.iso_code;
     }
-    if (updateLanguageDto.active !== undefined) {
-      language.active = updateLanguageDto.active;
+    if (updateLanguageDto.active === undefined) {
+      language.active = true;
+    } else {
+      if (updateLanguageDto.active === 'true') {
+        language.active = true;
+      } else {
+        language.active = false;
+      }
     }
 
     if (file) {

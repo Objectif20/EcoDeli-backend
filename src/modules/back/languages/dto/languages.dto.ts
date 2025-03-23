@@ -1,4 +1,4 @@
-import { IsBoolean, IsISO31661Alpha2, IsString, MaxLength } from 'class-validator';
+import { IsISO31661Alpha2, IsString, MaxLength } from 'class-validator';
 
 export class CreateLanguageDto {
   @IsString()
@@ -8,8 +8,8 @@ export class CreateLanguageDto {
   @IsISO31661Alpha2()
   iso_code: string;
 
-  @IsBoolean()
-  active: boolean;
+  @IsString()
+  active: string;
 }
 
 export class UpdateLanguageDto {
@@ -20,6 +20,6 @@ export class UpdateLanguageDto {
   @IsISO31661Alpha2()
   iso_code?: string;
 
-  @IsBoolean()
-  active?: boolean;
+  @IsString()
+  active?: string;
 }
