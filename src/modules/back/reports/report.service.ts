@@ -82,7 +82,6 @@ export class ReportService {
         };
     }
 
-    // Détail d'un signalement
     // Détail d'un signalement avec les infos user et admin
 async getReportById(id: string): Promise<ReportResponse | null> {
     const report = await this.reportRepository.createQueryBuilder('report')
@@ -119,7 +118,7 @@ async getReportById(id: string): Promise<ReportResponse | null> {
 async answerReport(id: string, message: string): Promise<Report | null> {
     const report = await this.reportRepository.findOne({
         where: { report_id: id },
-        relations: ['user'], // Important pour avoir l'email du user
+        relations: ['user'], 
     });
 
     if (!report) {
@@ -164,15 +163,6 @@ async answerReport(id: string, message: string): Promise<Report | null> {
         
     }
     
-    
-
-    // Optionnel : création d'un signalement
-    //async createReport(data: ReportDto): Promise<Report> {
-    //    const newReport = this.reportRepository.create(data);
-    //    return await this.reportRepository.save(newReport);
-    //}
-
-    // Optionnel : suppression
     async deleteReport(id: string): Promise<boolean> {
         const result: DeleteResult = await this.reportRepository.delete(id);
         return !!(result.affected && result.affected > 0);
