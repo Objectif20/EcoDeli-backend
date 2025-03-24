@@ -14,6 +14,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { JwtService } from './config/jwt.service';
 import { MinioService } from './common/services/file/minio.service';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ClientModule } from './modules/client/client.module';
 
 @Global()
 @Module({
@@ -68,6 +69,9 @@ import { ScheduleModule } from '@nestjs/schedule';
 
     /* Module du BackOffice */
     BackModule,
+
+    /*Module du FrontOffice */
+    ClientModule,
 
     /* Module des guards */
     GuardsModule,

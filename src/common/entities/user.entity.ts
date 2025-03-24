@@ -3,6 +3,7 @@ import { Themes } from "./theme.entity";
 import { Languages } from "./languages.entity";
 import { Merchant } from './merchant.entity';
 import { Subscription } from './subscription.entity';
+import { Client } from "./client.entity";
 
 
 @Entity({ name: 'users' })
@@ -63,6 +64,15 @@ export class Users {
     @OneToMany(() => Merchant, merchant => merchant.user)
     providers: Merchant[];
 
+    @OneToMany(() => Client, client => client.user)
+    clients: Client[];
+
     @OneToMany(() => Subscription, subscription => subscription.user)
     subscriptions: Subscription[];
+
+    @Column({ nullable: true, type: 'varchar', default: null })
+    password_code?: string | null;
+
+    @Column({ nullable: true, type: 'varchar', default: null })
+    validate_code?: string | null;
 }
