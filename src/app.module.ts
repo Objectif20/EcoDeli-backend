@@ -15,6 +15,7 @@ import { JwtService } from './config/jwt.service';
 import { MinioService } from './common/services/file/minio.service';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ClientModule } from './modules/client/client.module';
+import { StripeModule } from './config/stripe.module';
 
 @Global()
 @Module({
@@ -76,6 +77,7 @@ import { ClientModule } from './modules/client/client.module';
     /* Module des guards */
     GuardsModule,
     ScheduleModule.forRoot(),
+    StripeModule,
 
   ],
   providers: [

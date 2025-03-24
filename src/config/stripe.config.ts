@@ -1,11 +1,28 @@
-import Stripe from 'stripe';
+import { Injectable } from '@nestjs/common';
+import { SecretsService } from '../common/services/secrets.service';
+import { Stripe } from 'stripe';
 
-// Création de l'instance Stripe
-const stripeSecretKey = process.env.STRIPE_SK_SECRET;
-if (!stripeSecretKey) {
-    throw new Error('La clé Stripe n\'est pas définie');
+@Injectable()
+export class StripeConfigService {
+  private stripeClient: Stripe;
+
+  constructor(private secretsService: SecretsService) {}
+
+  async createStripeClient(): Promise<Stripe> {
+    const stripeSecretKey = await this.secretsService.loadSecret('STRIPE_SK_SECRET');
+    if (!stripeSecretKey) {
+      throw new Error('La clé Stripe n\'est pas définie');
+    }
+
+    this.stripeClient = new Stripe(stripeSecretKey, {
+      apiVersion: '2025-02-24.acacia',
+      typescript: true,
+    });
+
+    return this.stripeClient;
+  }
+
+  getClient(): Stripe {
+    return this.stripeClient;
+  }
 }
-export const stripe = new Stripe(stripeSecretKey, {
-    apiVersion: '2025-02-24.acacia', // Version de l'API Stripe actuellement utilisée
-    typescript: true, // Utilisation de TypeScript
-});

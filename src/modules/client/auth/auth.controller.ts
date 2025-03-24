@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Post, Req, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Post, Req, Res, UseGuards } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { ClientJwtGuard } from "src/common/guards/user-jwt.guard";
@@ -16,7 +16,7 @@ export class AuthController {
 
 
     @Post("login")
-    async login(@Body() loginDto: LoginDto, @Res() res: Response): Promise<loginResponse | { two_factor_required: boolean }> {
+    async login(@Body() loginDto: LoginDto, @Res() res: Response): Promise<loginResponse | { two_factor_required: boolean } | { message: string }> {
         const message =  this.authService.login(loginDto.email, loginDto.password, res);
         console.log(message);
         return message;
@@ -62,7 +62,7 @@ export class AuthController {
     }
 
     @Post('a2f/login')
-    async LoginA2F(@Body() a2fLoginDto: A2FLoginDto, @Res() res: Response): Promise<loginResponse> {
+    async LoginA2F(@Body() a2fLoginDto: A2FLoginDto, @Res() res: Response): Promise<loginResponse | { message: string }> {
         return this.authService.LoginA2F(a2fLoginDto.email, a2fLoginDto.password, a2fLoginDto.code, res);
     }
 

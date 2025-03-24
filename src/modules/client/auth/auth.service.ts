@@ -35,7 +35,7 @@ export class AuthService {
     @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
   ) {}
 
-  async login(email: string, password: string, @Res() res): Promise<loginResponse | { two_factor_required: boolean }> {
+  async login(email: string, password: string, @Res() res): Promise<loginResponse | { two_factor_required: boolean } | { message: string }> {
       const user = await this.userRepository.findOne({
           where: { email },
           relations: ['clients', 'providers', 'subscriptions'],
@@ -47,6 +47,12 @@ export class AuthService {
       if (!user.confirmed){
         user.confirmed = true; 
         await this.userRepository.save(user);
+      }
+
+      if (user.ban_date && user.ban_date < new Date()) {
+          user.banned = false;
+      } else {
+        return { message: 'User is banned' };
       }
 
       const isMatch = await bcrypt.compare(password, user.password);
@@ -78,7 +84,7 @@ export class AuthService {
       return response;
   }
 
-    async LoginA2F(email: string, password: string, code: string, @Res() res): Promise<loginResponse> {
+    async LoginA2F(email: string, password: string, code: string, @Res() res): Promise<loginResponse | { message: string }> {
       const user = await this.userRepository.findOne({
           where: { email },
           relations: ['clients', 'providers', 'subscriptions'],
@@ -89,6 +95,12 @@ export class AuthService {
       if (!user.confirmed){
         user.confirmed = true; 
         await this.userRepository.save(user);
+      }
+
+      if (user.ban_date && user.ban_date < new Date()) {
+        user.banned = false;
+      } else {
+        return { message: 'User is banned' };
       }
 
       const isMatch = await bcrypt.compare(password, user.password);
@@ -123,8 +135,8 @@ export class AuthService {
       };
   }
 
-  async validateAccount(valide_code : string) : Promise<{ message: string }> {
-    const user = await this.userRepository.findOne({ where: { password_code: valide_code } });
+  async validateAccount(password_code : string) : Promise<{ message: string }> {
+    const user = await this.userRepository.findOne({ where: { password_code: password_code } });
     if (!user) throw new UnauthorizedException('Invalid code');
 
     user.confirmed = true;
