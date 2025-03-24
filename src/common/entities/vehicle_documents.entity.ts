@@ -1,11 +1,10 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
-import { DeliveryPerson } from './delivery_persons.entity';
 import { Vehicle } from './vehicle.entity';
 
-@Entity({ name: 'delivery_person_documents' })
-export class DeliveryPersonDocument {
+@Entity({ name: 'vehicle_documents' })
+export class VehicleDocument {
     @PrimaryGeneratedColumn('uuid')
-    document_id: string;
+    vehicle_document_id: string;
 
     @Column({ length: 255 })
     name: string;
@@ -17,9 +16,12 @@ export class DeliveryPersonDocument {
     submission_date: Date;
 
     @Column('text')
-    document_url: string;
+    vehicle_document_url: string;
 
-    @ManyToOne(() => DeliveryPerson, deliveryPerson => deliveryPerson.delivery_person_id, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'delivery_person_id' })
-    delivery_person: DeliveryPerson;
+    @Column({ type: 'uuid' })
+    vehicle_id: string;
+
+    @ManyToOne(() => Vehicle, (vehicle) => vehicle.vehicleDocuments)
+    @JoinColumn({ name: 'vehicle_id' })
+    vehicle: Vehicle;
 }

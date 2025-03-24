@@ -26,9 +26,11 @@ import { MerchantDocument } from './merchant_document.entity';
 import { Plan } from './plan.entity';
 import { Subscription } from './subscription.entity';
 import { AdminReport } from './admin_reports.entity';
+import { VehicleDocument } from './vehicle_documents.entity';
 
 export const entities = [
   Admin,
+  VehicleDocument,
   Subscription,
   Plan,
   MerchantDocument,
