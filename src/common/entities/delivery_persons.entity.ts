@@ -3,6 +3,7 @@ import { Users } from './user.entity';
 import { Admin } from './admin.entity';
 import { Vehicle } from './vehicle.entity';
 import { DeliveryPersonDocument } from './delivery_person_documents.entity';
+import { Delivery } from './delivery.entity';
 
 @Entity({ name: 'delivery_persons' })
 export class DeliveryPerson {
@@ -70,4 +71,7 @@ export class DeliveryPerson {
 
     @OneToMany(() => DeliveryPersonDocument, DeliveryPersonDocument => DeliveryPersonDocument.delivery_person)
     DeliveryPersonDocuments: DeliveryPersonDocument[];
+
+    @OneToMany(() => Delivery, (delivery) => delivery.delivery_person, { cascade: true })
+    deliveries: Delivery[];
 }

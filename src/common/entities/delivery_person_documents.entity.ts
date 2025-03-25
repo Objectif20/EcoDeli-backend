@@ -1,6 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
 import { DeliveryPerson } from './delivery_persons.entity';
-import { Vehicle } from './vehicle.entity';
 
 @Entity({ name: 'delivery_person_documents' })
 export class DeliveryPersonDocument {
