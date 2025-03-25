@@ -9,6 +9,7 @@ import * as nodemailer from 'nodemailer';
 import { MailService } from './common/services/mail/mail.service';
 import MinioConfigService from './config/minio.config';
 import { BackModule } from './modules/back/back.module';
+import { ClientModule } from './modules/client/client.module';
 import { GuardsModule } from './common/guards/guards.module';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtService } from './config/jwt.service';
@@ -68,6 +69,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 
     /* Module du BackOffice */
     BackModule,
+    ClientModule,
 
     /* Module des guards */
     GuardsModule,
