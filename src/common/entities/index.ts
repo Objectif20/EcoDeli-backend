@@ -27,9 +27,31 @@ import { Plan } from './plan.entity';
 import { Subscription } from './subscription.entity';
 import { AdminReport } from './admin_reports.entity';
 import { Client } from './client.entity';
+import { VehicleDocument } from './vehicle_documents.entity';
+import { DeliveryCommission } from './delivery_commission.entity';
+import { Shipment } from './shipment.entity';
+import { Delivery } from './delivery.entity';
+import { DeliveryReviewResponse } from './delivery_review_responses.entity';
+import { DeliveryReview } from './delivery_reviews.entity';
+import { Keyword } from './keywords.entity';
+import { DeliveryKeyword } from './delivery_keywords.entity';
+import { Warehouse } from './warehouses.entity';
+import { ExchangePoint } from './exchange_points.entity';
+import { Store } from './stores.entity';
 
 export const entities = [
   Admin,
+  Warehouse,
+  ExchangePoint,
+  Store,
+  Keyword,
+  DeliveryKeyword,
+  Delivery,
+  DeliveryReviewResponse,
+  DeliveryReview,
+  DeliveryCommission,
+  Shipment,
+  VehicleDocument,
   Subscription,
   Plan,
   MerchantDocument,

@@ -32,5 +32,5 @@ export class Subscription {
 
     @ManyToOne(() => Plan, plan => plan.subscriptions, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'plan_id' })
-    plan_obj: Plan;
+    plan: Plan;
 }

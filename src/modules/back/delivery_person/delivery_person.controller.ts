@@ -13,8 +13,8 @@ export class DeliveryPersonController {
 
 
     @Post(':id')
+    @AdminRole('DELIVERY')
     @UseGuards(AdminJwtGuard, AdminRoleGuard)
-    @AdminRole('superadmin')
     async updateDeliveryPersonStatus(
         @Param('id') id: string,
         @Body('status') status: 'Accepted' | 'Rejected'
@@ -27,8 +27,8 @@ export class DeliveryPersonController {
     }
 
     @Post(':deliveryPersonId/vehicle/:vehicleId')
+    @AdminRole('DELIVERY')
     @UseGuards(AdminJwtGuard, AdminRoleGuard)
-    @AdminRole('superadmin')
     async validateVehicleOfDeliveryPerson(
         @Param('deliveryPersonId') deliveryPersonId: string,
         @Param('vehicleId') vehicleId: string,
@@ -46,8 +46,7 @@ export class DeliveryPersonController {
 
 
     @Get()
-    @UseGuards(AdminJwtGuard, AdminRoleGuard)
-    @AdminRole('superadmin')
+    @UseGuards(AdminJwtGuard)
     async getAllDeliveryPersons(
         @Query('status') status: string,
         @Query('page') page: number = 1,
@@ -58,15 +57,15 @@ export class DeliveryPersonController {
 
 
     @Get(':id')
-    @UseGuards(AdminJwtGuard, AdminRoleGuard)
-    @AdminRole('superadmin')
-    async getDeliveryPersonById(@Param('id') id: string): Promise<DeliveryPerson> {
+    @UseGuards(AdminJwtGuard)
+    async getDeliveryPersonById(@Param('id') id: string): Promise<DeliveryPersonResponse> {
         return this.deliveryPersonService.getDeliveryPersonById(id);
     }
 
+
     @Patch(':id')
+    @AdminRole('DELIVERY')
     @UseGuards(AdminJwtGuard, AdminRoleGuard)
-    @AdminRole('superadmin')
     async updateDeliveryPerson(
         @Param('id') id: string,
         @Body() updateData: Partial<DeliveryPerson>
@@ -75,8 +74,8 @@ export class DeliveryPersonController {
     }
 
     @Patch(':deliveryPersonId/vehicle/:vehicleId')
+    @AdminRole('DELIVERY')
     @UseGuards(AdminJwtGuard, AdminRoleGuard)
-    @AdminRole('superadmin')
     async updateVehicleOfDeliveryPerson(
         @Param('deliveryPersonId') deliveryPersonId: string,
         @Param('vehicleId') vehicleId: string,

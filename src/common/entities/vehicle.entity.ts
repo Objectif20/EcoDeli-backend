@@ -1,7 +1,9 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { DeliveryPerson } from './delivery_persons.entity';
 import { Admin } from './admin.entity';
 import { Category } from './category.entity';
+import { DeliveryPersonDocument } from './delivery_person_documents.entity';
+import { VehicleDocument } from './vehicle_documents.entity';
 
 @Entity({ name: 'vehicles' })
 export class Vehicle {
@@ -37,4 +39,7 @@ export class Vehicle {
     @ManyToOne(() => Admin, admin => admin.admin_id, { nullable: true, onDelete: 'SET NULL' })
     @JoinColumn({ name: 'val_by_admin_id' })
     validatedByAdmin?: Admin;
+
+    @OneToMany(() => VehicleDocument, (vehicleDocument) => vehicleDocument.vehicle)
+    vehicleDocuments: VehicleDocument[];
 }
