@@ -16,7 +16,9 @@ export class SecretsService {
     'DATABASE_URL',
     'MINIO_SECRET_KEY',
     'JWT_REFRESH_SECRET',
-    'JWT_ACCESS_SECRET'
+    'JWT_ACCESS_SECRET',
+    'ONESIGNAL_USER_AUTH_KEY',
+    "ONESIGNAL_REST_API_KEY"
   ];
 
   private limiter = new Bottleneck({

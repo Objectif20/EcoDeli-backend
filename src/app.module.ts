@@ -15,6 +15,9 @@ import { JwtModule } from '@nestjs/jwt';
 import { JwtService } from './config/jwt.service';
 import { MinioService } from './common/services/file/minio.service';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ClientModule } from './modules/client/client.module';
+import { StripeModule } from './config/stripe.module';
+import { OneSignalModule } from './config/onesignal.module';
 
 @Global()
 @Module({
@@ -71,9 +74,14 @@ import { ScheduleModule } from '@nestjs/schedule';
     BackModule,
     ClientModule,
 
+    /*Module du FrontOffice */
+    ClientModule,
+
     /* Module des guards */
     GuardsModule,
     ScheduleModule.forRoot(),
+    StripeModule,
+    OneSignalModule
 
   ],
   providers: [

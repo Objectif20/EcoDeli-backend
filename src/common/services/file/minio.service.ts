@@ -24,6 +24,17 @@ export class MinioService {
     }
   }
 
+  async uploadBufferToBucket(bucketName: string, filePath: string, fileBuffer: Buffer): Promise<boolean> {
+    try {
+      const minioClient: Client = await this.minioConfigService.createMinioClient();
+      await minioClient.putObject(bucketName, filePath, fileBuffer);
+      return true;
+    } catch (error) {
+      console.error(`Erreur lors de l'upload du fichier:`, error);
+      return false;
+    }
+  }
+
   async uploadEncryptedFileToBucket(bucketName: string, filePath: string, file: Express.Multer.File): Promise<boolean> {
     try {
       const minioClient: Client = await this.minioConfigService.createMinioClient();
