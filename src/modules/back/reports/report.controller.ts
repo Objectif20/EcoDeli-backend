@@ -6,7 +6,7 @@ import { Report } from 'src/common/entities/report.entity';
 interface ReportResponse {
     report_id: string;
     status: string;
-    assignment?: string;
+    report_message?: string;
     state: string;
     user: {
         user_id: string;
@@ -53,8 +53,8 @@ export class ReportController {
     }
 
     @Post(':id/attribution')
-    async assignReport(@Param('id') id: string, @Body() body: { admin_id: string }): Promise<{ message: string }> {
-        const result = await this.reportService.assignReport(id, body.admin_id);
+    async assignReport(@Param('id') id: string, @Body() body: { admin_attribute: string }): Promise<{ message: string }> {
+        const result = await this.reportService.assignReport(id, body.admin_attribute);
         if (!result) {
             throw new NotFoundException(`Signalement avec l'ID ${id} non trouvé.`);
         }

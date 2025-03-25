@@ -41,17 +41,26 @@ export class ProvidersService {
       .skip(skip)
       .take(limit)
       .getManyAndCount();
+
+
+      const providerBucketName = 'client-images';
   
-    const result = providers.map(provider => ({
-      id: provider.provider_id,
-      email: provider.user?.email || 'N/A',
-      name: `${provider.first_name} ${provider.last_name}`,
-      rate: 0,
-      service_number: provider['service_count'] || 0,
-      company: provider.company_name,
-      status: provider.validated ? 'okay' : 'wait',
-      profile_picture: provider.user?.profile_picture || null,
-      phone_number: provider.phone || 'N/A',
+    const result = await Promise.all(providers.map(async (provider) => {
+      const profilePictureUrl = provider.user?.profile_picture
+        ? await this.minioService.generateImageUrl(providerBucketName, provider.user.profile_picture)
+        : null;
+  
+      return {
+        id: provider.provider_id,
+        email: provider.user?.email || 'N/A',
+        name: `${provider.first_name} ${provider.last_name}`,
+        rate: 0,
+        service_number: provider['service_count'] || 0,
+        company: provider.company_name,
+        status: provider.validated === null ? 'wait' : provider.validated ? 'okay' : 'not okay',
+        profile_picture: profilePictureUrl,
+        phone_number: provider.phone || 'N/A',
+      };
     }));
   
     return {
@@ -92,6 +101,10 @@ export class ProvidersService {
       provider.admin.photo = await this.minioService.generateImageUrl(adminBucketName, provider.admin.photo);
     }
   
+    const userProfilePictureUrl = provider.user?.profile_picture
+      ? await this.minioService.generateImageUrl('client-images', provider.user.profile_picture)
+      : null;
+  
     const documentsWithUrls = await Promise.all(
       provider.documents.map(async (doc) => {
         const documentBucketName = 'provider-documents';
@@ -125,7 +138,7 @@ export class ProvidersService {
           description: service.serviceList.description,
           status: service.serviceList.status,
           price: service.serviceList.price || 0,
-          price_admin : service.serviceList.price_admin || 0,
+          price_admin: service.serviceList.price_admin || 0,
           duration_minute: service.serviceList.duration_minute || 0,
           available: service.serviceList.available || false,
           keywords: service.serviceList.keywords.map(keyword => ({
@@ -156,6 +169,7 @@ export class ProvidersService {
           name: provider.admin.first_name + ' ' + provider.admin.last_name,
           photo: provider.admin.photo || null,
         } : null,
+        profile_picture: userProfilePictureUrl, // Add the profile picture URL here
       },
       documents: documentsWithUrls,
       services: servicesWithImages,
@@ -169,7 +183,7 @@ export class ProvidersService {
   
     return details;
   }
-
+  
 
   async validateProvider(id: string, validateProviderDto: ValidateProviderDto): Promise<{message: string}> {
     const { validated, admin_id } = validateProviderDto;

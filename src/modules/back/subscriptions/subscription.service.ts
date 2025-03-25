@@ -53,12 +53,14 @@ export class SubscriptionService {
 
     async updateSubscription(id: number, updateSubscriptionDto: any) {
         const plan = await this.planRepository.findOne({ where: { plan_id: id } });
-
+        console.log(updateSubscriptionDto);
         if (!plan) {
             throw new NotFoundException(`Plan with ID ${id} not found`);
         }
 
-        await this.planRepository.update(id, updateSubscriptionDto);
+        const { admin_id, ...updateData } = updateSubscriptionDto;
+
+        await this.planRepository.update(id, updateData);
 
         const subscribers = await this.subscriptionRepository.find({
             where: { plan_obj: { plan_id: id } },
