@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import { Plan } from 'src/common/entities/plan.entity';
 import { Subscription } from 'src/common/entities/subscription.entity';
 import { Merchant } from 'src/common/entities/merchant.entity';
@@ -63,7 +63,7 @@ export class SubscriptionService {
         await this.planRepository.update(id, updateData);
 
         const subscribers = await this.subscriptionRepository.find({
-            where: { plan_obj: { plan_id: id } },
+            where: { plan: { plan_id: id } },
             relations: ['user'],
         });
 
@@ -83,11 +83,11 @@ export class SubscriptionService {
     async getSubscribersList(page: number = 1, limit: number = 10, planId?: number) {
         const skip = (page - 1) * limit;
 
-        const where = planId ? { plan_obj: { plan_id: planId } } : {};
+        const where: FindOptionsWhere<Subscription> = planId ? { plan: { plan_id: planId } } : {};
 
         const [subscriptions, total] = await this.subscriptionRepository.findAndCount({
             where,
-            relations: ['user', 'plan_obj'],
+            relations: ['user', 'plan'],
             skip,
             take: limit,
         });
@@ -96,8 +96,8 @@ export class SubscriptionService {
             subscription_id: subscription.subscription_id,
             user_id: subscription.user.user_id,
             email: subscription.user.email,
-            plan_id: subscription.plan_obj.plan_id,
-            plan_name: subscription.plan_obj.name,
+            plan_id: subscription.plan.plan_id,
+            plan_name: subscription.plan.name,
             start_date: subscription.start_date,
             end_date: subscription.end_date,
             is_merchant: await this.isUserMerchant(subscription.user.user_id), // Vérifie si l'utilisateur est un commerçant

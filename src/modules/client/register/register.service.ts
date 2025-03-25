@@ -139,7 +139,7 @@ export class RegisterService {
               start_date: new Date(subscription.current_period_start * 1000),
               end_date: new Date(subscription.current_period_end * 1000),
               user: savedUser,
-              plan_obj: plan,
+              plan: plan,
             });
     
             await this.subscriptionRepository.save(newSubscription);
@@ -250,7 +250,7 @@ export class RegisterService {
                       start_date: new Date(subscription.current_period_start * 1000),
                       end_date: new Date(subscription.current_period_end * 1000),
                       user: savedUser,
-                      plan_obj: plan,
+                      plan: plan,
                   });
   
                   await this.subscriptionRepository.save(newSubscription);
