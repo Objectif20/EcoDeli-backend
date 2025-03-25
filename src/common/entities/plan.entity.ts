@@ -45,7 +45,6 @@ export class Plan {
     @Column({ type: 'boolean', default: false })
     is_pro: boolean;
 
-    @OneToMany(() => Subscription, subscription => subscription.plan_obj)
+    @OneToMany(() => Subscription, subscription => subscription.plan)
     subscriptions: Subscription[];
-
 }

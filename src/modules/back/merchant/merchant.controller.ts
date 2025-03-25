@@ -9,8 +9,7 @@ export class MerchantController {
     constructor(private readonly merchantService: MerchantService) { }
 
     @Get()
-    @UseGuards(AdminJwtGuard, AdminRoleGuard)
-    @AdminRole('superadmin')
+    @UseGuards(AdminJwtGuard)
     async getAllMerchants(
         @Query('page') page: number = 1,
         @Query('limit') limit: number = 10,
@@ -19,15 +18,14 @@ export class MerchantController {
     }
 
     @Get(':id')
-    @UseGuards(AdminJwtGuard, AdminRoleGuard)
-    @AdminRole('superadmin')
+    @UseGuards(AdminJwtGuard)
     async getMerchantById(@Param('id') id: string) {
         return this.merchantService.getMerchantById(id);
     }
 
     @Patch(':id')
+    @AdminRole('MERCHANT')
     @UseGuards(AdminJwtGuard, AdminRoleGuard)
-    @AdminRole('superadmin')
     async updateMerchant(@Param('id') id: string, @Body() updateMerchantDto: any) {
         return this.merchantService.updateMerchant(id, updateMerchantDto);
     }
