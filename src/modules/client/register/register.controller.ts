@@ -1,16 +1,22 @@
-import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Post, UploadedFiles, UseGuards, UseInterceptors } from "@nestjs/common";
 import { ClientProfile } from "src/common/decorator/client-profile.decorator";
 import { ClientProfileGuard } from "src/common/guards/client-profile.guard";
 import { ClientJwtGuard } from "src/common/guards/user-jwt.guard";
 import { RegisterClientDTO } from "./dto/register.client.dto";
 import { RegisterService } from "./register.service";
 import { RegisterMerchantDTO } from "./dto/register.merchant.dto";
+import { FilesInterceptor } from "@nestjs/platform-express";
+import { diskStorage, memoryStorage } from "multer";
+import { extname } from "path";
+import { RegisterProviderDTO } from "./dto/register.provider.dto";
+import { MinioService } from "src/common/services/file/minio.service";
 
 
 @Controller("client/register")
 export class RegisterController {
     constructor(
-        private readonly registerService : RegisterService
+        private readonly registerService : RegisterService,
+        private readonly minioService: MinioService,
     ) {}
 
     @Post("client")
@@ -24,8 +30,29 @@ export class RegisterController {
     }
 
     @Post("provider")
-    async registerProvider(){
-        return 'register provider';
+    @UseInterceptors(FilesInterceptor('documents', 10, {
+      storage: memoryStorage(),
+    }))
+    async registerProvider(
+      @UploadedFiles() files: Array<Express.Multer.File>,
+      @Body() registerProviderDto: RegisterProviderDTO,
+    ) {
+      const documentData: { name: string; provider_document_url: string }[] = [];
+
+      for (const file of files) {
+        const filePath = `provider/${registerProviderDto.siret}/documents/${file.originalname}`;
+
+        await this.minioService.uploadFileToBucket('provider-documents', filePath, file);
+
+        documentData.push({
+          name: file.originalname,
+          provider_document_url: filePath,
+        });
+      }
+
+      const message = await this.registerService.createProvider(registerProviderDto, documentData);
+
+      return { message };
     }
 
     @Post("delivery")
@@ -34,6 +61,8 @@ export class RegisterController {
     async registerDelivery(){
         return 'register delivery';
     }
+
+  
 
     @Get('test')
     async test(){

@@ -13,18 +13,21 @@ import { Languages } from "src/common/entities/languages.entity";
 import { Themes } from "src/common/entities/theme.entity";
 import { Plan } from "src/common/entities/plan.entity";
 import { Subscription } from "src/common/entities/subscription.entity";
+import { SharedModule } from "src/common/shared/shared.module";
+import { ProviderContracts } from "src/common/entities/providers_contracts.entity";
+import { ProviderDocuments } from "src/common/entities/providers_documents.entity";
 
 
 @Module({
 
     imports: [
-        TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Languages, Themes, Plan, Subscription, Merchant]),
-        JwtModule.register({})
+        TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Languages, Themes, Plan, Subscription, Merchant, ProviderContracts, ProviderDocuments]),
+        JwtModule.register({}),
+        SharedModule
     ],
     controllers: [RegisterController],
     providers: [RegisterController, JwtService, RegisterService],
     exports: [TypeOrmModule, RegisterService],
-
 
 })
 export class RegisterModule {}

@@ -13,6 +13,12 @@ import { Plan } from "src/common/entities/plan.entity";
 import { DefaultApi as OneSignalClient } from '@onesignal/node-onesignal';
 import { RegisterMerchantDTO } from "./dto/register.merchant.dto";
 import { Merchant } from "src/common/entities/merchant.entity";
+import { MinioService } from "src/common/services/file/minio.service";
+import { Providers } from "src/common/entities/provider.entity";
+import { RegisterProviderDTO } from "./dto/register.provider.dto";
+import { ProviderContracts } from "src/common/entities/providers_contracts.entity";
+import { ProviderDocuments } from "src/common/entities/providers_documents.entity";
+import * as PDFDocument from 'pdfkit';
 
 @Injectable()
 export class RegisterService {
@@ -31,8 +37,15 @@ export class RegisterService {
         private readonly planRepository: Repository<Plan>,
         @InjectRepository(Merchant)
         private readonly merchantRepository: Repository<Merchant>,
+        @InjectRepository(Providers)
+        private readonly providersRepository: Repository<Providers>,
+        @InjectRepository(ProviderContracts)
+        private readonly providerContractsRepository: Repository<ProviderContracts>,
+        @InjectRepository(ProviderDocuments)
+        private readonly providerDocumentsRepository: Repository<ProviderDocuments>,
         @Inject('STRIPE_CLIENT') private readonly stripeClient: Stripe,
-        @Inject("ONESIGNAL_CLIENT") private readonly oneSignalClient: OneSignalClient
+        @Inject("ONESIGNAL_CLIENT") private readonly oneSignalClient: OneSignalClient,
+        private readonly minioService: MinioService,
     ) {}
 
     async registerClient(clientDto: RegisterClientDTO): Promise<{ message: string }> {
@@ -250,9 +263,122 @@ export class RegisterService {
   
       return { message: 'Commerçant inscrit avec succès' };
   }
-  
-    
 
+    async createProvider(registerProviderDto: RegisterProviderDTO, documentData: { name: string; provider_document_url: string }[]): Promise<{ message: string }> {
+      const { email, password, company_name, siret, address, service_type, description, postal_code, city, country, phone, newsletter, language_id, last_name, first_name, signature } = registerProviderDto;
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      const language = await this.languageRepository.findOne({ where: { language_id: language_id } });
+      if (!language) {
+        throw new BadRequestException('Langue non valide');
+      }
+
+      const defaultTheme = await this.themeRepository.findOne({ where: { theme_id: 1 } });
+        if (!defaultTheme) {
+          throw new BadRequestException("Le thème par défaut (id=1) est introuvable.");
+        }
+
+      const newsletterValue = newsletter === 'true';
+
+      const user = this.userRepository.create({
+        email,
+        password: hashedPassword,
+        newsletter : newsletterValue,
+        confirmed: false,
+        language,
+        theme: defaultTheme,
+      });
+
+      const savedUser = await this.userRepository.save(user);
+
+      const provider = this.providersRepository.create({
+        company_name,
+        siret,
+        address,
+        service_type,
+        description,
+        postal_code,
+        city,
+        country,
+        phone,
+        validated: false,
+        last_name,
+        first_name,
+        user: savedUser,
+        documents: documentData.map(doc => ({ ...doc, submission_date: new Date() })),
+      });
+
+      const savedProvider = await this.providersRepository.save(provider);
+
+      for (const doc of documentData) {
+        const providerDocument = this.providerDocumentsRepository.create({
+          ...doc,
+          provider: savedProvider,
+        });
+        await this.providerDocumentsRepository.save(providerDocument);
+      }
+
+      const contractUrl = await this.generateContractPdf(savedProvider, signature);
+
+      const providerContract = this.providerContractsRepository.create({
+        company_name: savedProvider.company_name,
+        siret: savedProvider.siret,
+        address: savedProvider.address,
+        contract_url: contractUrl,
+        provider: savedProvider,
+      });
+
+      await this.providerContractsRepository.save(providerContract);
+
+      return { message: 'Fournisseur enregistré avec succès' };
+    }
+
+  
+    async generateContractPdf(provider: Providers, imageBase64?: string): Promise<string> {
+      const doc = new PDFDocument({ margin: 50 });
+      const fileName = `contract-${provider.provider_id}.pdf`;
+      const filePath = `provider/${provider.siret}/contracts/${fileName}`;
+    
+      doc.fontSize(20).text('Contrat de Prestation de Services', { align: 'center' });
+      doc.moveDown();
+    
+      doc.fontSize(14).text(`Nom: ${provider.last_name}`);
+      doc.fontSize(14).text(`Prénom: ${provider.first_name}`);
+      doc.fontSize(14).text(`Entreprise: ${provider.company_name}`);
+      doc.fontSize(14).text(`SIRET: ${provider.siret}`);
+      doc.fontSize(14).text(`Adresse: ${provider.address}, ${provider.postal_code} ${provider.city}, ${provider.country}`);
+      doc.moveDown();
+    
+      doc.fontSize(14).text('Le prestataire accepte que ses données soient étudiées par EcoDeli afin de valider ou non son accès à la plateforme.');
+      doc.moveDown();
+    
+      if (imageBase64) {
+        const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+        const imageBuffer = Buffer.from(base64Data, 'base64');
+        doc.image(imageBuffer, {
+          fit: [100, 100],
+          align: 'right',
+          valign: 'bottom'
+        });
+      }
+    
+      const now = new Date();
+      const options = { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" } as Intl.DateTimeFormatOptions;
+      const timestamp = now.toLocaleDateString('fr-FR', options);
+      doc.fontSize(12).text(`Signé électroniquement le ${timestamp}`, { align: 'right' });
+    
+      const buffers: Buffer[] = [];
+      doc.on('data', buffers.push.bind(buffers));
+      doc.on('end', async () => {
+        const pdfBuffer = Buffer.concat(buffers);
+        console.log('Uploading contract to Minio ' + filePath);
+        await this.minioService.uploadBufferToBucket('provider-documents', filePath, pdfBuffer);
+      });
+    
+      doc.end();
+      return filePath;
+    }
 
 
     async test(){
