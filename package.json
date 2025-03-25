@@ -33,6 +33,7 @@
     "@nestjs/schedule": "^5.0.1",
     "@nestjs/swagger": "^11.0.6",
     "@nestjs/typeorm": "^11.0.0",
+    "@onesignal/node-onesignal": "^5.0.0-alpha-02",
     "bcrypt": "^5.1.1",
     "bottleneck": "^2.19.5",
     "cache-manager": "^6.4.1",

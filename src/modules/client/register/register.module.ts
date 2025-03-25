@@ -18,7 +18,7 @@ import { Subscription } from "src/common/entities/subscription.entity";
 @Module({
 
     imports: [
-        TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Languages, Themes, Plan, Subscription]),
+        TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Languages, Themes, Plan, Subscription, Merchant]),
         JwtModule.register({})
     ],
     controllers: [RegisterController],

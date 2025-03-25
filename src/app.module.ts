@@ -16,6 +16,7 @@ import { MinioService } from './common/services/file/minio.service';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ClientModule } from './modules/client/client.module';
 import { StripeModule } from './config/stripe.module';
+import { OneSignalModule } from './config/onesignal.module';
 
 @Global()
 @Module({
@@ -78,6 +79,7 @@ import { StripeModule } from './config/stripe.module';
     GuardsModule,
     ScheduleModule.forRoot(),
     StripeModule,
+    OneSignalModule
 
   ],
   providers: [

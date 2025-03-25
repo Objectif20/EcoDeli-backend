@@ -4,6 +4,7 @@ import { ClientProfileGuard } from "src/common/guards/client-profile.guard";
 import { ClientJwtGuard } from "src/common/guards/user-jwt.guard";
 import { RegisterClientDTO } from "./dto/register.client.dto";
 import { RegisterService } from "./register.service";
+import { RegisterMerchantDTO } from "./dto/register.merchant.dto";
 
 
 @Controller("client/register")
@@ -15,11 +16,11 @@ export class RegisterController {
     @Post("client")
     async registerClient(@Body() clientDto: RegisterClientDTO) {
         return this.registerService.registerClient(clientDto);
-      }
+    }
 
     @Post("merchant")
-    async registerMerchant(){
-        return 'register merchant';
+    async registerMerchant(@Body() merchantDto: RegisterMerchantDTO) {
+        return this.registerService.registerMerchant(merchantDto);
     }
 
     @Post("provider")
