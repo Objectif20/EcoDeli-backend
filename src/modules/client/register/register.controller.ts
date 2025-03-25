@@ -34,4 +34,9 @@ export class RegisterController {
         return 'register delivery';
     }
 
+    @Get('test')
+    async test(){
+        return this.registerService.test();
+    }
+
 }

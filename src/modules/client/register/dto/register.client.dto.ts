@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsString } from "class-validator";
+import { IsBoolean, IsEmail, IsNumber, IsOptional, IsString } from "class-validator";
 
 
 export class RegisterClientDTO {
@@ -23,5 +23,9 @@ export class RegisterClientDTO {
 
     @IsString()
     language_id: string;
+
+    @IsOptional()
+    @IsNumber()
+    plan_id?: number;
 
 }

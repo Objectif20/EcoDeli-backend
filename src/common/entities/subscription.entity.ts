@@ -14,9 +14,6 @@ export class Subscription {
     @Column({ length: 255 })
     stripe_subscription_id: string;
 
-    @Column({ length: 20 })
-    plan: string;
-
     @Column({ length: 50, nullable: true })
     status?: string;
 

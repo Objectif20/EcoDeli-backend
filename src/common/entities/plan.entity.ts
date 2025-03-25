@@ -48,4 +48,10 @@ export class Plan {
     @OneToMany(() => Subscription, subscription => subscription.plan_obj)
     subscriptions: Subscription[];
 
+    @Column({ length: 255, nullable: true })
+    stripe_product_id: string;
+
+    @Column({ length: 255, nullable: true })
+    stripe_price_id: string;
+
 }
