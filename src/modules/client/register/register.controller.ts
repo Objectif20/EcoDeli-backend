@@ -6,10 +6,11 @@ import { ClientJwtGuard } from "src/common/guards/user-jwt.guard";
 import { RegisterClientDTO } from "./dto/register.client.dto";
 import { RegisterService } from "./register.service";
 import { RegisterMerchantDTO } from "./dto/register.merchant.dto";
-import { FilesInterceptor } from "@nestjs/platform-express";
+import { AnyFilesInterceptor, FilesInterceptor } from "@nestjs/platform-express";
 import { memoryStorage } from "multer";
 import { RegisterProviderDTO } from "./dto/register.provider.dto";
 import { MinioService } from "src/common/services/file/minio.service";
+import { RegisterDeliveryPersonDTO } from "./dto/register.delivery.dto";
 
 @ApiTags('Registration')
 @Controller("client/register")
@@ -86,13 +87,24 @@ export class RegisterController {
         return 'register delivery';
     }
 
-    @Get('test')
-    @ApiOperation({
-        summary: 'Test Endpoint',
-        operationId: 'testEndpoint',
-    })
-    @ApiResponse({ status: 200, description: 'Test successful' })
-    async test() {
-        return this.registerService.test();
-    }
+    @Post("deliveryman")
+        @ApiOperation({
+            summary: 'Register a Delivery Person',
+            operationId: 'registerDeliveryPerson',
+        })
+        @ApiConsumes('multipart/form-data')
+        @ApiBody({ type: RegisterDeliveryPersonDTO })
+        @UseInterceptors(AnyFilesInterceptor()) 
+        @ApiResponse({ status: 201, description: 'Delivery person registered successfully' })
+        async registerDeliveryPerson(
+            @UploadedFiles() files: Array<Express.Multer.File>,  
+            @Body() registerDeliveryPersonDto: RegisterDeliveryPersonDTO,
+        ) {
+            const deliveryPersonFiles = files.filter(file => file.fieldname === 'delivery_person_documents');
+            const vehicleFiles = files.filter(file => file.fieldname === 'vehicle_documents');
+
+            const message = await this.registerService.createDeliveryPerson(registerDeliveryPersonDto, deliveryPersonFiles, vehicleFiles);
+            return { message };
+        }
+    
 }

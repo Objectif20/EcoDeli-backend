@@ -19,6 +19,12 @@ import { RegisterProviderDTO } from "./dto/register.provider.dto";
 import { ProviderContracts } from "src/common/entities/providers_contracts.entity";
 import { ProviderDocuments } from "src/common/entities/providers_documents.entity";
 import * as PDFDocument from 'pdfkit';
+import { DeliveryPerson } from "src/common/entities/delivery_persons.entity";
+import { DeliveryPersonDocument } from "src/common/entities/delivery_person_documents.entity";
+import { Vehicle } from "src/common/entities/vehicle.entity";
+import { VehicleDocument } from "src/common/entities/vehicle_documents.entity";
+import { Category } from "src/common/entities/category.entity";
+import { RegisterDeliveryPersonDTO } from "./dto/register.delivery.dto";
 
 @Injectable()
 export class RegisterService {
@@ -43,6 +49,16 @@ export class RegisterService {
         private readonly providerContractsRepository: Repository<ProviderContracts>,
         @InjectRepository(ProviderDocuments)
         private readonly providerDocumentsRepository: Repository<ProviderDocuments>,
+        @InjectRepository(DeliveryPerson)
+        private readonly deliveryPersonRepository: Repository<DeliveryPerson>,
+        @InjectRepository(DeliveryPersonDocument)
+        private readonly deliveryPersonDocumentRepository: Repository<DeliveryPersonDocument>,
+        @InjectRepository(Vehicle)
+        private readonly vehicleRepository: Repository<Vehicle>,
+        @InjectRepository(VehicleDocument)
+        private readonly vehicleDocumentRepository: Repository<VehicleDocument>,
+        @InjectRepository(Category)
+        private readonly categoryRepository: Repository<Category>,
         @Inject('STRIPE_CLIENT') private readonly stripeClient: Stripe,
         @Inject("ONESIGNAL_CLIENT") private readonly oneSignalClient: OneSignalClient,
         private readonly minioService: MinioService,
@@ -319,7 +335,7 @@ export class RegisterService {
         await this.providerDocumentsRepository.save(providerDocument);
       }
 
-      const contractUrl = await this.generateContractPdf(savedProvider, signature);
+      const contractUrl = await this.generateProviderContractPdf(savedProvider, signature);
 
       const providerContract = this.providerContractsRepository.create({
         company_name: savedProvider.company_name,
@@ -335,7 +351,7 @@ export class RegisterService {
     }
 
   
-    async generateContractPdf(provider: Providers, imageBase64?: string): Promise<string> {
+    async generateProviderContractPdf(provider: Providers, imageBase64?: string): Promise<string> {
       const doc = new PDFDocument({ margin: 50 });
       const fileName = `contract-${provider.provider_id}.pdf`;
       const filePath = `provider/${provider.siret}/contracts/${fileName}`;
@@ -379,12 +395,143 @@ export class RegisterService {
       doc.end();
       return filePath;
     }
-
-
-    async test(){
-      const paymentMethod = await this.stripeClient.paymentMethods.retrieve('pm_1R6d6t2Yjtdc4SmmCHmruGJb');
-      console.log(paymentMethod);
-
+    async createDeliveryPerson(registerDeliveryPersonDto: RegisterDeliveryPersonDTO, deliveryPersonFiles: Array<Express.Multer.File>, vehicleFiles: Array<Express.Multer.File>): Promise<{ message: string }> {
+      const { license, vehicle_number, vehicle_type, status, professional_email, phone_number, country, city, address, postal_code, language_id, user_id, category_id, signature } = registerDeliveryPersonDto;
+    
+      const language = await this.languageRepository.findOne({ where: { language_id: language_id } });
+      if (!language) {
+        throw new BadRequestException('Langue non valide');
+      }
+    
+      const categoryToNumber = parseInt(category_id);
+      const category = await this.categoryRepository.findOne({ where: { category_id: categoryToNumber } });
+      if (!category) {
+        throw new BadRequestException('Catégorie de véhicule non valide');
+      }
+    
+      const user = await this.userRepository.findOne({ where: { user_id } });
+      if (!user) {
+        throw new BadRequestException('Utilisateur non trouvé');
+      }
+    
+      const deliveryPerson = this.deliveryPersonRepository.create({
+        license,
+        vehicle_number,
+        vehicle_type,
+        status,
+        professional_email,
+        phone_number,
+        country,
+        city,
+        address,
+        postal_code,
+        validated: false,
+        user,
+      });
+    
+      const savedDeliveryPerson = await this.deliveryPersonRepository.save(deliveryPerson);
+    
+      for (const file of deliveryPersonFiles) {
+        const filePath = `delivery-person/${savedDeliveryPerson.delivery_person_id}/documents/${file.originalname}`;
+        await this.minioService.uploadFileToBucket('client-documents', filePath, file);
+    
+        const deliveryPersonDocument = this.deliveryPersonDocumentRepository.create({
+          name: file.originalname,
+          document_url: filePath,
+          delivery_person: savedDeliveryPerson,
+        });
+        await this.deliveryPersonDocumentRepository.save(deliveryPersonDocument);
+      }
+    
+      const vehicle = this.vehicleRepository.create({
+        model: vehicle_type,
+        registration_number: vehicle_number,
+        electric: false,
+        validated: false,
+        category,
+        deliveryPerson: savedDeliveryPerson,
+      });
+    
+      const savedVehicle = await this.vehicleRepository.save(vehicle);
+    
+      for (const file of vehicleFiles) {
+        const filePath = `vehicle/${savedVehicle.vehicle_id}/documents/${file.originalname}`;
+        await this.minioService.uploadFileToBucket('client-documents', filePath, file);
+    
+        const vehicleDocument = this.vehicleDocumentRepository.create({
+          name: file.originalname,
+          vehicle_document_url: filePath,
+          vehicle: savedVehicle,
+        });
+        await this.vehicleDocumentRepository.save(vehicleDocument);
+      }
+    
+      const contractUrl = await this.generateDeliveryPersonContractPdf(savedDeliveryPerson, signature);
+    
+      const deliveryPersonContract = this.deliveryPersonDocumentRepository.create({
+        name: 'Contrat de profil livreur',
+        delivery_person: savedDeliveryPerson,
+        document_url: contractUrl,
+      });
+    
+      await this.deliveryPersonDocumentRepository.save(deliveryPersonContract);
+    
+      return { message: 'Livreur enregistré avec succès' };
     }
+
+  async generateDeliveryPersonContractPdf(deliveryPerson: DeliveryPerson, signature?: string): Promise<string> {
+    const doc = new PDFDocument({ margin: 50 });
+    const fileName = `contract-${deliveryPerson.delivery_person_id}.pdf`;
+    const filePath = `delivery-person/${deliveryPerson.delivery_person_id}/contracts/${fileName}`;
+  
+    const client = await this.clientRepository.findOne({ where: { user: { user_id: deliveryPerson.user.user_id } } });
+  
+    if (!client) {
+      throw new BadRequestException('Client non trouvé');
+    }
+  
+    doc.fontSize(20).text('Contrat de Livraison', { align: 'center' });
+    doc.moveDown();
+  
+    doc.fontSize(14).text(`Nom: ${client.last_name}`);
+    doc.fontSize(14).text(`Prénom: ${client.first_name}`);
+    doc.fontSize(14).text(`Email Professionnel: ${deliveryPerson.professional_email}`);
+    doc.fontSize(14).text(`Numéro de Téléphone: ${deliveryPerson.phone_number}`);
+    doc.fontSize(14).text(`Adresse: ${deliveryPerson.address}, ${deliveryPerson.postal_code} ${deliveryPerson.city}, ${deliveryPerson.country}`);
+    doc.fontSize(14).text(`Numéro de Permis: ${deliveryPerson.license}`);
+    doc.fontSize(14).text(`Type de Véhicule: ${deliveryPerson.vehicle_type}`);
+    doc.fontSize(14).text(`Numéro de Véhicule: ${deliveryPerson.vehicle_number}`);
+    doc.moveDown();
+  
+    doc.fontSize(14).text('Le livreur accepte que ses données soient étudiées par EcoDeli afin de valider ou non son accès à la plateforme.');
+    doc.moveDown();
+  
+    if (signature) {
+      const base64Data = signature.replace(/^data:image\/\w+;base64,/, '');
+      const imageBuffer = Buffer.from(base64Data, 'base64');
+      doc.image(imageBuffer, {
+        fit: [100, 100],
+        align: 'right',
+        valign: 'bottom'
+      });
+    }
+  
+    const now = new Date();
+    const options = { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" } as Intl.DateTimeFormatOptions;
+    const timestamp = now.toLocaleDateString('fr-FR', options);
+    doc.fontSize(12).text(`Signé électroniquement le ${timestamp}`, { align: 'right' });
+  
+    const buffers: Buffer[] = [];
+    doc.on('data', buffers.push.bind(buffers));
+    doc.on('end', async () => {
+      const pdfBuffer = Buffer.concat(buffers);
+      console.log('Uploading contract to Minio ' + filePath);
+      await this.minioService.uploadBufferToBucket('client-documents', filePath, pdfBuffer);
+    });
+  
+    doc.end();
+    return filePath;
+  }
+
 }
 
