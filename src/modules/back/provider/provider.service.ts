@@ -210,8 +210,13 @@ export class ProvidersService {
     }
   }
 
-  async validateService(serviceId: string, validateServiceDto: ValidateServiceDto): Promise<{message: string}> {
+  async validateService(id_provider : string,serviceId: string, validateServiceDto: ValidateServiceDto): Promise<{message: string}> {
     const { validated, admin_id, price_admin } = validateServiceDto;
+
+    const provider = await this.providersRepository.findOne({ where: { provider_id: id_provider } });
+    if (!provider) {
+      throw new NotFoundException('Provider not found');
+    }
 
     const service = await this.servicesListRepository.findOne({ where: { service_id: serviceId } });
     if (!service) {
@@ -266,8 +271,14 @@ export class ProvidersService {
     }
   }
 
-  async updateService(id: string, updateServiceDto: UpdateServiceDto): Promise<{message: string}> {
+  async updateService(id_provider : string, id: string, updateServiceDto: UpdateServiceDto): Promise<{message: string}> {
     const service = await this.servicesListRepository.findOne({ where: { service_id: id } });
+
+    const provider = await this.providersRepository.findOne({ where: { provider_id: id_provider } });
+    if (!provider) {
+      throw new NotFoundException('Provider not found');
+    }
+
     if (!service) {
       throw new NotFoundException('Service not found');
     }
