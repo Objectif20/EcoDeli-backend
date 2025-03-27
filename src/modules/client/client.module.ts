@@ -4,6 +4,7 @@ import { RegisterModule } from './register/register.module';
 import { TutorialModule } from './tutoriel/tuto.module';
 import { ThemeModule } from './theme/theme.module';
 import { LanguageModule } from './langue/langue.module';
+import { DeliveryModule } from './delivery/delivery.module';
 
 @Module({
     imports: [
@@ -11,7 +12,8 @@ import { LanguageModule } from './langue/langue.module';
         RegisterModule,
         TutorialModule,
         ThemeModule,
-        LanguageModule
+        LanguageModule,
+        DeliveryModule
     ],
     providers: [],
 })

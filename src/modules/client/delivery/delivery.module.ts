@@ -7,8 +7,8 @@ import { Client } from "src/common/entities/client.entity";
 import { Providers } from "src/common/entities/provider.entity";
 import { DeliveryPerson } from "src/common/entities/delivery_persons.entity";
 import { Merchant } from "src/common/entities/merchant.entity";
-import { RegisterService } from "./register.service";
-import { RegisterController } from "./register.controller";
+import { DeliveryService } from "./delivery.service";
+import { DeliveryController } from "./delivery.controller";
 import { Languages } from "src/common/entities/languages.entity";
 import { Themes } from "src/common/entities/theme.entity";
 import { Plan } from "src/common/entities/plan.entity";
@@ -20,18 +20,24 @@ import { DeliveryPersonDocument } from "src/common/entities/delivery_person_docu
 import { VehicleDocument } from "src/common/entities/vehicle_documents.entity";
 import { Vehicle } from "src/common/entities/vehicle.entity";
 import { Category } from "src/common/entities/category.entity";
+import { Delivery } from "src/common/entities/delivery.entity";
+import { Shipment } from "src/common/entities/shipment.entity";
+import { Keyword } from "src/common/entities/keywords.entity";
+import { DeliveryKeyword } from "src/common/entities/delivery_keywords.entity";
 
 
 @Module({
 
     imports: [
-        TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Languages, Themes, Plan, Subscription, Merchant, ProviderContracts, ProviderDocuments, DeliveryPerson, DeliveryPersonDocument, VehicleDocument, Vehicle, Category]),
+        TypeOrmModule.forFeature([Users, Client, DeliveryPerson, Merchant, Plan, Subscription, Merchant, 
+            ProviderContracts, ProviderDocuments, DeliveryPerson, DeliveryPersonDocument, Category, Delivery,
+            Shipment, Keyword, DeliveryKeyword]),
         JwtModule.register({}),
         SharedModule
     ],
-    controllers: [RegisterController],
-    providers: [RegisterController, JwtService, RegisterService],
-    exports: [TypeOrmModule, RegisterService],
+    controllers: [DeliveryController],
+    providers: [DeliveryController, JwtService, DeliveryService],
+    exports: [TypeOrmModule, DeliveryService],
 
 })
-export class RegisterModule {}
+export class DeliveryModule {}
