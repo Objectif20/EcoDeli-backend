@@ -1,5 +1,7 @@
-import { Controller, Delete, Get, Patch, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Patch, Post, UploadedFiles, UseInterceptors } from "@nestjs/common";
 import { DeliveryService } from "./delivery.service";
+import { AnyFilesInterceptor } from "@nestjs/platform-express";
+import { CreateShipmentDTO } from "./dto/create-shipment.dto";
 
 @Controller("client/deliveries")
 export class DeliveryController {
@@ -8,37 +10,46 @@ export class DeliveryController {
         private readonly deliveryService: DeliveryService
     ) {}
 
-    @Post()
-    async createDelivery() {
-        return "Delivery created successfully";
+    @Post('shipments')
+    @UseInterceptors(AnyFilesInterceptor())
+    async createShipment(
+        @Body() createShipmentDTO: CreateShipmentDTO,
+        @UploadedFiles() files: Express.Multer.File[]
+    ) {
+        console.log("🚀 Shipment Data:", createShipmentDTO);
+        console.log("📸 Uploaded Files:", files);
+
+        const shipment = await this.deliveryService.createDelivery(createShipmentDTO, files);
+
+        return { message: "Shipment received successfully!", data: shipment };
     }
 
-    @Get()
+    @Get("shipments")
     async getDeliveries() {
         return "Deliveries retrieved successfully";
     }
 
-    @Get(":id")
+    @Get("shipments/:id")
     async getDeliveryById() {
         return "Delivery retrieved successfully";
     }
 
-    @Post(":id/book")
+    @Post("shipments/:id/book")
     async bookDelivery() {
         return "Delivery booked successfully";
     }
 
-    @Delete(":id/cancel")
+    @Delete("shipments/:id/cancel")
     async cancelDelivery() {
         return "Delivery cancelled successfully";
     }
 
-    @Patch(":id")
+    @Patch("shipments/:id")
     async updateDelivery() {
         return "Delivery updated successfully";
     }
 
-    @Delete(":id")
+    @Delete("shipments/:id")
     async deleteDelivery() {
         return "Delivery deleted successfully";
     }
@@ -81,6 +92,16 @@ export class DeliveryController {
     @Delete("/favorite/:id")
     async removeFavoriteDelivery() {
         return "Favorite delivery removed successfully";
+    }
+
+    @Post("/comments")
+    async addComment() {
+        return "Comment added successfully";
+    }
+
+    @Post("/comments/:id/reply")
+    async replyComment() {
+        return "Comment replied successfully";
     }
 
 }

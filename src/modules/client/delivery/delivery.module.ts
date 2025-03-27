@@ -24,6 +24,15 @@ import { Delivery } from "src/common/entities/delivery.entity";
 import { Shipment } from "src/common/entities/shipment.entity";
 import { Keyword } from "src/common/entities/keywords.entity";
 import { DeliveryKeyword } from "src/common/entities/delivery_keywords.entity";
+import { Parcel } from "src/common/entities/parcels.entity";
+import { ParcelImage } from "src/common/entities/parcel_images.entity";
+import { Favorite } from "src/common/entities/favorites.entity";
+import { Store } from "src/common/entities/stores.entity";
+import { Warehouse } from "src/common/entities/warehouses.entity";
+import { ExchangePoint } from "src/common/entities/exchange_points.entity";
+import { DeliveryCommission } from "src/common/entities/delivery_commission.entity";
+import { DeliveryReview } from "src/common/entities/delivery_reviews.entity";
+import { DeliveryReviewResponse } from "src/common/entities/delivery_review_responses.entity";
 
 
 @Module({
@@ -31,7 +40,7 @@ import { DeliveryKeyword } from "src/common/entities/delivery_keywords.entity";
     imports: [
         TypeOrmModule.forFeature([Users, Client, DeliveryPerson, Merchant, Plan, Subscription, Merchant, 
             ProviderContracts, ProviderDocuments, DeliveryPerson, DeliveryPersonDocument, Category, Delivery,
-            Shipment, Keyword, DeliveryKeyword]),
+            Shipment, Keyword, DeliveryKeyword, Parcel, ParcelImage, Favorite, Store, ExchangePoint, Warehouse, DeliveryCommission, DeliveryReview, DeliveryReviewResponse]),
         JwtModule.register({}),
         SharedModule
     ],
