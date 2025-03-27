@@ -3,6 +3,8 @@ import { Users } from './user.entity';
 import { Delivery } from './delivery.entity';
 import { DeliveryKeyword } from './delivery_keywords.entity';
 import { Store } from './stores.entity';
+import { Parcel } from './parcels.entity';
+import { Favorite } from './favorites.entity';
 
 @Entity('shipments')
 export class Shipment {
@@ -66,4 +68,11 @@ export class Shipment {
 
     @OneToMany(() => Store, store => store.shipment)
     stores: Store[];
+
+    @OneToMany(() => Parcel, (parcel) => parcel.shipment)
+    parcels: Parcel[];
+
+    @OneToMany(() => Favorite, (favorite) => favorite.shipment)
+    favorites: Favorite[];
+
 }

@@ -37,9 +37,15 @@ import { DeliveryKeyword } from './delivery_keywords.entity';
 import { Warehouse } from './warehouses.entity';
 import { ExchangePoint } from './exchange_points.entity';
 import { Store } from './stores.entity';
+import { Parcel } from './parcels.entity';
+import { ParcelImage } from './parcel_images.entity';
+import { Favorite } from './favorites.entity';
 
 export const entities = [
   Admin,
+  Parcel,
+  Favorite,
+  ParcelImage,
   Warehouse,
   ExchangePoint,
   Store,
