@@ -40,9 +40,13 @@ import { Store } from './stores.entity';
 import { Parcel } from './parcels.entity';
 import { ParcelImage } from './parcel_images.entity';
 import { Favorite } from './favorites.entity';
+import { Transfer } from './transfers.entity';
+import { Trip } from './trips.entity';
 
 export const entities = [
   Admin,
+  Trip,
+  Transfer,
   Parcel,
   Favorite,
   ParcelImage,
