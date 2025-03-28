@@ -5,6 +5,7 @@ import { DeliveryKeyword } from './delivery_keywords.entity';
 import { Store } from './stores.entity';
 import { Parcel } from './parcels.entity';
 import { Favorite } from './favorites.entity';
+import { Point } from 'geojson';
 
 @Entity('shipments')
 export class Shipment {
@@ -50,11 +51,12 @@ export class Shipment {
     @Column({ type: 'varchar', length: 255, nullable: true })
     arrival_city: string | null;
 
-    @Column({ type: 'text', nullable: true })
-    departure_location: string | null;
+    // Modification : stocke un POINT pour la localisation
+    @Column({ type: 'geometry', spatialFeatureType: 'Point', srid: 4326, nullable: true })
+    departure_location: Point | null;
 
-    @Column({ type: 'text', nullable: true })
-    arrival_location: string | null;
+    @Column({ type: 'geometry', spatialFeatureType: 'Point', srid: 4326, nullable: true })
+    arrival_location: Point | null;
 
     @ManyToOne(() => Users, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'user_id' })
@@ -74,5 +76,4 @@ export class Shipment {
 
     @OneToMany(() => Favorite, (favorite) => favorite.shipment)
     favorites: Favorite[];
-
 }
