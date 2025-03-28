@@ -39,13 +39,13 @@ class ShipmentDTO {
     @IsString()
     description: string;
 
-    @IsNumber()
+    @IsString()
     @IsOptional()
-    estimated_total_price?: number;
+    estimated_total_price?: string;
 
-    @IsNumber()
+    @IsString()
     @IsOptional()
-    proposed_delivery_price?: number;
+    proposed_delivery_price?: string;
 
     @IsString()
     @IsOptional()

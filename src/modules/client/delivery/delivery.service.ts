@@ -9,6 +9,10 @@ import { DeliveryKeyword } from "src/common/entities/delivery_keywords.entity";
 import { Keyword } from "src/common/entities/keywords.entity";
 import { Users } from "src/common/entities/user.entity";
 import { MinioService } from "src/common/services/file/minio.service";
+import { v4 as uuidv4 } from 'uuid';
+import * as path from "path"
+import { GetShipmentsDTO } from "./dto/get-shipment.dto";
+
 
 @Injectable()
 export class DeliveryService {
@@ -47,8 +51,8 @@ export class DeliveryService {
     
         const shipment = this.shipmentRepository.create({
             description: createShipmentDTO.shipment.description,
-            estimated_total_price: createShipmentDTO.shipment.estimated_total_price,
-            proposed_delivery_price: createShipmentDTO.shipment.proposed_delivery_price,
+            estimated_total_price: Number(createShipmentDTO.shipment.estimated_total_price),
+            proposed_delivery_price: Number(createShipmentDTO.shipment.proposed_delivery_price),
             weight: parseFloat(createShipmentDTO.shipment.weight ?? "0"),
             volume: parseFloat(createShipmentDTO.shipment.volume ?? "0"),
             deadline_date: createShipmentDTO.shipment.deadline_date,
@@ -82,6 +86,7 @@ export class DeliveryService {
         const savedShipment = await this.shipmentRepository.save(shipment);
     
         const savedParcels: Parcel[] = [];
+    
         for (const [parcelIndex, parcelDTO] of createShipmentDTO.shipment.parcels.entries()) {
             if (!parcelDTO.name) continue;
     
@@ -96,19 +101,19 @@ export class DeliveryService {
     
             const savedParcel = await this.parcelRepository.save(parcel);
             savedParcels.push(savedParcel);
-        }
-    
-        for (const [parcelIndex, parcelDTO] of createShipmentDTO.shipment.parcels.entries()) {
-            const savedParcel = savedParcels[parcelIndex];
     
             let imageIndex = 1;
             while (true) {
-                const imageFieldName = `shipment[parcels][${parcelIndex}][images][images_${imageIndex}]`;
+                const imageFieldName = `shipment[parcels][${parcelIndex}][images_${imageIndex}]`;
                 const file = files.find(file => file.fieldname.trim() === imageFieldName);
     
-                if (!file) break;
+                if (!file) {
+                    break;
+                }
     
-                const filePath = `shipments/${savedShipment.shipment_id}/parcels/${savedParcel.parcel_id}/images/${file.originalname}`;
+                const fileExtension = path.extname(file.originalname);
+                const uniqueFileName = `${uuidv4()}${fileExtension}`;
+                const filePath = `shipments/${savedShipment.shipment_id}/parcels/${savedParcel.parcel_id}/images/${uniqueFileName}`;
                 await this.minioService.uploadFileToBucket('client-images', filePath, file);
     
                 const parcelImage = this.parcelImageRepository.create({
@@ -121,7 +126,47 @@ export class DeliveryService {
             }
         }
     
-        return savedShipment;
+        const { user: shipmentUser, ...shipmentWithoutUser } = savedShipment;
+        return shipmentWithoutUser;
+        
     }
+
+
+
+    async getShipments(filters: GetShipmentsDTO): Promise<Shipment[]> {
+        const queryBuilder = this.shipmentRepository.createQueryBuilder("shipment");
+    
+        if (filters.latitude && filters.longitude && filters.radius) {
+            console.log(`Filtering by location: Latitude=${filters.latitude}, Longitude=${filters.longitude}, Radius=${filters.radius}`);
+            queryBuilder.andWhere(
+                `ST_DWithin(
+                    shipment.departure_location::geography,
+                    ST_SetSRID(ST_MakePoint(:latitude, :longitude), 4326)::geography,
+                    :radius
+                )`,
+                { latitude: filters.latitude, longitude: filters.longitude, radius: filters.radius*1000 }
+            );
+        }
+    
+        if (filters.routeStartLatitude && filters.routeStartLongitude && filters.routeEndLatitude && filters.routeEndLongitude && filters.routeRadius) {
+            console.log(`Filtering by route: StartLat=${filters.routeStartLatitude}, StartLon=${filters.routeStartLongitude}, EndLat=${filters.routeEndLatitude}, EndLon=${filters.routeEndLongitude}, Radius=${filters.routeRadius}`);
+            queryBuilder.andWhere(
+                `ST_DWithin(
+                    shipment.departure_location::geography,
+                    ST_SetSRID(ST_MakeLine(ST_MakePoint(:startLat, :startLon), ST_MakePoint(:endLat, :endLon)), 4326)::geography,
+                    :routeRadius
+                )`,
+                {
+                    startLat: filters.routeStartLatitude,
+                    startLon: filters.routeStartLongitude,
+                    endLat: filters.routeEndLatitude,
+                    endLon: filters.routeEndLongitude,
+                    routeRadius: filters.routeRadius
+                }
+            );
+        }    
+        return await queryBuilder.getMany();
+    }
+    
     
 }

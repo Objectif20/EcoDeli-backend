@@ -1,7 +1,8 @@
-import { Body, Controller, Delete, Get, Patch, Post, UploadedFiles, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Patch, Post, Query, UploadedFiles, UseInterceptors } from "@nestjs/common";
 import { DeliveryService } from "./delivery.service";
 import { AnyFilesInterceptor } from "@nestjs/platform-express";
 import { CreateShipmentDTO } from "./dto/create-shipment.dto";
+import { GetShipmentsDTO } from "./dto/get-shipment.dto";
 
 @Controller("client/deliveries")
 export class DeliveryController {
@@ -16,8 +17,6 @@ export class DeliveryController {
         @Body() createShipmentDTO: CreateShipmentDTO,
         @UploadedFiles() files: Express.Multer.File[]
     ) {
-        console.log("🚀 Shipment Data:", createShipmentDTO);
-        console.log("📸 Uploaded Files:", files);
 
         const shipment = await this.deliveryService.createDelivery(createShipmentDTO, files);
 
@@ -25,8 +24,8 @@ export class DeliveryController {
     }
 
     @Get("shipments")
-    async getDeliveries() {
-        return "Deliveries retrieved successfully";
+    async getShipments(@Query() filters: GetShipmentsDTO) {
+        return this.deliveryService.getShipments(filters);
     }
 
     @Get("shipments/:id")
