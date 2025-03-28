@@ -3,6 +3,8 @@ import { Admin } from "./admin.entity";
 import { Services } from "./service.entity";
 import { ProviderKeywords } from "./provider_keyword.entity";
 import { ServiceImage } from "./services_image.entity";
+import { FavoriteService } from "./favorite_services.entity";
+import { Appointment } from "./appointments.entity";
 
 @Entity({ name: 'services_list' })
 export class ServicesList {
@@ -28,16 +30,16 @@ export class ServicesList {
   city: string;
 
   @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
-  price: number; 
+  price: number;
 
   @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
   price_admin: number;
 
   @Column({ type: "int", nullable: true })
-  duration_minute: number; 
+  duration_minute: number;
 
   @Column({ default: true })
-  available: boolean; 
+  available: boolean;
 
   @ManyToOne(() => Admin, { nullable: true })
   @JoinColumn({ name: "admin_id" })
@@ -51,4 +53,11 @@ export class ServicesList {
 
   @OneToMany(() => ServiceImage, image => image.serviceList)
   images: ServiceImage[];
+
+  @OneToMany(() => FavoriteService, (favoriteService) => favoriteService.service)
+  favorite_services: FavoriteService[];
+
+  @OneToMany(() => Appointment, (appointment) => appointment.service)
+  appointments: Appointment[];
+
 }

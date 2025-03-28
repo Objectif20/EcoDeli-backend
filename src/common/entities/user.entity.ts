@@ -1,8 +1,10 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, OneToMany } from "typeorm";
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, OneToMany, OneToOne } from "typeorm";
 import { Themes } from "./theme.entity";
 import { Languages } from "./languages.entity";
 import { Merchant } from './merchant.entity';
 import { Subscription } from './subscription.entity';
+import { Client } from './clients.entity';
+import { FavoriteService } from "./favorite_services.entity";
 
 
 @Entity({ name: 'users' })
@@ -65,4 +67,11 @@ export class Users {
 
     @OneToMany(() => Subscription, subscription => subscription.user)
     subscriptions: Subscription[];
+
+    @OneToOne(() => Client, (client) => client.user)
+    client: Client;
+
+    @OneToMany(() => FavoriteService, (favoriteService) => favoriteService.service)
+    favorite_services: FavoriteService[];
+
 }

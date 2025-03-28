@@ -42,9 +42,21 @@ import { ParcelImage } from './parcel_images.entity';
 import { Favorite } from './favorites.entity';
 import { Transfer } from './transfers.entity';
 import { Trip } from './trips.entity';
+import { FavoriteService } from './favorite_services.entity';
+import { Client } from './clients.entity';
+import { Appointment } from './appointments.entity';
+import { PrestaReview } from './presta_reviews.entity';
+import { PrestaReviewResponse } from './presta_review_responses.entity';
+import { ProviderCommission } from './provider_commissions.entity';
 
 export const entities = [
   Admin,
+  PrestaReview,
+  PrestaReviewResponse,
+  ProviderCommission,
+  Appointment,
+  FavoriteService,
+  Client,
   Trip,
   Transfer,
   Parcel,
