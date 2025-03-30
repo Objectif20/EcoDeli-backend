@@ -1,6 +1,8 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { Warehouse } from './warehouses.entity';
 import { Store } from './stores.entity';
+import { Point } from 'geojson';
+
 
 @Entity({ name: 'exchange_points' })
 export class ExchangePoint {
@@ -11,7 +13,7 @@ export class ExchangePoint {
     city: string;
 
     @Column({ type: 'geography', spatialFeatureType: 'Point', srid: 4326 })
-    coordinates: any; // Il y a un type pour les coordonnés ? Ce n'est pas float
+    coordinates: Point; // Il y a un type pour les coordonnés ? Ce n'est pas float
 
     @Column({ type: 'text', nullable: true })
     description?: string;

@@ -135,8 +135,8 @@ export class AuthService {
       };
   }
 
-  async validateAccount(password_code : string) : Promise<{ message: string }> {
-    const user = await this.userRepository.findOne({ where: { password_code: password_code } });
+  async validateAccount(validate_code : string) : Promise<{ message: string }> {
+    const user = await this.userRepository.findOne({ where: { validate_code: validate_code } });
     if (!user) throw new UnauthorizedException('Invalid code');
 
     user.confirmed = true;
