@@ -1,4 +1,4 @@
-import { IsUUID, IsOptional, IsString, IsNotEmpty, ValidateNested, IsNumber, IsArray } from 'class-validator';
+import { IsUUID, IsOptional, IsString, IsNotEmpty, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Point } from 'geojson';
 

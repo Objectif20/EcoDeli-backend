@@ -22,6 +22,7 @@ import { Warehouse } from "src/common/entities/warehouses.entity";
 import { ExchangePoint } from "src/common/entities/exchange_points.entity";
 import { Store } from "src/common/entities/stores.entity";
 import { CreateDeliveryDto } from "./dto/create-delivery.dto";
+import { StripeService } from "src/common/services/stripe/stripe.service";
 
 
 @Injectable()
@@ -70,6 +71,8 @@ export class DeliveryService {
         @InjectRepository(Store)
         private readonly storeRepository: Repository<Store>,
 
+
+        private readonly stripeService : StripeService,
         private readonly minioService: MinioService, 
     ) {}
 
@@ -242,6 +245,34 @@ export class DeliveryService {
         const savedDelivery = await this.deliveryRepository.save(delivery);
     
         return savedDelivery;
+    }
+
+    async cancelDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryId },
+            relations: ["delivery_person", "shipment"],
+
+        });
+
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+
+        if (delivery.delivery_person.user.user_id !== user_id) {
+            throw new Error("User is not authorized to cancel this delivery.");
+        }
+
+        if (delivery.status === 'finished') {
+            throw new Error("Cannot cancel a finished delivery.");
+        }
+
+        if (delivery.status === 'validated') {
+            throw new Error("Cannot cancel a validated delivery.");
+        }
+
+        delivery.status = 'canceled';
+        await this.deliveryRepository.save(delivery);
+        return { message: "Delivery canceled successfully." };
     }
 
     async getShipmentFavorites(user_id: string, page: number, limit: number): Promise<Shipment[]> {
@@ -445,48 +476,48 @@ export class DeliveryService {
         return { status: delivery.status };
     }
 
-    async createStepDelivery(createDeliveryDto: CreateDeliveryDto): Promise<Delivery> {
+    async createStepDelivery(createDeliveryDto: CreateDeliveryDto, updatedAmount: number): Promise<Delivery> {
         const { shipmentId, deliveryPersonId, warehouseId, newExchangePointData } = createDeliveryDto;
     
         const shipment = await this.shipmentRepository.findOne({
-          where: { shipment_id: shipmentId },
-          relations: ['stores'],
+            where: { shipment_id: shipmentId },
+            relations: ['stores'],
         });
     
         if (!shipment) {
-          throw new Error('Shipment not found');
+            throw new Error('Shipment not found');
         }
     
         const deliveryPerson = await this.deliveryPersonRepository.findOne({
-          where: { user: { user_id: deliveryPersonId } },
+            where: { user: { user_id: deliveryPersonId } },
         });
     
         if (!deliveryPerson) {
-          throw new Error('Delivery person not found');
+            throw new Error('Delivery person not found');
         }
     
         let exchangePoint: ExchangePoint;
         if (warehouseId) {
-          const warehouse = await this.warehouseRepository.findOne({
-            where: { warehouse_id: warehouseId },
-          });
+            const warehouse = await this.warehouseRepository.findOne({
+                where: { warehouse_id: warehouseId },
+            });
     
-          if (!warehouse) {
-            throw new Error('Warehouse not found');
-          }
+            if (!warehouse) {
+                throw new Error('Warehouse not found');
+            }
     
-          exchangePoint = this.exchangePointRepository.create({
-            city: warehouse.city,
-            coordinates: warehouse.coordinates,
-            warehouse,
-          });
+            exchangePoint = this.exchangePointRepository.create({
+                city: warehouse.city,
+                coordinates: warehouse.coordinates,
+                warehouse,
+            });
         } else if (newExchangePointData) {
-          exchangePoint = this.exchangePointRepository.create({
-            city: newExchangePointData.city,
-            coordinates: newExchangePointData.coordinates,
-          });
+            exchangePoint = this.exchangePointRepository.create({
+                city: newExchangePointData.city,
+                coordinates: newExchangePointData.coordinates,
+            });
         } else {
-          throw new Error('Either warehouseId or newExchangePointData must be provided');
+            throw new Error('Either warehouseId or newExchangePointData must be provided');
         }
     
         exchangePoint = await this.exchangePointRepository.save(exchangePoint);
@@ -495,25 +526,51 @@ export class DeliveryService {
         const newStep = lastStep + 1;
     
         const store = this.storeRepository.create({
-          shipment,
-          exchangePoint,
-          step: newStep,
-          start_date: new Date(),
-          end_date: new Date(),
+            shipment,
+            exchangePoint,
+            step: newStep,
+            start_date: new Date(),
+            end_date: new Date(),
         });
     
         await this.storeRepository.save(store);
     
         const delivery = this.deliveryRepository.create({
-          shipment,
-          delivery_person: deliveryPerson,
-          status: 'pending',
-          amount: shipment.proposed_delivery_price || 0,
-          send_date: new Date(),
-          shipment_step: newStep,
+            shipment,
+            delivery_person: deliveryPerson,
+            status: 'pending',
+            amount: updatedAmount, // Utiliser le prix mis à jour
+            send_date: new Date(),
+            shipment_step: newStep,
         });
     
         return this.deliveryRepository.save(delivery);
+    }
+
+    // Création d'une livraison négociée (prix, date, etc.)
+    async createNegotiatedDelivery(shipmentId: string, userId: string, updatedAmount: number): Promise<Delivery> {
+        const shipment = await this.shipmentRepository.findOne({
+            where: { shipment_id: shipmentId },
+            relations: ["user"],
+        });
+    
+        if (!shipment) {
+            throw new Error("Shipment not found.");
+        }
+        if (shipment.user.user_id !== userId) {
+            throw new Error("User is not authorized to create a negotiated delivery for this shipment.");
+        }
+    
+        const delivery = this.deliveryRepository.create({
+            send_date: new Date(),
+            status: 'pending',
+            amount: updatedAmount, // Utiliser le prix mis à jour
+            shipment: shipment,
+        });
+    
+        const savedDelivery = await this.deliveryRepository.save(delivery);
+        await this.shipmentRepository.save(shipment);
+        return savedDelivery;
     }
 
     async deleteShipment(shipmentId: string, user_id : string): Promise<{ message: string }> {
@@ -536,5 +593,4 @@ export class DeliveryService {
 
     }
 
-    
 }

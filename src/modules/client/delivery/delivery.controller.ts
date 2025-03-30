@@ -41,8 +41,11 @@ export class DeliveryController {
     }
 
     @Delete("delivery/:id/cancel")
-    async cancelDelivery() {
-        return "Delivery cancelled successfully";
+    async cancelDelivery(
+        @Param("id") deliveryId : string,
+        @Body("user_id") user_id : string,
+    ) {
+        return this.deliveryService.cancelDelivery(deliveryId, user_id);
     }
 
     @Patch(":id")
@@ -51,9 +54,19 @@ export class DeliveryController {
     }
 
     @Post('step')
-    async createShipmentStep(@Body() createDeliveryDto: CreateDeliveryDto) {
-      const delivery = await this.deliveryService.createStepDelivery(createDeliveryDto);
+    async createShipmentStep(@Body() createDeliveryDto: CreateDeliveryDto, @Body('updatedAmount') updatedAmount: number) {
+      const delivery = await this.deliveryService.createStepDelivery(createDeliveryDto, updatedAmount);
       return { message: 'Shipment step created successfully', delivery };
+    }
+
+    @Post("negociate")
+    async negotiateShipment(
+        @Body("shipment_id") shipmentId : string,
+        @Body("user_id") user_id : string,
+        @Body("updatedPrice") updatedPrice : number,
+
+    ) {
+        return this.deliveryService.createNegotiatedDelivery(shipmentId, user_id, updatedPrice);
     }
 
     @Delete(":id")
