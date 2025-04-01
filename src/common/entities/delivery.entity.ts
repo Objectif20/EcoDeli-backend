@@ -53,4 +53,13 @@ export class Delivery {
 
     @OneToMany(() => DeliveryReview, review => review.delivery)
     deliveryReviews: DeliveryReview[];
+
+    @Column({ type : "integer", default: 0 })
+    shipment_step: number ;
+
+    @Column({ type : "varchar", length: 255, nullable: true })
+    delivery_code: string ;
+
+    @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+    delivery_price: number | null;
 }

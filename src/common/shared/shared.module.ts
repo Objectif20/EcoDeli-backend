@@ -10,6 +10,7 @@ import { Client } from '../entities/client.entity';
 import { Merchant } from '../entities/merchant.entity';
 import { Providers } from '../entities/provider.entity';
 import { DeliveryPerson } from '../entities/delivery_persons.entity';
+import { StripeService } from '../services/stripe/stripe.service';
 
 @Module({
   imports: [
@@ -18,12 +19,14 @@ import { DeliveryPerson } from '../entities/delivery_persons.entity';
 
   ],
   providers: [
-    MinioService
+    MinioService,
+    StripeService
   ],
   exports: [
     TypeOrmModule,
     AdminAuthModule,
-    MinioService
+    MinioService,
+    StripeService,
   ],
 })
 export class SharedModule {}

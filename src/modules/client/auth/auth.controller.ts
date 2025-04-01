@@ -91,8 +91,8 @@ export class AuthController {
       }
     }
   })
-  async validateAccount(password_code: string): Promise<{ message: string }> {
-    return this.authService.validateAccount(password_code);
+  async validateAccount(validate_code: string): Promise<{ message: string }> {
+    return this.authService.validateAccount(validate_code);
   }
 
   @Post('2fa/enable')
@@ -241,4 +241,6 @@ export class AuthController {
   async newPasswordA2F(@Body() a2fNewPasswod: A2FNewPasswordDto): Promise<{ message: string }> {
     return this.authService.newPasswordA2F(a2fNewPasswod);
   }
+
+
 }

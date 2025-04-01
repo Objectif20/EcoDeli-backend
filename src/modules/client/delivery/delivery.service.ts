@@ -12,6 +12,17 @@ import { MinioService } from "src/common/services/file/minio.service";
 import { v4 as uuidv4 } from 'uuid';
 import * as path from "path"
 import { GetShipmentsDTO } from "./dto/get-shipment.dto";
+import { Delivery } from "src/common/entities/delivery.entity";
+import { DeliveryPerson } from "src/common/entities/delivery_persons.entity";
+import { Favorite } from "src/common/entities/favorites.entity";
+import { DeliveryReviewResponse } from "src/common/entities/delivery_review_responses.entity";
+import { DeliveryReview } from "src/common/entities/delivery_reviews.entity";
+import { Point } from 'geojson';
+import { Warehouse } from "src/common/entities/warehouses.entity";
+import { ExchangePoint } from "src/common/entities/exchange_points.entity";
+import { Store } from "src/common/entities/stores.entity";
+import { CreateDeliveryDto } from "./dto/create-delivery.dto";
+import { StripeService } from "src/common/services/stripe/stripe.service";
 
 
 @Injectable()
@@ -36,6 +47,32 @@ export class DeliveryService {
         @InjectRepository(Users)
         private readonly userRepository: Repository<Users>,
 
+        @InjectRepository(Delivery)
+        private readonly deliveryRepository: Repository<Delivery>,
+
+        @InjectRepository(DeliveryPerson)
+        private readonly deliveryPersonRepository: Repository<DeliveryPerson>,
+
+        @InjectRepository(Favorite)
+        private readonly favoriteRepository: Repository<Favorite>,
+
+        @InjectRepository(DeliveryReviewResponse)
+        private readonly deliveryReviewResponseRepository: Repository<DeliveryReviewResponse>,
+
+        @InjectRepository(DeliveryReview)
+        private readonly deliveryReviewRepository: Repository<DeliveryReview>,
+
+        @InjectRepository(Warehouse)
+        private readonly warehouseRepository: Repository<Warehouse>,
+
+        @InjectRepository(ExchangePoint)
+        private readonly exchangePointRepository: Repository<ExchangePoint>,
+
+        @InjectRepository(Store)
+        private readonly storeRepository: Repository<Store>,
+
+
+        private readonly stripeService : StripeService,
         private readonly minioService: MinioService, 
     ) {}
 
@@ -131,8 +168,6 @@ export class DeliveryService {
         
     }
 
-
-
     async getShipments(filters: GetShipmentsDTO): Promise<Shipment[]> {
         const queryBuilder = this.shipmentRepository.createQueryBuilder("shipment");
     
@@ -167,6 +202,395 @@ export class DeliveryService {
         }    
         return await queryBuilder.getMany();
     }
+
+    async getShipmentById(id: string): Promise<Shipment> {
+        const shipment = await this.shipmentRepository.findOne({
+            where: { shipment_id: id },
+            relations: ["parcels", "parcels.parcelImages"]
+        });
+
+        if (!shipment) {
+            throw new Error("Shipment not found.");
+        }
+
+        return shipment;
+    }
+
+    async bookShipment(id: string, user_id: string): Promise<Delivery> {
+        const shipment = await this.shipmentRepository.findOne({
+            where: { shipment_id: id },
+        });
     
+        if (!shipment) {
+            throw new Error("Shipment not found.");
+        }
     
+        const user = await this.userRepository.findOne({
+            where: { user_id: user_id },
+            relations: ["deliveryPerson"],
+        });
+    
+        if (!user || !user.deliveryPerson) {
+            throw new Error("User or delivery person profile not found.");
+        }
+    
+        const delivery = this.deliveryRepository.create({
+            send_date: new Date(),
+            status: 'pending',
+            amount: shipment.proposed_delivery_price ?? 0,
+            shipment: shipment,
+            delivery_person: user.deliveryPerson,
+        });
+    
+        const savedDelivery = await this.deliveryRepository.save(delivery);
+    
+        return savedDelivery;
+    }
+
+    async cancelDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryId },
+            relations: ["delivery_person", "shipment"],
+
+        });
+
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+
+        if (delivery.delivery_person.user.user_id !== user_id) {
+            throw new Error("User is not authorized to cancel this delivery.");
+        }
+
+        if (delivery.status === 'finished') {
+            throw new Error("Cannot cancel a finished delivery.");
+        }
+
+        if (delivery.status === 'validated') {
+            throw new Error("Cannot cancel a validated delivery.");
+        }
+
+        delivery.status = 'canceled';
+        await this.deliveryRepository.save(delivery);
+        return { message: "Delivery canceled successfully." };
+    }
+
+    async getShipmentFavorites(user_id: string, page: number, limit: number): Promise<Shipment[]> {
+        const user = await this.userRepository.findOne({
+            where: { user_id: user_id },
+            relations: ["deliveryPerson", "deliveryPerson.favorites", "deliveryPerson.favorites.shipment"],
+        });
+    
+        if (!user || !user.deliveryPerson) {
+            throw new Error("User or delivery person profile not found.");
+        }
+    
+        const favorites = user.deliveryPerson.favorites
+            .filter(favorite => favorite.shipment.status !== 'finish')
+            .slice((page - 1) * limit, page * limit);
+    
+        return favorites.map(favorite => favorite.shipment);
+    }
+
+    async addToFavorites(user_id: string, shipment_id: string): Promise<void> {
+        const user = await this.userRepository.findOne({
+            where: { user_id: user_id },
+            relations: ["deliveryPerson", "deliveryPerson.favorites"],
+        });
+    
+        const shipment = await this.shipmentRepository.findOne({
+            where: { shipment_id: shipment_id },
+        });
+    
+        if (!user || !user.deliveryPerson || !shipment) {
+            throw new Error("User, delivery person profile, or shipment not found.");
+        }
+    
+        const existingFavorite = user.deliveryPerson.favorites.find(favorite => favorite.shipment_id === shipment_id);
+        if (existingFavorite) {
+            throw new Error("Shipment is already in favorites.");
+        }
+    
+        const favorite = new Favorite();
+        favorite.shipment_id = shipment_id;
+        favorite.delivery_person_id = user.deliveryPerson.delivery_person_id;
+        favorite.shipment = shipment;
+        favorite.delivery_person = user.deliveryPerson;
+    
+        await this.favoriteRepository.save(favorite);
+    }
+
+    async removeFromFavorites(user_id: string, shipment_id: string): Promise<{ message: string }> {
+        const user = await this.userRepository.findOne({
+            where: { user_id: user_id },
+            relations: ["deliveryPerson"],
+        });
+    
+        if (!user || !user.deliveryPerson) {
+            throw new Error("User or delivery person profile not found.");
+        }
+    
+        const favorite = await this.favoriteRepository.findOne({
+            where: { delivery_person_id: user.deliveryPerson.delivery_person_id, shipment_id: shipment_id },
+        });
+    
+        if (!favorite) {
+            throw new Error("Favorite not found.");
+        }
+    
+        await this.favoriteRepository.remove(favorite);
+    
+        return { message: "Favorite removed successfully." };
+    }
+
+    async addComment(comment: string, userId: string, deliveryId: string): Promise<{ message: string }> {
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryId },
+            relations: ["shipment", "shipment.user"],
+        });
+    
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+    
+        if (delivery.shipment.user.user_id !== userId) {
+            throw new Error("User is not authorized to comment on this delivery.");
+        }
+    
+        const deliveryReview = new DeliveryReview();
+        deliveryReview.comment = comment;
+        deliveryReview.rating = 0; 
+        deliveryReview.delivery = delivery;
+    
+        await this.deliveryReviewRepository.save(deliveryReview);
+    
+        return {message: "Comment added successfully"};
+    }
+
+    async replyComment(comment: string, userId: string, deliveryId: string, commentId: string): Promise<{ message: string }> {
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryId },
+            relations: ["delivery_person", "delivery_person.user"],
+        });
+    
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+    
+        if (delivery.delivery_person.user.user_id !== userId) {
+            throw new Error("User is not authorized to reply to this comment.");
+        }
+    
+        const deliveryReview = await this.deliveryReviewRepository.findOne({
+            where: { review_id: commentId },
+            relations: ["responses"],
+        });
+    
+        if (!deliveryReview) {
+            throw new Error("Comment not found.");
+        }
+    
+        const deliveryReviewResponse = new DeliveryReviewResponse();
+        deliveryReviewResponse.comment = comment;
+        deliveryReviewResponse.review = deliveryReview;
+    
+        await this.deliveryReviewResponseRepository.save(deliveryReviewResponse);
+    
+        return {message: "Comment replied successfully"}
+    }
+
+    async startDelivery(deliveryId: string, delivery_code, user_id : string ) : Promise<{ message: string }> {
+
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryId },
+            relations: ["delivery_person", "shipment"],
+        });
+    
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+    
+        if (delivery.delivery_person.user.user_id !== user_id) {
+            throw new Error("User is not authorized to start this delivery.");
+        }
+    
+        delivery.status = 'in_progress';
+        delivery.delivery_code = delivery_code;
+    
+        await this.deliveryRepository.save(delivery);
+    
+        return { message: "Delivery started successfully." };
+    }
+
+    async finsihDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
+
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryId },
+            relations: ["delivery_person", "shipment"],
+        });
+    
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+    
+        if (delivery.delivery_person.user.user_id !== user_id) {
+            throw new Error("User is not authorized to finish this delivery.");
+        }
+    
+        delivery.status = 'finished';
+    
+        await this.deliveryRepository.save(delivery);
+    
+        return { message: "Delivery finished successfully." };
+    }
+
+    async validateDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
+
+        // user_id correspondà l'id du créateur de la livraison
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryId },
+            relations: ["shipment"],
+        });
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+        if (delivery.shipment.user.user_id !== user_id) {
+            throw new Error("User is not authorized to validate this delivery.");
+        }
+        delivery.status = 'validated';
+        await this.deliveryRepository.save(delivery);
+        return { message: "Delivery validated successfully." }; 
+
+    }
+
+    async getDeliveryStatus(deliveryId: string): Promise<{ status: string }> {
+
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryId },
+        });
+    
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+    
+        return { status: delivery.status };
+    }
+
+    async createStepDelivery(createDeliveryDto: CreateDeliveryDto, updatedAmount: number): Promise<Delivery> {
+        const { shipmentId, deliveryPersonId, warehouseId, newExchangePointData } = createDeliveryDto;
+    
+        const shipment = await this.shipmentRepository.findOne({
+            where: { shipment_id: shipmentId },
+            relations: ['stores'],
+        });
+    
+        if (!shipment) {
+            throw new Error('Shipment not found');
+        }
+    
+        const deliveryPerson = await this.deliveryPersonRepository.findOne({
+            where: { user: { user_id: deliveryPersonId } },
+        });
+    
+        if (!deliveryPerson) {
+            throw new Error('Delivery person not found');
+        }
+    
+        let exchangePoint: ExchangePoint;
+        if (warehouseId) {
+            const warehouse = await this.warehouseRepository.findOne({
+                where: { warehouse_id: warehouseId },
+            });
+    
+            if (!warehouse) {
+                throw new Error('Warehouse not found');
+            }
+    
+            exchangePoint = this.exchangePointRepository.create({
+                city: warehouse.city,
+                coordinates: warehouse.coordinates,
+                warehouse,
+            });
+        } else if (newExchangePointData) {
+            exchangePoint = this.exchangePointRepository.create({
+                city: newExchangePointData.city,
+                coordinates: newExchangePointData.coordinates,
+            });
+        } else {
+            throw new Error('Either warehouseId or newExchangePointData must be provided');
+        }
+    
+        exchangePoint = await this.exchangePointRepository.save(exchangePoint);
+    
+        const lastStep = shipment.stores.length > 0 ? Math.max(...shipment.stores.map(store => store.step)) : 0;
+        const newStep = lastStep + 1;
+    
+        const store = this.storeRepository.create({
+            shipment,
+            exchangePoint,
+            step: newStep,
+            start_date: new Date(),
+            end_date: new Date(),
+        });
+    
+        await this.storeRepository.save(store);
+    
+        const delivery = this.deliveryRepository.create({
+            shipment,
+            delivery_person: deliveryPerson,
+            status: 'pending',
+            amount: updatedAmount, // Utiliser le prix mis à jour
+            send_date: new Date(),
+            shipment_step: newStep,
+        });
+    
+        return this.deliveryRepository.save(delivery);
+    }
+
+    // Création d'une livraison négociée (prix, date, etc.)
+    async createNegotiatedDelivery(shipmentId: string, userId: string, updatedAmount: number): Promise<Delivery> {
+        const shipment = await this.shipmentRepository.findOne({
+            where: { shipment_id: shipmentId },
+            relations: ["user"],
+        });
+    
+        if (!shipment) {
+            throw new Error("Shipment not found.");
+        }
+        if (shipment.user.user_id !== userId) {
+            throw new Error("User is not authorized to create a negotiated delivery for this shipment.");
+        }
+    
+        const delivery = this.deliveryRepository.create({
+            send_date: new Date(),
+            status: 'pending',
+            amount: updatedAmount, // Utiliser le prix mis à jour
+            shipment: shipment,
+        });
+    
+        const savedDelivery = await this.deliveryRepository.save(delivery);
+        await this.shipmentRepository.save(shipment);
+        return savedDelivery;
+    }
+
+    async deleteShipment(shipmentId: string, user_id : string): Promise<{ message: string }> {
+
+        const shipment = await this.shipmentRepository.findOne({
+            where: { shipment_id: shipmentId },
+            relations: ["user"],
+        });
+        
+        if (!shipment) {
+            throw new Error("Shipment not found.");
+        }
+        if (shipment.user.user_id !== user_id) {
+            throw new Error("User is not authorized to delete this shipment.");
+        }
+    
+        await this.shipmentRepository.remove(shipment);
+    
+        return { message: "Shipment deleted successfully." };
+
+    }
+
 }
