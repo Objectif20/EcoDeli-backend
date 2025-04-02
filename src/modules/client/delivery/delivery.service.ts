@@ -172,23 +172,28 @@ export class DeliveryService {
         const queryBuilder = this.shipmentRepository.createQueryBuilder("shipment");
     
         if (filters.latitude && filters.longitude && filters.radius) {
-            console.log(`Filtering by location: Latitude=${filters.latitude}, Longitude=${filters.longitude}, Radius=${filters.radius}`);
             queryBuilder.andWhere(
                 `ST_DWithin(
                     shipment.departure_location::geography,
-                    ST_SetSRID(ST_MakePoint(:latitude, :longitude), 4326)::geography,
+                    ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
                     :radius
                 )`,
-                { latitude: filters.latitude, longitude: filters.longitude, radius: filters.radius*1000 }
+                { latitude: filters.latitude, longitude: filters.longitude, radius: filters.radius }
+            );
+        } else {
+            queryBuilder.andWhere(
+                `ST_Intersects(
+                    shipment.departure_location::geography,
+                    ST_SetSRID(ST_MakeEnvelope(-5, 41, 10, 52, 4326), 4326)::geography
+                )`
             );
         }
     
         if (filters.routeStartLatitude && filters.routeStartLongitude && filters.routeEndLatitude && filters.routeEndLongitude && filters.routeRadius) {
-            console.log(`Filtering by route: StartLat=${filters.routeStartLatitude}, StartLon=${filters.routeStartLongitude}, EndLat=${filters.routeEndLatitude}, EndLon=${filters.routeEndLongitude}, Radius=${filters.routeRadius}`);
             queryBuilder.andWhere(
                 `ST_DWithin(
                     shipment.departure_location::geography,
-                    ST_SetSRID(ST_MakeLine(ST_MakePoint(:startLat, :startLon), ST_MakePoint(:endLat, :endLon)), 4326)::geography,
+                    ST_SetSRID(ST_MakeLine(ST_MakePoint(:startLon, :startLat), ST_MakePoint(:endLon, :endLat)), 4326)::geography,
                     :routeRadius
                 )`,
                 {
@@ -199,9 +204,33 @@ export class DeliveryService {
                     routeRadius: filters.routeRadius
                 }
             );
-        }    
-        return await queryBuilder.getMany();
+        }
+    
+        if (filters.minPrice !== undefined) {
+            queryBuilder.andWhere("shipment.estimated_total_price >= :minPrice AND shipment.estimated_total_price IS NOT NULL", { minPrice: filters.minPrice });
+        }
+    
+        if (filters.maxPrice !== undefined) {
+            queryBuilder.andWhere("shipment.estimated_total_price <= :maxPrice AND shipment.estimated_total_price IS NOT NULL", { maxPrice: filters.maxPrice });
+        }
+    
+        if (filters.minWeight !== undefined) {
+            queryBuilder.andWhere("shipment.weight >= :minWeight AND shipment.weight IS NOT NULL", { minWeight: filters.minWeight });
+        }
+    
+        if (filters.maxWeight !== undefined) {
+            queryBuilder.andWhere("shipment.weight <= :maxWeight AND shipment.weight IS NOT NULL", { maxWeight: filters.maxWeight });
+        }
+    
+        if (filters.page && filters.limit) {
+            const offset = (filters.page - 1) * filters.limit;
+            queryBuilder.skip(offset).take(filters.limit);
+        }
+    
+        const result = await queryBuilder.getMany();
+        return result;
     }
+    
 
     async getShipmentById(id: string): Promise<Shipment> {
         const shipment = await this.shipmentRepository.findOne({

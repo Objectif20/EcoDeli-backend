@@ -1,18 +1,21 @@
 import { Type, Transform } from "class-transformer";
-import { IsNumber, IsOptional } from "class-validator";
+import { IsNumber, IsOptional, IsInt, Min } from "class-validator";
 
 export class GetShipmentsDTO {
-    @Transform(({ value }) => parseFloat(value))
+    @Transform(({ value }) => value ? parseFloat(value) : undefined)
+    @IsOptional()
     @IsNumber()
-    latitude: number;
+    latitude?: number;
 
-    @Transform(({ value }) => parseFloat(value))
+    @Transform(({ value }) => value ? parseFloat(value) : undefined)
+    @IsOptional()
     @IsNumber()
-    longitude: number;
+    longitude?: number;
 
-    @Transform(({ value }) => parseFloat(value))
+    @Transform(({ value }) => value ? parseFloat(value) : undefined)
+    @IsOptional()
     @IsNumber()
-    radius: number;
+    radius?: number;
 
     @Transform(({ value }) => value ? parseFloat(value) : undefined)
     @IsOptional()
@@ -38,4 +41,36 @@ export class GetShipmentsDTO {
     @IsOptional()
     @IsNumber()
     routeRadius?: number;
+
+    @Transform(({ value }) => value ? parseFloat(value) : undefined)
+    @IsOptional()
+    @IsNumber()
+    minPrice?: number;
+
+    @Transform(({ value }) => value ? parseFloat(value) : undefined)
+    @IsOptional()
+    @IsNumber()
+    maxPrice?: number;
+
+    @Transform(({ value }) => value ? parseFloat(value) : undefined)
+    @IsOptional()
+    @IsNumber()
+    minWeight?: number;
+
+    @Transform(({ value }) => value ? parseFloat(value) : undefined)
+    @IsOptional()
+    @IsNumber()
+    maxWeight?: number;
+
+    @Transform(({ value }) => value ? parseInt(value, 10) : undefined)
+    @IsOptional()
+    @IsInt()
+    @Min(1)
+    page?: number;
+
+    @Transform(({ value }) => value ? parseInt(value, 10) : undefined)
+    @IsOptional()
+    @IsInt()
+    @Min(1)
+    limit?: number;
 }

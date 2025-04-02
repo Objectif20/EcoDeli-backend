@@ -49,10 +49,13 @@ export class AuthService {
         await this.userRepository.save(user);
       }
 
-      if (user.ban_date && user.ban_date < new Date()) {
-          user.banned = false;
-      } else {
-        return { message: 'User is banned' };
+      if (user.banned) {
+        if (user.ban_date && user.ban_date < new Date()) {
+            user.banned = false;
+            await this.userRepository.save(user);
+        } else {
+            return { message: 'User is banned' };
+        }
       }
 
       const isMatch = await bcrypt.compare(password, user.password);
@@ -97,10 +100,13 @@ export class AuthService {
         await this.userRepository.save(user);
       }
 
-      if (user.ban_date && user.ban_date < new Date()) {
-        user.banned = false;
-      } else {
-        return { message: 'User is banned' };
+      if (user.banned) {
+        if (user.ban_date && user.ban_date < new Date()) {
+            user.banned = false;
+            await this.userRepository.save(user);
+        } else {
+            return { message: 'User is banned' };
+        }
       }
 
       const isMatch = await bcrypt.compare(password, user.password);
