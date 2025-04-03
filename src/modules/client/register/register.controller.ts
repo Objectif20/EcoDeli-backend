@@ -106,5 +106,16 @@ export class RegisterController {
             const message = await this.registerService.createDeliveryPerson(registerDeliveryPersonDto, deliveryPersonFiles, vehicleFiles);
             return { message };
         }
+
+
+    @Get("plan")
+    async getPlan() {
+        return this.registerService.getSubscriptionStats();
+    }
+
+    @Get("language")
+    async getLanguage() : Promise<{ language_id: string, language_name: string, iso_code: string, active: boolean }[]> {
+        return this.registerService.getLanguage();
+    }
     
 }
