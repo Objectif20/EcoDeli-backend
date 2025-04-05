@@ -41,25 +41,28 @@ export class AuthService {
           relations: ['clients', 'providers', 'subscriptions'],
       });
 
-      if (!user) throw new UnauthorizedException('User not found');
+      if (!user) {
+          return res.status(401).json({ message: 'User not found' });
+      }
 
-      // Si le user n'est pas validé, on suppose qu'il se valide en se reconnectant
-      if (!user.confirmed){
-        user.confirmed = true; 
-        await this.userRepository.save(user);
+      if (!user.confirmed) {
+          user.confirmed = true;
+          await this.userRepository.save(user);
       }
 
       if (user.banned) {
-        if (user.ban_date && user.ban_date < new Date()) {
-            user.banned = false;
-            await this.userRepository.save(user);
-        } else {
-            return { message: 'User is banned' };
-        }
+          if (user.ban_date && user.ban_date < new Date()) {
+              user.banned = false;
+              await this.userRepository.save(user);
+          } else {
+              return res.status(401).json({ message: 'User is banned' });
+          }
       }
 
       const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) throw new UnauthorizedException('Incorrect password');
+      if (!isMatch) {
+          return res.status(401).json({ message: 'Incorrect password' });
+      }
 
       if (user.two_factor_enabled) {
           return res.json({ two_factor_required: true });
@@ -70,76 +73,84 @@ export class AuthService {
       const merchantExists = await this.merchantRepository.count({ where: { user: { user_id: user.user_id } } });
       const providerExists = await this.providerRepository.count({ where: { user: { user_id: user.user_id } } });
 
-      const profile: [boolean, boolean, boolean, boolean] = [
-          clientExists > 0,
-          deliverymanExists > 0,
-          merchantExists > 0,
-          providerExists > 0,
-      ];
+      const profile = {
+          provider: providerExists > 0,
+          merchant: merchantExists > 0,
+          client: clientExists > 0,
+          deliveryman: deliverymanExists > 0,
+      };
 
       const accessToken = await this.setAuthCookies(res, user);
 
       const response: loginResponse = {
-          access_token: accessToken, 
-          profile,
-      };
-
-      return response;
-  }
-
-    async LoginA2F(email: string, password: string, code: string, @Res() res): Promise<loginResponse | { message: string }> {
-      const user = await this.userRepository.findOne({
-          where: { email },
-          relations: ['clients', 'providers', 'subscriptions'],
-      });
-
-      if (!user || !user.two_factor_enabled) throw new UnauthorizedException('2FA not enabled');
-
-      if (!user.confirmed){
-        user.confirmed = true; 
-        await this.userRepository.save(user);
-      }
-
-      if (user.banned) {
-        if (user.ban_date && user.ban_date < new Date()) {
-            user.banned = false;
-            await this.userRepository.save(user);
-        } else {
-            return { message: 'User is banned' };
-        }
-      }
-
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) throw new UnauthorizedException('Incorrect password');
-
-      const isValidOtp = speakeasy.totp.verify({
-          secret: user.secret_totp,
-          encoding: 'base32',
-          token: code,
-          window: 1,
-      });
-
-      if (!isValidOtp) throw new UnauthorizedException('Invalid OTP code');
-
-      const clientExists = await this.clientRepository.count({ where: { user: { user_id: user.user_id } } });
-      const deliverymanExists = await this.deliveryPersonRepository.count({ where: { user: { user_id: user.user_id } } });
-      const merchantExists = await this.merchantRepository.count({ where: { user: { user_id: user.user_id } } });
-      const providerExists = await this.providerRepository.count({ where: { user: { user_id: user.user_id } } });
-
-      const profile: [boolean, boolean, boolean, boolean] = [
-          clientExists > 0,
-          deliverymanExists > 0,
-          merchantExists > 0,
-          providerExists > 0,
-      ];
-
-      const accessToken = await this.setAuthCookies(res, user);
-
-      return {
           access_token: accessToken,
-          profile,
+          profile: profile,
       };
+
+      return res.json(response);
   }
+
+    async LoginA2F(email: string, password: string, code: string, @Res() res): Promise<Response> {
+        const user = await this.userRepository.findOne({
+            where: { email },
+            relations: ['clients', 'providers', 'subscriptions'],
+        });
+
+        if (!user || !user.two_factor_enabled) {
+            return res.status(401).json({ message: '2FA not enabled' });
+        }
+
+        if (!user.confirmed) {
+            user.confirmed = true;
+            await this.userRepository.save(user);
+        }
+
+        if (user.banned) {
+            if (user.ban_date && user.ban_date < new Date()) {
+                user.banned = false;
+                await this.userRepository.save(user);
+            } else {
+                return res.status(401).json({ message: 'User is banned' });
+            }
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(401).json({ message: 'Incorrect password' });
+        }
+
+        const isValidOtp = speakeasy.totp.verify({
+            secret: user.secret_totp,
+            encoding: 'base32',
+            token: code,
+            window: 1,
+        });
+
+        if (!isValidOtp) {
+            return res.status(401).json({ message: 'Invalid OTP code' });
+        }
+
+        const clientExists = await this.clientRepository.count({ where: { user: { user_id: user.user_id } } });
+        const deliverymanExists = await this.deliveryPersonRepository.count({ where: { user: { user_id: user.user_id } } });
+        const merchantExists = await this.merchantRepository.count({ where: { user: { user_id: user.user_id } } });
+        const providerExists = await this.providerRepository.count({ where: { user: { user_id: user.user_id } } });
+
+        const profile = {
+            provider: providerExists > 0,
+            merchant: merchantExists > 0,
+            client: clientExists > 0,
+            deliveryman: deliverymanExists > 0,
+        };
+
+        const accessToken = await this.setAuthCookies(res, user);
+
+        const response: loginResponse = {
+            access_token: accessToken,
+            profile,
+        };
+
+        return res.json(response);
+    }
 
   async validateAccount(validate_code : string) : Promise<{ message: string }> {
     const user = await this.userRepository.findOne({ where: { validate_code: validate_code } });
@@ -294,21 +305,21 @@ export class AuthService {
 
   }
 
-  private async setAuthCookies(res, user: Users) {
-    const accessSecret = this.configService.getJwtAccessSecret(); 
+private async setAuthCookies(res, user: Users): Promise<string> {
+    const accessSecret = this.configService.getJwtAccessSecret();
     const accessToken = this.jwtService.sign(
-      { user_id: user.user_id },
-      { secret: accessSecret, expiresIn: '15m' }
+        { user_id: user.user_id },
+        { secret: accessSecret, expiresIn: '15m' }
     );
 
     const refreshSecret = this.configService.getJwtRefreshSecret();
     const refreshToken = this.jwtService.sign(
-      { user_id: user.user_id },
-      { secret: refreshSecret, expiresIn: '7d' }
+        { user_id: user.user_id },
+        { secret: refreshSecret, expiresIn: '7d' }
     );
 
     res.cookie('refresh_token', refreshToken, { httpOnly: true, secure: true, sameSite: 'strict', maxAge: 7 * 24 * 60 * 60 * 1000 });
-    return res.json({ access_token: accessToken });
-  }
+    return accessToken;
+}
 }
 
