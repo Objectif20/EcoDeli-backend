@@ -26,6 +26,12 @@ import { MerchantDocument } from './merchant_document.entity';
 import { Plan } from './plan.entity';
 import { Subscription } from './subscription.entity';
 import { AdminReport } from './admin_reports.entity';
+import { Appointments } from './appointments.entity';
+import { PrestaReview } from './presta_reviews.entity';
+import { PrestaReviewResponse } from './presta_review_responses.entity';
+import { FavoriteService } from './favorite_services.entity';
+import { Client } from './clients.entity';
+import { ProviderCommission } from './provider_commissions.entity';
 
 export const entities = [
   Admin,
@@ -56,4 +62,10 @@ export const entities = [
   ServiceImage,
   Report,
   AdminReport,
+  Appointments,
+  PrestaReview,
+  PrestaReviewResponse,
+  FavoriteService,
+  Client,
+  ProviderCommission,
 ];
