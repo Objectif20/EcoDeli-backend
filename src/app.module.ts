@@ -15,8 +15,10 @@ import { JwtModule } from '@nestjs/jwt';
 import { JwtService } from './config/jwt.service';
 import { MinioService } from './common/services/file/minio.service';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ServiceModule } from './modules/client/services/service.module';
 import { StripeModule } from './config/stripe.module';
 import { OneSignalModule } from './config/onesignal.module';
+
 
 @Global()
 @Module({
@@ -72,6 +74,7 @@ import { OneSignalModule } from './config/onesignal.module';
     /* Module du BackOffice */
     BackModule,
     ClientModule,
+    ServiceModule,
 
     /*Module du FrontOffice */
     ClientModule,
