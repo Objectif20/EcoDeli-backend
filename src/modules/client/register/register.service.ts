@@ -588,5 +588,36 @@ export class RegisterService {
       return filePath;
     }
 
+    async getSubscriptionStats() {
+        const plans = await this.planRepository.find();
+
+        return plans.map(plan => ({
+            plan_id: plan.plan_id,
+            name: plan.name,
+            price: plan.price,
+            priority_shipping_percentage: plan.priority_shipping_percentage,
+            priority_months_offered: plan.priority_months_offered,
+            max_insurance_coverage: plan.max_insurance_coverage,
+            extra_insurance_price: plan.extra_insurance_price,
+            shipping_discount: plan.shipping_discount,
+            permanent_discount: plan.permanent_discount,
+            permanent_discount_percentage: plan.permanent_discount_percentage,
+            small_package_permanent_discount: plan.small_package_permanent_discount,
+            first_shipping_free: plan.first_shipping_free,
+            first_shipping_free_threshold: plan.first_shipping_free_threshold,
+            is_pro: plan.is_pro,
+        }));
+    }
+
+    async getLanguage(): Promise<{ language_id: string, language_name: string, iso_code: string, active: boolean }[]> {
+        const languages = await this.languageRepository.find();
+        return languages.map(language => ({
+            language_id: language.language_id,
+            language_name: language.language_name,
+            iso_code: language.iso_code,
+            active: language.active,
+        }));
+    }
+
 }
 

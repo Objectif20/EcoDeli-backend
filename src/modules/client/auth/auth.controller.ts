@@ -28,7 +28,6 @@ export class AuthController {
   })
   async login(@Body() loginDto: LoginDto, @Res() res: Response): Promise<loginResponse | { two_factor_required: boolean } | { message: string }> {
     const message = this.authService.login(loginDto.email, loginDto.password, res);
-    console.log(message);
     return message;
   }
 
@@ -175,7 +174,7 @@ export class AuthController {
     status: 401,
     description: 'Unauthorized, invalid credentials or 2FA code.',
   })
-  async LoginA2F(@Body() a2fLoginDto: A2FLoginDto, @Res() res: Response): Promise<loginResponse | { message: string }> {
+  async LoginA2F(@Body() a2fLoginDto: A2FLoginDto, @Res() res: Response): Promise<any | { message: string }> {
     return this.authService.LoginA2F(a2fLoginDto.email, a2fLoginDto.password, a2fLoginDto.code, res);
   }
 
