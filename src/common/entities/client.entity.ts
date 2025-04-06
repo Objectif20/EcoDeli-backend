@@ -1,22 +1,21 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, Unique, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, JoinColumn, ManyToOne } from 'typeorm';
 import { Users } from './user.entity';
 
 @Entity('clients')
-@Unique(['stripe_customer_id'])
 export class Client {
-  @PrimaryGeneratedColumn('uuid')
-  client_id: string;
+    @PrimaryGeneratedColumn('uuid')
+    client_id: string;
 
-  @Column({ length: 255 })
-  last_name: string;
+    @Column({ type: 'varchar', length: 255, nullable: false })
+    last_name: string;
 
-  @Column({ length: 255 })
-  first_name: string;
+    @Column({ type: 'varchar', length: 255, nullable: false })
+    first_name: string;
 
-  @Column({ length: 255, nullable: true })
-  stripe_customer_id?: string;
+    @Column({ type: 'varchar', length: 255, unique: true, nullable: true })
+    stripe_customer_id: string | null;
 
-  @ManyToOne(() => Users, (user) => user.clients, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'user_id' })
-  user: Users;
+    @ManyToOne(() => Users, user => user.clients, { onDelete: 'CASCADE' })
+    @JoinColumn({ name: 'user_id' })
+    user: Users;
 }

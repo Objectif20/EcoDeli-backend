@@ -12,7 +12,7 @@ import { Appointments } from 'src/common/entities/appointments.entity';
 import { ProviderKeywords } from 'src/common/entities/provider_keyword.entity';
 import { PrestaReview } from 'src/common/entities/presta_reviews.entity';
 import { PrestaReviewResponse } from 'src/common/entities/presta_review_responses.entity';
-import { Client } from 'src/common/entities/clients.entity';
+import { Client } from 'src/common/entities/client.entity';
 
 @Module({
   imports: [

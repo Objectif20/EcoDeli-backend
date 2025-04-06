@@ -30,7 +30,7 @@ import { Appointments } from './appointments.entity';
 import { PrestaReview } from './presta_reviews.entity';
 import { PrestaReviewResponse } from './presta_review_responses.entity';
 import { FavoriteService } from './favorite_services.entity';
-import { Client } from './clients.entity';
+import { Client } from './client.entity';
 import { ProviderCommission } from './provider_commissions.entity';
 import { VehicleDocument } from './vehicle_documents.entity';
 import { DeliveryCommission } from './delivery_commission.entity';

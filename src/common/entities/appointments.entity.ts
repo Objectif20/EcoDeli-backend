@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, OneToOne, OneToMany } from 'typeorm';
-import { Client } from './clients.entity';
+import { Client } from './client.entity';
 import { ServicesList } from './services_list.entity';
 import { Providers } from './provider.entity';
 import { PrestaReview } from './presta_reviews.entity';
