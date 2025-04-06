@@ -15,6 +15,9 @@ export class ProviderContracts {
     @Column("text")
     address: string;
 
+    @Column("text")
+    contract_url : string;
+
     @ManyToOne(() => Providers, provider => provider.contracts)
     @JoinColumn({ name: "provider_id" })
     provider: Providers;

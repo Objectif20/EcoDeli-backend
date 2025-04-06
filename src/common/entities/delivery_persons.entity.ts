@@ -1,6 +1,12 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { Users } from './user.entity';
 import { Admin } from './admin.entity';
+import { Vehicle } from './vehicle.entity';
+import { DeliveryPersonDocument } from './delivery_person_documents.entity';
+import { Delivery } from './delivery.entity';
+import { Favorite } from './favorites.entity';
+import { Trip } from './trips.entity';
+import { Transfer } from './transfers.entity';
 
 @Entity({ name: 'delivery_persons' })
 export class DeliveryPerson {
@@ -62,4 +68,23 @@ export class DeliveryPerson {
     @ManyToOne(() => Admin, admin => admin.admin_id, { nullable: true, onDelete: 'SET NULL' })
     @JoinColumn({ name: 'admin_id' })
     admin?: Admin;
+
+    @OneToMany(() => Vehicle, vehicle => vehicle.deliveryPerson)
+    vehicles: Vehicle[];
+
+    @OneToMany(() => DeliveryPersonDocument, DeliveryPersonDocument => DeliveryPersonDocument.delivery_person)
+    DeliveryPersonDocuments: DeliveryPersonDocument[];
+
+    @OneToMany(() => Delivery, (delivery) => delivery.delivery_person, { cascade: true })
+    deliveries: Delivery[];
+
+    @OneToMany(() => Favorite, (favorite) => favorite.delivery_person)
+    favorites: Favorite[];
+
+    @OneToMany(() => Trip, (trip) => trip.delivery_person)
+    trips: Trip[];
+
+    @OneToMany(() => Transfer, (transfer) => transfer.delivery_person)
+    transfers: Transfer[];
+
 }

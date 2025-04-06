@@ -32,9 +32,41 @@ import { PrestaReviewResponse } from './presta_review_responses.entity';
 import { FavoriteService } from './favorite_services.entity';
 import { Client } from './clients.entity';
 import { ProviderCommission } from './provider_commissions.entity';
+import { VehicleDocument } from './vehicle_documents.entity';
+import { DeliveryCommission } from './delivery_commission.entity';
+import { Shipment } from './shipment.entity';
+import { Delivery } from './delivery.entity';
+import { DeliveryReviewResponse } from './delivery_review_responses.entity';
+import { DeliveryReview } from './delivery_reviews.entity';
+import { Keyword } from './keywords.entity';
+import { DeliveryKeyword } from './delivery_keywords.entity';
+import { Warehouse } from './warehouses.entity';
+import { ExchangePoint } from './exchange_points.entity';
+import { Store } from './stores.entity';
+import { Parcel } from './parcels.entity';
+import { ParcelImage } from './parcel_images.entity';
+import { Favorite } from './favorites.entity';
+import { Transfer } from './transfers.entity';
+import { Trip } from './trips.entity';
 
 export const entities = [
   Admin,
+  Trip,
+  Transfer,
+  Parcel,
+  Favorite,
+  ParcelImage,
+  Warehouse,
+  ExchangePoint,
+  Store,
+  Keyword,
+  DeliveryKeyword,
+  Delivery,
+  DeliveryReviewResponse,
+  DeliveryReview,
+  DeliveryCommission,
+  Shipment,
+  VehicleDocument,
   Subscription,
   Plan,
   MerchantDocument,

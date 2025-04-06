@@ -16,7 +16,9 @@ export class SecretsService {
     'DATABASE_URL',
     'MINIO_SECRET_KEY',
     'JWT_REFRESH_SECRET',
-    'JWT_ACCESS_SECRET'
+    'JWT_ACCESS_SECRET',
+    'ONESIGNAL_USER_AUTH_KEY',
+    "ONESIGNAL_REST_API_KEY"
   ];
 
   private limiter = new Bottleneck({
@@ -120,6 +122,10 @@ export class SecretsService {
         return 'key-JwtAccessSecret-prod';  
       case 'JWT_REFRESH_SECRET':
         return 'key-JwtRefreshSecret-prod';
+      case 'ONESIGNAL_USER_AUTH_KEY':
+        return "key-OnesignalUserAuthKey-prod";
+      case 'ONESIGNAL_REST_API_KEY':
+        return "key-AppOneSignalId-prod";
       default:
         throw new Error(`Secret name ${secretName} is not mapped.`);
     }
