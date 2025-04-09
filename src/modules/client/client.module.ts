@@ -6,6 +6,7 @@ import { ThemeModule } from './theme/theme.module';
 import { LanguageModule } from './langue/langue.module';
 import { ServiceModule } from './services/service.module';
 import { DeliveryModule } from './delivery/delivery.module';
+import { UtilsModule } from './utils/utils.module';
 
 @Module({
     imports: [
@@ -15,7 +16,8 @@ import { DeliveryModule } from './delivery/delivery.module';
         ThemeModule,
         LanguageModule,
         ServiceModule,
-        DeliveryModule
+        DeliveryModule,
+        UtilsModule
     ],
     providers: [],
 })

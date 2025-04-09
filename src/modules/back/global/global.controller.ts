@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags, ApiBody, getSchemaPath, ApiExtraModels } from '@nestjs/swagger';
 import { GlobalService } from './global.service';
 import { TestDto } from './dto/test.dto';
@@ -6,6 +6,9 @@ import { RoleList } from 'src/common/entities/role_list.entity';
 import { AdminJwtGuard } from 'src/common/guards/admin-jwt.guard';
 import { AdminRoleGuard } from 'src/common/guards/admin-role.guard';
 import { AdminRole } from 'src/common/decorator/admin-role.decorator';
+import axios from 'axios';
+import { Response } from 'express';
+
 
 @ApiTags('Global Administration')
 @ApiExtraModels(TestDto)
