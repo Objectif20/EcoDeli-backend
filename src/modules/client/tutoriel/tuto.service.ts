@@ -10,6 +10,13 @@ export class TutorialService {
     async isFirstLogin(user_id: string): Promise<boolean> {
         const user = await this.userRepository.findOne({ where: { user_id } });
         if (!user) throw new NotFoundException('Utilisateur non trouvé');
-        return !user.tutorial_done;
+        return user.tutorial_done;
+    }
+
+    async addFirstLogin(user_id: string): Promise<void> {
+        const user = await this.userRepository.findOne({ where: { user_id } });
+        if (!user) throw new NotFoundException('Utilisateur non trouvé');
+        user.tutorial_done = true;
+        await this.userRepository.save(user);
     }
 }
