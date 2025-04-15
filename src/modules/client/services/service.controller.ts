@@ -1,13 +1,29 @@
-import { Controller, Post, Get, Patch, Delete, Param, Body, Query } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, Param, Body, Query, UseInterceptors, UploadedFiles, Req, UseGuards } from '@nestjs/common';
 import { ServiceService } from './service.service';
+import { AnyFilesInterceptor } from '@nestjs/platform-express';
+import { CreateServiceDto } from './dto/create-service.dto';
+import { ClientJwtGuard } from 'src/common/guards/user-jwt.guard';
 
 @Controller('client/service')
 export class ServiceController {
   constructor(private readonly serviceService: ServiceService) {}
 
   @Post()
-  createService(@Body() data: any) {
-    return this.serviceService.createService(data);
+  @UseGuards(ClientJwtGuard)
+  @UseInterceptors(AnyFilesInterceptor())
+  async createService(
+    @Body() data: CreateServiceDto,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Req() req: Request,
+  ) {
+    const userId = (req as any).user?.user_id;
+    console.log("userId récupéré:", userId);
+
+    return this.serviceService.createService(
+      { ...data, user_id: userId },
+      files,
+      userId,
+    );
   }
 
   @Get()

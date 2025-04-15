@@ -19,14 +19,21 @@ export class ClientJwtGuard implements CanActivate {
     }
 
     const accessToken = this.configService.getJwtAccessSecret();
+
     try {
       const payload = this.jwtService.verify(token, { secret: accessToken });
 
-      if (!request.body) {
-        request.body = {};
+      const contentType = request.headers['content-type'] || '';
+      const isFormData = contentType.includes('multipart/form-data');
+
+      if (isFormData) {
+        (request as any).user = { user_id: payload.user_id };
+      } else {
+        if (!request.body) {
+          request.body = {};
+        }
+        request.body.user_id = payload.user_id;
       }
-      
-      request.body.user_id = payload.user_id;
 
       return true;
     } catch (error) {
@@ -43,3 +50,4 @@ export class ClientJwtGuard implements CanActivate {
     return authHeader.split(' ')[1];
   }
 }
+
