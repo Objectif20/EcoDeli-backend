@@ -48,4 +48,10 @@ export class Merchant {
 
     @OneToMany(() => MerchantDocument, merchantDocument => merchantDocument.merchant)
     merchantDocuments: MerchantDocument[];
+
+    @Column({ type: 'varchar', length: 255, nullable: false })
+    last_name: string;
+
+    @Column({ type: 'varchar', length: 255, nullable: false })
+    first_name: string;
 }
