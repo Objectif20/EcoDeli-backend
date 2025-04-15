@@ -26,6 +26,15 @@ export class ServiceController {
     );
   }
 
+  @Get('me')
+  async getServicesByUser(
+    @Body('user_id') user_id: string,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 10,
+  ) {
+    return this.serviceService.getMyServices(user_id, page, limit);
+  }
+
   @Get()
   getServices(
     @Query('page') page?: number,

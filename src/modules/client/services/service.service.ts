@@ -112,6 +112,52 @@ export class ServiceService {
     return savedService;
   }
 
+  async getMyServices(user_id: string, page: number, limit: number) {
+    const provider = await this.providerRepo.findOne({
+      where: { user: { user_id } },
+    });
+
+    console.log("provider", provider?.provider_id);
+  
+    if (!provider) {
+      throw new Error('Provider not found');
+    }
+  
+    const serviceLinks = await this.serviceRepo.manager.find('services', {
+      where: { provider_id: provider.provider_id },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+  
+    const total = await this.serviceRepo.manager.count('services', {
+      where: { provider_id: provider.provider_id },
+    });
+  
+    const serviceIds = serviceLinks.map((link: any) => link.service_id);
+  
+    const services = await this.serviceRepo.findByIds(serviceIds);
+  
+    const formatted = services.map(service => ({
+      id: service.service_id,
+      name: service.name,
+      description: service.description,
+      type: service.service_type,
+      city: service.city,
+      price: service.price,
+      duration: service.duration_minute,
+      available: service.available,
+      status: service.status,
+      validated: service.validated,
+    }));
+  
+    return {
+      data: formatted,
+      total,
+      page,
+      limit,
+    };
+  }
+
   async getValidatedServices(page = 1, limit = 10, search = '', city = '') {
     const skip = (page - 1) * limit;
     const [result, total] = await this.serviceRepo.findAndCount({
