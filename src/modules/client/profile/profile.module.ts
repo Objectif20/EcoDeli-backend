@@ -12,12 +12,13 @@ import { ProfileService } from "./profile.service";
 import { Subscription } from "src/common/entities/subscription.entity";
 import { Plan } from "src/common/entities/plan.entity";
 import { SharedModule } from "src/common/shared/shared.module";
+import { ProviderDocuments } from "src/common/entities/providers_documents.entity";
 
 
 @Module({
 
     imports: [
-        TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Subscription, Plan]),
+        TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Subscription, Plan, ProviderDocuments]),
         JwtModule.register({}),
         SharedModule,
     ],
