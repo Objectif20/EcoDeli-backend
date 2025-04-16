@@ -14,12 +14,13 @@ import { Plan } from "src/common/entities/plan.entity";
 import { SharedModule } from "src/common/shared/shared.module";
 import { ProviderDocuments } from "src/common/entities/providers_documents.entity";
 import { Blocked } from "src/common/entities/blocked.entity";
+import { Report } from "src/common/entities/report.entity";
 
 
 @Module({
 
     imports: [
-        TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Subscription, Plan, ProviderDocuments, Blocked]),
+        TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Subscription, Plan, ProviderDocuments, Blocked, Report]),
         JwtModule.register({}),
         SharedModule,
     ],

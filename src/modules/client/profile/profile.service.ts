@@ -12,6 +12,8 @@ import { In, MoreThan, Repository } from "typeorm";
 import { UpdateMyBasicProfileDto } from "./dto/update-basic-profile.dto";
 import { Blocked } from "src/common/entities/blocked.entity";
 import { v4 as uuidv4 } from "uuid";
+import { Report } from "src/common/entities/report.entity";
+import { CreateReportDto } from "./dto/create-report.dto";
 
   @Injectable()
   export class ProfileService {
@@ -32,6 +34,8 @@ import { v4 as uuidv4 } from "uuid";
       private readonly providerDocumentsRepository: Repository<ProviderDocuments>,
       @InjectRepository(Blocked)
       private readonly blockedRepository: Repository<Blocked>,
+      @InjectRepository(Report)
+      private readonly reportRepository: Repository<Report>,
       private readonly minioService: MinioService,
     ) {}
   
@@ -275,6 +279,22 @@ import { v4 as uuidv4 } from "uuid";
   
       const url = await this.minioService.generateImageUrl(bucket, filename);
       return { url };
+    }
+
+    async createReport(dto: CreateReportDto): Promise<Report> {
+      const user = await this.userRepository.findOne({ where: { user_id: dto.user_id } });
+      if (!user) {
+        throw new NotFoundException('Utilisateur introuvable');
+      }
+  
+      const report = this.reportRepository.create({
+        user,
+        report_message: dto.report_message,
+        status: 'pending',
+        state: 'new',
+      });
+  
+      return this.reportRepository.save(report);
     }
     
     // Provider 

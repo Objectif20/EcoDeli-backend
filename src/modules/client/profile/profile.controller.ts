@@ -5,6 +5,7 @@ import { User } from './type';
 import { ClientJwtGuard } from 'src/common/guards/user-jwt.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UpdateMyBasicProfileDto } from './dto/update-basic-profile.dto';
+import { CreateReportDto } from './dto/create-report.dto';
 
 
 
@@ -63,6 +64,12 @@ export class ClientProfileController {
   async updateProfilePic(@Body () body: { user_id: string }, @UploadedFile() file: Express.Multer.File) {
     const userId = body.user_id;
     return this.profileService.updateProfilePicture(userId, file);
+  }
+
+  @Post("report")
+  @UseGuards(ClientJwtGuard)
+  async create(@Body() dto: CreateReportDto) {
+    return this.profileService.createReport(dto);
   }
 
   @Get('provider/documents')
