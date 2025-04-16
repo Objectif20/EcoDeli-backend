@@ -8,6 +8,7 @@ import { ServiceModule } from './services/service.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { UtilsModule } from './utils/utils.module';
 import { ProfileModule } from './profile/profile.module';
+import { MessagesModule } from './message/message.module';
 
 @Module({
     imports: [
@@ -20,6 +21,7 @@ import { ProfileModule } from './profile/profile.module';
         DeliveryModule,
         UtilsModule,
         ProfileModule,
+        MessagesModule
     ],
     providers: [],
 })
