@@ -18,8 +18,8 @@ export class Merchant {
     @Column('text')
     address: string;
 
-    @Column({ length: 255, unique: true, nullable: true })
-    stripe_customer_id?: string;
+    @Column({ type: 'varchar', length: 255, unique: true, nullable: true })
+    stripe_customer_id: string | null;
 
     @Column('text', { nullable: true })
     description?: string;

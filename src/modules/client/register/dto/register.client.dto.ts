@@ -42,6 +42,7 @@ export class RegisterClientDTO {
         example: 'temp_key_123',
     })
     @IsString()
+    @IsOptional()
     stripe_temp_key: string;
 
     @ApiProperty({
