@@ -7,6 +7,8 @@ import { LanguageModule } from './langue/langue.module';
 import { ServiceModule } from './services/service.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { UtilsModule } from './utils/utils.module';
+import { ProfileModule } from './profile/profile.module';
+import { MessagesModule } from './message/message.module';
 
 @Module({
     imports: [
@@ -17,7 +19,9 @@ import { UtilsModule } from './utils/utils.module';
         LanguageModule,
         ServiceModule,
         DeliveryModule,
-        UtilsModule
+        UtilsModule,
+        ProfileModule,
+        MessagesModule
     ],
     providers: [],
 })
