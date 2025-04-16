@@ -1,5 +1,6 @@
-import { Body, Controller, Get } from "@nestjs/common";
+import { Body, Controller, Get, UseGuards } from "@nestjs/common";
 import { PlanningService } from "./planning.service";
+import { ClientJwtGuard } from "src/common/guards/user-jwt.guard";
 
 
 
@@ -10,6 +11,7 @@ export class PlanningController {
   ) {}
 
     @Get()
+    @UseGuards(ClientJwtGuard)
     async getMyPlanning(@Body() body: { user_id: string }) {
         const { user_id } = body;
         return this.planningService.getMyPlanning(user_id);
