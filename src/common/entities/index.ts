@@ -48,6 +48,7 @@ import { ParcelImage } from './parcel_images.entity';
 import { Favorite } from './favorites.entity';
 import { Transfer } from './transfers.entity';
 import { Trip } from './trips.entity';
+import { Blocked } from './blocked.entity';
 
 export const entities = [
   Admin,
@@ -100,4 +101,5 @@ export const entities = [
   FavoriteService,
   Client,
   ProviderCommission,
+  Blocked,
 ];

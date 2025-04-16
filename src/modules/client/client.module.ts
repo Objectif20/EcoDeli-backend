@@ -9,6 +9,7 @@ import { DeliveryModule } from './delivery/delivery.module';
 import { UtilsModule } from './utils/utils.module';
 import { ProfileModule } from './profile/profile.module';
 import { MessagesModule } from './message/message.module';
+import { PlanningModule } from './planning/planning.module';
 
 @Module({
     imports: [
@@ -21,7 +22,8 @@ import { MessagesModule } from './message/message.module';
         DeliveryModule,
         UtilsModule,
         ProfileModule,
-        MessagesModule
+        MessagesModule,
+        PlanningModule
     ],
     providers: [],
 })

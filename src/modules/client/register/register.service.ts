@@ -71,24 +71,24 @@ export class RegisterService {
 
     async registerClient(clientDto: RegisterClientDTO): Promise<{ message: string }> {
       const { email, password, last_name, first_name, newsletter, stripe_temp_key, language_id, plan_id } = clientDto;
-  
+    
       const existingUser = await this.userRepository.findOne({ where: { email } });
       if (existingUser) {
         throw new ConflictException('Cet email est déjà utilisé');
       }
-  
-      const language = await this.languageRepository.findOne({ where: { language_id: language_id } });
+    
+      const language = await this.languageRepository.findOne({ where: { language_id } });
       if (!language) {
         throw new BadRequestException('Langue non valide');
       }
-  
+    
       const hashedPassword = await bcrypt.hash(password, 10);
-  
+    
       const defaultTheme = await this.themeRepository.findOne({ where: { theme_id: 1 } });
       if (!defaultTheme) {
         throw new BadRequestException("Le thème par défaut (id=1) est introuvable.");
       }
-  
+    
       const newUser = this.userRepository.create({
         email,
         password: hashedPassword,
@@ -97,36 +97,37 @@ export class RegisterService {
         language,
         theme: defaultTheme,
       });
-  
+    
       const savedUser = await this.userRepository.save(newUser);
-  
-      let stripeCustomerId;
-      try {
-        const customer = await this.stripeService.createCustomer(email, `Client: ${first_name} ${last_name}`);
-        await this.stripeService.attachPaymentMethod(customer.id, stripe_temp_key);
-        stripeCustomerId = customer.id;
-      } catch (error) {
-        console.log(error);
-        throw new BadRequestException('Erreur lors de l\'attachement du paymentMethod au client Stripe', error);
+    
+      let stripeCustomerId: string | null = null;
+    
+      if (stripe_temp_key) {
+        try {
+          const customer = await this.stripeService.createCustomer(email, `Client: ${first_name} ${last_name}`);
+          await this.stripeService.attachPaymentMethod(customer.id, stripe_temp_key);
+          stripeCustomerId = customer.id;
+        } catch (error) {
+          console.log(error);
+          throw new BadRequestException('Erreur lors de l\'attachement du paymentMethod au client Stripe', error);
+        }
       }
-  
+    
       const newClient = this.clientRepository.create({
-        last_name: last_name,
-        first_name: first_name,
-        stripe_customer_id: stripeCustomerId,
+        last_name,
+        first_name,
+        stripe_customer_id: stripeCustomerId ?? null,
         user: savedUser,
       });
-  
+    
       await this.clientRepository.save(newClient);
-  
-      if (plan_id) {
-        const plan = await this.planRepository.findOne({ where: { plan_id: plan_id } });
-        if (plan && plan.stripe_product_id && plan.stripe_price_id) {
+    
+      if (plan_id && stripeCustomerId) {
+        const plan = await this.planRepository.findOne({ where: { plan_id } });
+        if (plan && plan.stripe_product_id && plan.stripe_price_id && (plan.price ?? 0) > 0) {
           try {
-            console.log('ID du produit/prix:', plan.stripe_price_id);
-  
             const subscription = await this.stripeService.createSubscription(stripeCustomerId, plan.stripe_price_id);
-  
+    
             const newSubscription = this.subscriptionRepository.create({
               stripe_customer_id: stripeCustomerId,
               stripe_subscription_id: subscription.id,
@@ -134,9 +135,9 @@ export class RegisterService {
               start_date: new Date(subscription.current_period_start * 1000),
               end_date: new Date(subscription.current_period_end * 1000),
               user: savedUser,
-              plan: plan,
+              plan,
             });
-  
+    
             await this.subscriptionRepository.save(newSubscription);
           } catch (error) {
             console.log(error);
@@ -144,23 +145,21 @@ export class RegisterService {
           }
         }
       }
-  
+    
       const validateCode = uuidv4();
-  
+    
       const savedValidateCode = await this.userRepository.save({
         user_id: savedUser.user_id,
         validate_code: validateCode,
       });
-  
+    
       if (!savedValidateCode) {
         throw new BadRequestException('Erreur lors de la génération du code de validation');
       }
-  
-      // Envoi par email du code de validation
-  
+    
       try {
         const fromEmail = this.mailer.options.auth.user;
-        const info = await this.mailer.sendMail({
+        await this.mailer.sendMail({
           from: fromEmail,
           to: email,
           subject: 'Valider votre compte',
@@ -169,30 +168,31 @@ export class RegisterService {
       } catch (error) {
         throw new Error(`Erreur lors de l'envoi de l'email: ${error.message}`);
       }
-  
+    
       return { message: 'Utilisateur inscrit avec succès' };
     }
+    
 
     async registerMerchant(merchantDto: RegisterMerchantDTO): Promise<{ message: string }> {
       const { email, password, company_name, siret, address, description, postal_code, city, country, phone, newsletter, stripe_temp_key, language_id, plan_id } = merchantDto;
-  
+    
       const existingUser = await this.userRepository.findOne({ where: { email } });
       if (existingUser) {
         throw new ConflictException('Cet email est déjà utilisé');
       }
-  
-      const language = await this.languageRepository.findOne({ where: { language_id: language_id } });
+    
+      const language = await this.languageRepository.findOne({ where: { language_id } });
       if (!language) {
         throw new BadRequestException('Langue non valide');
       }
-  
+    
       const hashedPassword = await bcrypt.hash(password, 10);
-  
+    
       const defaultTheme = await this.themeRepository.findOne({ where: { theme_id: 1 } });
       if (!defaultTheme) {
         throw new BadRequestException("Le thème par défaut (id=1) est introuvable.");
       }
-  
+    
       const newUser = this.userRepository.create({
         email,
         password: hashedPassword,
@@ -201,19 +201,22 @@ export class RegisterService {
         language,
         theme: defaultTheme,
       });
-  
+    
       const savedUser = await this.userRepository.save(newUser);
-  
-      let stripeCustomerId;
-      try {
-        const customer = await this.stripeService.createCustomer(email, `Commerçant: ${company_name}`);
-        await this.stripeService.attachPaymentMethod(customer.id, stripe_temp_key);
-        stripeCustomerId = customer.id;
-      } catch (error) {
-        console.log(error);
-        throw new BadRequestException('Erreur lors de l\'attachement du paymentMethod au commerçant Stripe', error);
+    
+      let stripeCustomerId: string | null = null;
+    
+      if (stripe_temp_key) {
+        try {
+          const customer = await this.stripeService.createCustomer(email, `Commerçant: ${company_name}`);
+          await this.stripeService.attachPaymentMethod(customer.id, stripe_temp_key);
+          stripeCustomerId = customer.id;
+        } catch (error) {
+          console.log(error);
+          throw new BadRequestException('Erreur lors de l\'attachement du paymentMethod au commerçant Stripe', error);
+        }
       }
-  
+    
       const newMerchant = this.merchantRepository.create({
         company_name,
         siret,
@@ -223,20 +226,18 @@ export class RegisterService {
         city,
         country,
         phone,
-        stripe_customer_id: stripeCustomerId,
+        stripe_customer_id: stripeCustomerId ?? null,
         user: savedUser,
       });
-  
+    
       await this.merchantRepository.save(newMerchant);
-  
-      if (plan_id) {
-        const plan = await this.planRepository.findOne({ where: { plan_id: plan_id } });
-        if (plan && plan.stripe_product_id && plan.stripe_price_id) {
+    
+      if (plan_id && stripeCustomerId) {
+        const plan = await this.planRepository.findOne({ where: { plan_id } });
+        if (plan && plan.stripe_product_id && plan.stripe_price_id && (plan.price ?? 0) > 0) {
           try {
-            console.log('ID du produit/prix:', plan.stripe_price_id);
-  
             const subscription = await this.stripeService.createSubscription(stripeCustomerId, plan.stripe_price_id);
-  
+    
             const newSubscription = this.subscriptionRepository.create({
               stripe_customer_id: stripeCustomerId,
               stripe_subscription_id: subscription.id,
@@ -244,9 +245,9 @@ export class RegisterService {
               start_date: new Date(subscription.current_period_start * 1000),
               end_date: new Date(subscription.current_period_end * 1000),
               user: savedUser,
-              plan: plan,
+              plan,
             });
-  
+    
             await this.subscriptionRepository.save(newSubscription);
           } catch (error) {
             console.log(error);
@@ -254,23 +255,21 @@ export class RegisterService {
           }
         }
       }
-  
+    
       const validateCode = uuidv4();
-  
+    
       const savedValidateCode = await this.userRepository.save({
         user_id: savedUser.user_id,
         validate_code: validateCode,
       });
-  
+    
       if (!savedValidateCode) {
         throw new BadRequestException('Erreur lors de la génération du code de validation');
       }
-  
-      // Envoi par email du code de validation
-  
+    
       try {
         const fromEmail = this.mailer.options.auth.user;
-        const info = await this.mailer.sendMail({
+        await this.mailer.sendMail({
           from: fromEmail,
           to: email,
           subject: 'Valider votre compte',
@@ -279,7 +278,7 @@ export class RegisterService {
       } catch (error) {
         throw new Error(`Erreur lors de l'envoi de l'email: ${error.message}`);
       }
-  
+    
       return { message: 'Commerçant inscrit avec succès' };
     }
 

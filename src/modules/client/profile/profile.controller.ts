@@ -1,9 +1,11 @@
-import { BadRequestException, Body, Controller, Get, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags} from '@nestjs/swagger';
 import { ProfileService } from './profile.service';
 import { User } from './type';
 import { ClientJwtGuard } from 'src/common/guards/user-jwt.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { UpdateMyBasicProfileDto } from './dto/update-basic-profile.dto';
+import { CreateReportDto } from './dto/create-report.dto';
 
 
 
@@ -28,6 +30,47 @@ export class ClientProfileController {
     return user;
   }
 
+  @Get('general-settings')
+  @UseGuards(ClientJwtGuard)
+  async getMyBasicProfile(@Body () body: { user_id: string }) {
+    const userId = body.user_id;
+    return this.profileService.getMyBasicProfile(userId);
+  }
+
+  @Patch('general-settings')
+  @UseGuards(ClientJwtGuard)
+  async updateMyBasicProfile(@Body() dto: UpdateMyBasicProfileDto, @Body() body: { user_id: string }) {
+    const userId = body.user_id;
+    return this.profileService.updateMyBasicProfile(userId, dto);
+  }
+
+  @Get("blockedList")
+  @UseGuards(ClientJwtGuard)
+  async getProfileBlocked(@Body () body: { user_id: string }) {
+    const userId = body.user_id;
+    return this.profileService.getProfileWithBlocked(userId);
+  }
+
+  @Delete('blocked/:blocked_user_id')
+  @UseGuards(ClientJwtGuard)
+  async unblockUser(@Body () body: { user_id: string }, @Param('blocked_user_id') blocked_user_id: string) {
+    const userId = body.user_id;
+    return this.profileService.deleteBlocked(userId, blocked_user_id);
+  }
+
+  @Put('picture')
+  @UseGuards(ClientJwtGuard)
+  @UseInterceptors(FileInterceptor('image'))
+  async updateProfilePic(@Body () body: { user_id: string }, @UploadedFile() file: Express.Multer.File) {
+    const userId = body.user_id;
+    return this.profileService.updateProfilePicture(userId, file);
+  }
+
+  @Post("report")
+  @UseGuards(ClientJwtGuard)
+  async create(@Body() dto: CreateReportDto) {
+    return this.profileService.createReport(dto);
+  }
 
   @Get('provider/documents')
   @UseGuards(ClientJwtGuard)

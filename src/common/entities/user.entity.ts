@@ -5,6 +5,7 @@ import { Merchant } from './merchant.entity';
 import { Subscription } from './subscription.entity';
 import { Client } from "./client.entity";
 import { DeliveryPerson } from "./delivery_persons.entity";
+import { Blocked } from "./blocked.entity";
 
 
 @Entity({ name: 'users' })
@@ -79,4 +80,10 @@ export class Users {
 
     @OneToOne(() => DeliveryPerson, deliveryPerson => deliveryPerson.user)
     deliveryPerson: DeliveryPerson;
+
+    @OneToMany(() => Blocked, blocked => blocked.user)
+    blockedUsers: Blocked[];
+
+    @OneToMany(() => Blocked, blocked => blocked.blocked)
+    blockedByUsers: Blocked[];
 }
