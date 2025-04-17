@@ -192,48 +192,63 @@ import { CreateReportDto } from "./dto/create-report.dto";
     }
 
     async getProfileWithBlocked(user_id: string): Promise<any> {
-      const user = await this.userRepository.findOne({
-        where: { user_id },
-      });
-  
+      // Récupération de l'utilisateur principal
+      const user = await this.userRepository.findOne({ where: { user_id } });
+    
       if (!user) throw new NotFoundException('User not found');
-  
+    
       const profilePictureUrl = user.profile_picture
         ? await this.minioService.generateImageUrl('client-images', user.profile_picture)
         : null;
-  
+    
+      // Récupération des utilisateurs bloqués par l'utilisateur
       const blockedUsers = await this.blockedRepository.find({
         where: { user_id },
       });
-  
+    
       const blockedIds = blockedUsers.map((b) => b.user_id_blocked);
+    
+      if (blockedIds.length === 0) {
+        return {
+          photo: profilePictureUrl,
+          blocked: [],
+        };
+      }
+    
+      // Récupération des entités Users correspondantes
       const users = await this.userRepository.find({
         where: { user_id: In(blockedIds) },
       });
-  
-      const clients = await this.clientRepository.find({ where: { user: In(users) } });
-      const merchants = await this.merchantRepository.find({ where: { user: In(users) } });
-      const providers = await this.providerRepository.find({ where: { user: In(users) } });
-  
+    
+      const userIds = users.map((u) => u.user_id);
+    
+      // Récupération des rôles associés
+      const [clients, merchants, providers] = await Promise.all([
+        this.clientRepository.find({ where: { user: { user_id: In(userIds) } }, relations: ['user'] }),
+        this.merchantRepository.find({ where: { user: { user_id: In(userIds) } }, relations: ['user'] }),
+        this.providerRepository.find({ where: { user: { user_id: In(userIds) } }, relations: ['user'] }),
+      ]);
+    
       const getName = (u: Users) => {
         const provider = providers.find((p) => p.user.user_id === u.user_id);
         if (provider) return { first_name: provider.first_name, last_name: provider.last_name };
-  
+    
         const merchant = merchants.find((m) => m.user.user_id === u.user_id);
         if (merchant) return { first_name: merchant.first_name, last_name: merchant.last_name };
-  
+    
         const client = clients.find((c) => c.user.user_id === u.user_id);
         if (client) return { first_name: client.first_name, last_name: client.last_name };
-  
+    
         return { first_name: 'N/A', last_name: 'N/A' };
       };
-  
+    
       const blockedList = await Promise.all(
         users.map(async (u) => {
           const name = getName(u);
           const photo = u.profile_picture
             ? await this.minioService.generateImageUrl('client-images', u.profile_picture)
             : null;
+    
           return {
             user_id: u.user_id,
             ...name,
@@ -241,7 +256,7 @@ import { CreateReportDto } from "./dto/create-report.dto";
           };
         }),
       );
-  
+    
       return {
         photo: profilePictureUrl,
         blocked: blockedList,
