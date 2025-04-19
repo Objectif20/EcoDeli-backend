@@ -49,6 +49,7 @@ import { Favorite } from './favorites.entity';
 import { Transfer } from './transfers.entity';
 import { Trip } from './trips.entity';
 import { Blocked } from './blocked.entity';
+import { Availability } from './availibities.entity';
 
 export const entities = [
   Admin,
@@ -102,4 +103,5 @@ export const entities = [
   Client,
   ProviderCommission,
   Blocked,
+  Availability,
 ];

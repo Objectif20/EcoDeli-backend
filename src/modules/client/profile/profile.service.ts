@@ -17,6 +17,8 @@ import { CreateReportDto } from "./dto/create-report.dto";
 import { StripeService } from "src/common/services/stripe/stripe.service";
 import Stripe from "stripe";
 import { error } from "console";
+import { Availability } from "src/common/entities/availibities.entity";
+import { AvailabilityDto } from "./dto/availitity.dto";
 
   @Injectable()
   export class ProfileService {
@@ -39,6 +41,8 @@ import { error } from "console";
       private readonly blockedRepository: Repository<Blocked>,
       @InjectRepository(Report)
       private readonly reportRepository: Repository<Report>,
+      @InjectRepository(Availability)
+      private readonly availabilityRepository: Repository<Availability>,
       private readonly minioService: MinioService,
       private readonly stripeService: StripeService
     ) {}
@@ -462,6 +466,54 @@ import { error } from "console";
         },
       };
     }
+
+    async getAvailabilityForUser(userId: string): Promise<Availability[]> {
+      const provider = await this.providerRepository.findOne({
+        where: { user : {user_id: userId} },
+        relations: ['availabilities'], 
+      });
+  
+      if (!provider) {
+        throw new Error('Provider not found for the given user ID');
+      }
+  
+      return provider.availabilities; 
+    }
+  
+    async updateAvailabilityForUser(userId: string, availabilitiesDto: AvailabilityDto[]): Promise<Availability[]> {
+      const provider = await this.providerRepository.findOne({
+        where: { user: { user_id: userId } },
+      });
+  
+      if (!provider) {
+        throw new Error('Provider not found for the given user ID');
+      }
+  
+      if (provider.availabilities && provider.availabilities.length > 0) {
+        await this.availabilityRepository.delete({ provider: provider });
+      }
+  
+      const availabilities = availabilitiesDto.map(dto => {
+        const availability = this.availabilityRepository.create({
+          provider,
+          day_of_week: dto.day_of_week,
+          morning: dto.morning,
+          morning_start_time: dto.morning_start_time,
+          morning_end_time: dto.morning_end_time,
+          afternoon: dto.afternoon,
+          afternoon_start_time: dto.afternoon_start_time,
+          afternoon_end_time: dto.afternoon_end_time,
+          evening: dto.evening,
+          evening_start_time: dto.evening_start_time,
+          evening_end_time: dto.evening_end_time,
+        });
+        return availability;
+      });
+  
+      return this.availabilityRepository.save(availabilities);
+    }
+
+    
 
 
   }

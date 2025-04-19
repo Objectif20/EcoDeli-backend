@@ -16,11 +16,12 @@ import { Plan } from "src/common/entities/plan.entity";
 import { ProviderDocuments } from 'src/common/entities/providers_documents.entity';
 import { Blocked } from 'src/common/entities/blocked.entity';
 import { Report } from 'src/common/entities/report.entity';
+import { Availability } from 'src/common/entities/availibities.entity';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Message.name, schema: MessageSchema }]),
-    TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Subscription, Plan, ProviderDocuments, Blocked, Report]),
+    TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Subscription, Plan, ProviderDocuments, Blocked, Report, Availability]),
     
         SharedModule,
         JwtModule.register({})

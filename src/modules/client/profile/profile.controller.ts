@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Ip, NotFoundException, Param, Patch, Post, Put, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpException, HttpStatus, Ip, NotFoundException, Param, Patch, Post, Put, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags} from '@nestjs/swagger';
 import { ProfileService } from './profile.service';
 import { User } from './type';
@@ -6,6 +6,8 @@ import { ClientJwtGuard } from 'src/common/guards/user-jwt.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UpdateMyBasicProfileDto } from './dto/update-basic-profile.dto';
 import { CreateReportDto } from './dto/create-report.dto';
+import { Availability } from 'src/common/entities/availibities.entity';
+import { AvailabilityDto } from './dto/availitity.dto';
 
 
 
@@ -161,6 +163,36 @@ export class ClientProfileController {
       throw new BadRequestException('Aucun fichier fourni');
     }
     return this.profileService.addDocument(userId, body.name, file, body.description);
+  }
+
+  @Get('availability')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Get Availability', operationId: 'getAvailability' })
+  @ApiResponse({ status: 200, description: 'Availability retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Availability not found' })
+  async getAvailability(@Body() body : { user_id: string },): Promise<Availability[]> {
+    try {
+      return await this.profileService.getAvailabilityForUser(body.user_id);
+    } catch (error) {
+      throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+    }
+  }
+
+  @Put('availability')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Update Availability', operationId: 'updateAvailability' })
+  @ApiResponse({ status: 200, description: 'Availability updated successfully' })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+
+  async updateAvailability(
+    @Body() body : { user_id: string },
+    @Body() availabilitiesDto: AvailabilityDto[],
+  ): Promise<Availability[]> {
+    try {
+      return await this.profileService.updateAvailabilityForUser(body.user_id, availabilitiesDto);
+    } catch (error) {
+      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+    }
   }
 
 }
