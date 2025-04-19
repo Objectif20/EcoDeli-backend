@@ -14,6 +14,9 @@ import { Blocked } from "src/common/entities/blocked.entity";
 import { v4 as uuidv4 } from "uuid";
 import { Report } from "src/common/entities/report.entity";
 import { CreateReportDto } from "./dto/create-report.dto";
+import { StripeService } from "src/common/services/stripe/stripe.service";
+import Stripe from "stripe";
+import { error } from "console";
 
   @Injectable()
   export class ProfileService {
@@ -37,6 +40,7 @@ import { CreateReportDto } from "./dto/create-report.dto";
       @InjectRepository(Report)
       private readonly reportRepository: Repository<Report>,
       private readonly minioService: MinioService,
+      private readonly stripeService: StripeService
     ) {}
   
     async getMyProfile(user_id: string): Promise<any> {
@@ -296,6 +300,93 @@ import { CreateReportDto } from "./dto/create-report.dto";
   
       return this.reportRepository.save(report);
     }
+
+
+
+    async getStripeAccountId(userId: string): Promise<string | null> {
+      const provider = await this.providerRepository.findOne({
+        where: { user: { user_id: userId } },
+      });
+      if (provider?.stripe_transfer_id) return provider.stripe_transfer_id;
+    
+      const delivery = await this.deliveryPersonRepository.findOne({
+        where: { user: { user_id: userId } },
+      });
+      if (delivery?.stripe_transfer_id) return delivery.stripe_transfer_id;
+    
+      return null;
+    }
+    
+    async getOrCreateStripeAccountId(userId: string, accountToken: string): Promise<string> {
+      const user = await this.userRepository.findOne({
+        where: { user_id: userId },
+        relations: ['providers', 'deliveryPerson', 'clients'],
+      });
+    
+      if (!user) throw new Error('User not found');
+    
+      const existingId = await this.getStripeAccountId(userId);
+      if (existingId) return existingId;
+    
+      const isProvider = (user.providers ?? []).length > 0;
+      const isDelivery = user.deliveryPerson != null;
+    
+      if (!isProvider && !isDelivery) {
+        throw new Error("L'utilisateur n’est ni provider ni livreur.");
+      }
+        
+      if (isProvider) {
+        const provider = user.providers[0];
+        const stripeAccount = await this.stripeService.createConnectedAccountWithToken(accountToken);
+        const accountLinkUrl = await this.stripeService.createAccountLink(stripeAccount.id);
+        console.log('URL pour compléter le profil:', accountLinkUrl);
+
+        provider.stripe_transfer_id = stripeAccount.id;
+        await this.providerRepository.save(provider);
+        return stripeAccount.id;
+      }
+    
+      if (isDelivery) {
+        const delivery = user.deliveryPerson;
+        const client = user.clients[0];
+        if (!client) throw new Error("Le livreur n’a pas de profil client associé.");
+        const stripeAccount = await this.stripeService.createConnectedAccountWithToken(accountToken);
+        const accountLinkUrl = await this.stripeService.createAccountLink(stripeAccount.id);
+        console.log('URL pour compléter le profil:', accountLinkUrl);
+
+        delivery.stripe_transfer_id = stripeAccount.id;
+        await this.deliveryPersonRepository.save(delivery);
+        return stripeAccount.id;
+      }
+    
+      throw new Error("Impossible de créer un compte Stripe.");
+    }
+    
+    async isStripeAccountValid(user_id: string): Promise<{
+      valid: boolean,
+      enabled: boolean,
+      needs_id_card: boolean,
+      url_complete?: string
+    }> {
+      const stripeAccountId = await this.getStripeAccountId(user_id);
+      if (!stripeAccountId) {
+        return { valid: false, enabled: false, needs_id_card: false };
+      }
+    
+      const { isValid, isEnabled, needsIdCard } = await this.stripeService.getStripeAccountStatus(stripeAccountId);
+    
+      const urlComplete = !isEnabled
+        ? await this.stripeService.createAccountLink(stripeAccountId)
+        : undefined;
+    
+      return {
+        valid: isValid,
+        enabled: isEnabled,
+        needs_id_card: needsIdCard,
+        url_complete: urlComplete,
+      };
+    }
+
     
     // Provider 
 
