@@ -483,18 +483,19 @@ import { AvailabilityDto } from "./dto/availitity.dto";
     async updateAvailabilityForUser(userId: string, availabilitiesDto: AvailabilityDto[]): Promise<Availability[]> {
       const provider = await this.providerRepository.findOne({
         where: { user: { user_id: userId } },
+        relations: ["availabilities"],
       });
-  
+    
       if (!provider) {
         throw new Error('Provider not found for the given user ID');
       }
-  
-      if (provider.availabilities && provider.availabilities.length > 0) {
+    
+      if (provider.availabilities?.length) {
         await this.availabilityRepository.delete({ provider: provider });
       }
-  
-      const availabilities = availabilitiesDto.map(dto => {
-        const availability = this.availabilityRepository.create({
+    
+      const newAvailabilities = availabilitiesDto.map(dto =>
+        this.availabilityRepository.create({
           provider,
           day_of_week: dto.day_of_week,
           morning: dto.morning,
@@ -506,11 +507,10 @@ import { AvailabilityDto } from "./dto/availitity.dto";
           evening: dto.evening,
           evening_start_time: dto.evening_start_time,
           evening_end_time: dto.evening_end_time,
-        });
-        return availability;
-      });
-  
-      return this.availabilityRepository.save(availabilities);
+        })
+      );
+    
+      return this.availabilityRepository.save(newAvailabilities);
     }
 
     

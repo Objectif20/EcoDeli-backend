@@ -178,18 +178,20 @@ export class ClientProfileController {
     }
   }
 
-  @Put('availability')
   @UseGuards(ClientJwtGuard)
+  @Put('availability')
   @ApiOperation({ summary: 'Update Availability', operationId: 'updateAvailability' })
   @ApiResponse({ status: 200, description: 'Availability updated successfully' })
   @ApiResponse({ status: 400, description: 'Bad request' })
-
   async updateAvailability(
-    @Body() body : { user_id: string },
-    @Body() availabilitiesDto: AvailabilityDto[],
+    @Body()
+    body: {
+      user_id: string;
+      availabilities: AvailabilityDto[];
+    },
   ): Promise<Availability[]> {
     try {
-      return await this.profileService.updateAvailabilityForUser(body.user_id, availabilitiesDto);
+      return await this.profileService.updateAvailabilityForUser(body.user_id, body.availabilities);
     } catch (error) {
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }
