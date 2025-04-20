@@ -392,9 +392,12 @@ export class ServiceService {
     });
   
     const formattedAppointments = appointments.map(appointment => ({
-      date: appointment.service_date.toISOString().split('T')[0], // date au format YYYY-MM-DD
-      time: appointment.service_date.toISOString().split('T')[1].substring(0, 5), // Heure au format HH:mm
-      end: appointment.payment_date ? appointment.payment_date.toISOString().split('T')[1].substring(0, 5) : null, // Fin du rendez-vous
+      date: appointment.service_date.toISOString().split('T')[0],
+      time: appointment.service_date.toISOString().split('T')[1].substring(0, 5),
+      end: new Date(appointment.service_date.getTime() + appointment.duration * 60000)
+      .toISOString()
+      .split('T')[1]
+      .substring(0, 5),
     }));
   
     const providerDisponibilities = {
