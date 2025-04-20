@@ -160,18 +160,97 @@ export class ServiceService {
 
   async getValidatedServices(page = 1, limit = 10, search = '', city = '') {
     const skip = (page - 1) * limit;
-    const [result, total] = await this.serviceRepo.findAndCount({
-      where: {
-        validated: true,
-        name: Like(`%${search}%`),
-        ...(city && { city: Like(`%${city}%`) }),
-      },
-      take: limit,
-      skip,
-    });
 
-    return { data: result, meta: { total, page, limit } };
-  }
+    const queryBuilder = this.serviceRepo.createQueryBuilder('serviceList')
+        .leftJoinAndSelect('serviceList.services', 'services')
+        .leftJoinAndSelect('services.provider', 'provider')
+        .leftJoinAndSelect('provider.user', 'user')
+        .leftJoinAndSelect('serviceList.images', 'images')
+        .leftJoinAndSelect('serviceList.keywords', 'keywords')
+        .leftJoinAndSelect('keywords.keywordList', 'keywordList')
+        .leftJoinAndSelect('serviceList.appointments', 'appointments')
+        .leftJoinAndSelect('appointments.review_presta', 'reviews')
+        .leftJoinAndSelect('reviews.responses', 'responses')
+        .leftJoinAndSelect('appointments.client', 'client')
+        .where('serviceList.validated = :validated', { validated: true })
+        .andWhere('serviceList.name LIKE :search', { search: `%${search}%` });
+
+    if (city) {
+        queryBuilder.andWhere('serviceList.city LIKE :city', { city: `%${city}%` });
+    }
+
+    queryBuilder.take(limit).skip(skip);
+
+    const [result, total] = await queryBuilder.getManyAndCount();
+
+    const services = await Promise.all(result.map(async (serviceList) => {
+        const providerAppointments = serviceList.appointments;
+        const firstService = serviceList.services[0];
+
+        const imageUrls = await Promise.all(serviceList.images.map(image =>
+            this.minioService.generateImageUrl('provider-images', image.image_service_url)
+        ));
+
+        const authorPhotoUrl = firstService && firstService.provider && firstService.provider.user
+            ? await this.minioService.generateImageUrl('client-images', firstService.provider.user.profile_picture)
+            : null;
+
+        return {
+            service_id: serviceList.service_id,
+            service_type: serviceList.service_type,
+            status: serviceList.status,
+            name: serviceList.name,
+            city: serviceList.city,
+            price: serviceList.price,
+            price_admin: serviceList.price_admin,
+            duration_time: serviceList.duration_minute,
+            available: serviceList.available,
+            keywords: serviceList.keywords.map(keyword => keyword.keywordList.keyword),
+            images: imageUrls,
+            description: serviceList.description,
+            author: firstService && firstService.provider && firstService.provider.user ? {
+                id: firstService.provider.provider_id,
+                name: `${firstService.provider.first_name} ${firstService.provider.last_name}`,
+                email: firstService.provider.user.email,
+                photo: authorPhotoUrl,
+            } : null,
+            rate: providerAppointments.reduce((acc, appointment) => acc + (appointment.review_presta?.rating || 0), 0) / (providerAppointments.filter(appointment => appointment.review_presta).length || 1),
+            comments: await Promise.all(providerAppointments.flatMap(async (appointment) => {
+                if (appointment.review_presta) {
+                    const clientPhotoUrl = appointment.client.user
+                        ? await this.minioService.generateImageUrl('client-images', appointment.client.user.profile_picture)
+                        : null;
+
+                    const responseAuthorPhotoUrl = firstService && firstService.provider && firstService.provider.user
+                        ? await this.minioService.generateImageUrl('client-images', firstService.provider.user.profile_picture)
+                        : null;
+
+                    return [{
+                        id: appointment.review_presta.review_presta_id,
+                        author: {
+                            id: appointment.client.client_id,
+                            name: `${appointment.client.first_name} ${appointment.client.last_name}`,
+                            photo: clientPhotoUrl,
+                        },
+                        content: appointment.review_presta.comment,
+                        response: appointment.review_presta.responses?.length ? {
+                            id: appointment.review_presta.responses[0].review_presta_response_id,
+                            author: {
+                                id: firstService.provider.provider_id,
+                                name: `${firstService.provider.first_name} ${firstService.provider.last_name}`,
+                                photo: responseAuthorPhotoUrl,
+                            },
+                            content: appointment.review_presta.responses[0].comment,
+                        } : undefined,
+                    }];
+                }
+                return [];
+            })),
+        };
+    }));
+
+    return { data: services, meta: { total, page, limit } };
+}
 
   async getServiceDetails(service_id: string) {
     const service = await this.serviceRepo.findOne({
