@@ -15,6 +15,7 @@ import { Client } from 'src/common/entities/client.entity';
 import { SharedModule } from 'src/common/shared/shared.module';
 import { ProviderKeywordsList } from 'src/common/entities/provider_keywords_list.entity';
 import { JwtModule } from '@nestjs/jwt';
+import { ProviderCommission } from 'src/common/entities/provider_commissions.entity';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { JwtModule } from '@nestjs/jwt';
       PrestaReviewResponse,
       ProviderKeywordsList,
       Client,
+      ProviderCommission
     ]),
     SharedModule,
     JwtModule.register({})

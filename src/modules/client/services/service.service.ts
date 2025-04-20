@@ -16,6 +16,7 @@ import { MinioService } from 'src/common/services/file/minio.service';
 import { ProviderKeywordsList } from 'src/common/entities/provider_keywords_list.entity';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { ProviderCommission } from 'src/common/entities/provider_commissions.entity';
 
 @Injectable()
 export class ServiceService {
@@ -28,6 +29,7 @@ export class ServiceService {
     @InjectRepository(Appointments) private appointmentRepo: Repository<Appointments>,
     @InjectRepository(PrestaReview) private reviewRepo: Repository<PrestaReview>,
     @InjectRepository(PrestaReviewResponse) private reviewResponseRepo: Repository<PrestaReviewResponse>,
+    @InjectRepository(ProviderCommission) private commissionRepo: Repository<ProviderCommission>,
     @InjectRepository(Client) private clientRepo: Repository<Client>,
     @InjectRepository(ProviderKeywordsList)
     private keywordListRepo: Repository<ProviderKeywordsList>,
@@ -262,25 +264,48 @@ export class ServiceService {
     return service;
   }
 
-  async createAppointment(service_id: string, data: any) {
-    const appointment = this.appointmentRepo.create({
-      service_payment_id: data.service_payment_id,
-      stripe_payment_id: data.stripe_payment_id,
-      amount: data.amount,
-      commission: data.commission,
-      status: data.status,
-      service_date: data.service_date,
-      payment_date: data.payment_date,
-      client: { client_id: data.client_id }, // 🔥 ici on met bien l'objet lié
-      service: { service_id }, // 🔥 via l'URL
-      provider: { provider_id: data.provider_id }, // si besoin
-      presta_commission: { provider_commission_id: data.presta_commission_id },
+  async createAppointment(service_id: string, data: {user_id: string; service_date: Date }) {
+
+    const client = await this.clientRepo.findOne({
+      where: { user: { user_id: data.user_id } },
     });
-  
-    return this.appointmentRepo.save(appointment);
+    if (!client) throw new NotFoundException('Client non trouvé');
+
+    const service = await this.serviceRepo.findOne({
+      where: { service_id },
+    });
+    if (!service) throw new NotFoundException('Service non trouvé');
+
+    const provider = await this.providerRepo.findOne({
+      where: { services: { service_id } },
+    });
+    if (!provider) throw new NotFoundException('Prestataire non trouvé');
+
+    const commission = await this.commissionRepo.find();
+    if (!commission) throw new NotFoundException('Commission non trouvée');
+    const commissionValue = commission[0].value;
+    
+    const appointment = this.appointmentRepo.create({
+      amount: service.price,
+      status: 'pending',
+      service_date: data.service_date,
+      duration: service.duration_minute,
+      commission: commissionValue,
+      presta_commission : commission[0],
+      client,
+      service,
+      provider,
+    });
+
+    const savedAppointment = await this.appointmentRepo.save(appointment);
+
+    if (!savedAppointment) {
+      throw new NotFoundException('Erreur lors de la création du rendez-vous');
+    }
+
+    
   }
   
-
   async getServiceAppointments(service_id: string) {
     return this.appointmentRepo.find({ where: { service: { service_id } } });
   }
@@ -344,6 +369,40 @@ export class ServiceService {
     });
   
     return await this.reviewResponseRepo.save(response);
+  }
+
+  async getProviderDisponibility(service_id: string) {
+
+    const service = await this.serviceRepo.findOne({
+      where: { service_id },
+    });
+  
+    const provider = await this.providerRepo.findOne({
+      where: { services: { service_id } },
+      relations: ['availabilities'], 
+    });
+    
+    if (!service) throw new NotFoundException('Service non trouvé');
+    if (!provider) throw new NotFoundException('Prestataire non trouvé');
+  
+    const availabilities = provider.availabilities;
+  
+    const appointments = await this.appointmentRepo.find({
+      where: { provider: provider },
+    });
+  
+    const formattedAppointments = appointments.map(appointment => ({
+      date: appointment.service_date.toISOString().split('T')[0], // date au format YYYY-MM-DD
+      time: appointment.service_date.toISOString().split('T')[1].substring(0, 5), // Heure au format HH:mm
+      end: appointment.payment_date ? appointment.payment_date.toISOString().split('T')[1].substring(0, 5) : null, // Fin du rendez-vous
+    }));
+  
+    const providerDisponibilities = {
+      availabilities,
+      appointments: formattedAppointments,
+    }
+
+    return providerDisponibilities
   }
   
 }

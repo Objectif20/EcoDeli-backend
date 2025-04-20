@@ -52,8 +52,9 @@ export class ServiceController {
   }
 
   @Post(':id/appointments')
-  createAppointment(@Param('id') id: string, @Body() data: any) {
-    return this.serviceService.createAppointment(id, data);
+  createAppointment(@Param('id') service_id: string,
+  @Body() data: {user_id : string, service_date: Date}) {
+    return this.serviceService.createAppointment(service_id, data);
   }
 
   @Get(':id/appointments')
@@ -89,5 +90,10 @@ export class ServiceController {
   @Post('comments/:id/reply')
   replyToComment(@Param('id') comment_id: string, @Body() body: { provider_id: string, content: string }) {
     return this.serviceService.replyToComment(comment_id, body.provider_id, body.content);
+  }
+
+  @Get(':id/providerDisponibility')
+  getProviderDisponibility(@Param('id') service_id: string) {
+    return this.serviceService.getProviderDisponibility(service_id);
   }
 }
