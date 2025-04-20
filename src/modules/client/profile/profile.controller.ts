@@ -178,8 +178,9 @@ export class ClientProfileController {
     }
   }
 
-  @UseGuards(ClientJwtGuard)
+
   @Put('availability')
+  @UseGuards(ClientJwtGuard)
   @ApiOperation({ summary: 'Update Availability', operationId: 'updateAvailability' })
   @ApiResponse({ status: 200, description: 'Availability updated successfully' })
   @ApiResponse({ status: 400, description: 'Bad request' })
@@ -195,6 +196,12 @@ export class ClientProfileController {
     } catch (error) {
       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
     }
+  }
+
+  @Get("myDocuments")
+  @UseGuards(ClientJwtGuard)
+  async getDocuments() {
+    return this.profileService.getMyProfileDocuments();
   }
 
 }
