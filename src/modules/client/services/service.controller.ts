@@ -54,6 +54,15 @@ export class ServiceController {
     return this.serviceService.getReviewsByUserId(user_id, page, limit);
   }
 
+  @Post('reviews/:reviews_id/reply')
+  async replyToReview(
+    @Param('reviews_id') reviews_id: string,
+    @Body() body: { user_id: string, content: string }
+  ) {
+    const { user_id, content } = body;
+    return this.serviceService.replyToReview(reviews_id, user_id, content);
+  }
+
   @Get(':id')
   getServiceById(@Param('id') id: string) {
     return this.serviceService.getServiceDetails(id);

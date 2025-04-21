@@ -552,6 +552,37 @@ export class ServiceService {
     };
   }
 
+
+  async replyToReview(reviews_id: string, user_id : string, content: string) {
+
+      const provider = await this.providerRepo.findOne({
+        where: { user: { user_id } },
+        relations: ['user'],
+      });
+
+      if (!provider) {
+        throw new Error('Provider not found');
+      }
+
+      const review = await this.reviewRepo.findOne({
+        where: { review_presta_id: reviews_id },
+      });
+      if (!review) {
+        throw new Error('Review not found');
+      }
+
+      const response = this.reviewResponseRepo.create({
+        comment: content,
+        review: review,
+      });
+      const savedResponse = await this.reviewResponseRepo.save(response);
+      if (!savedResponse) {
+        throw new Error('Error saving response');
+      }
+
+      return { reply : "ok" }
+  }
+
   
 }
 
