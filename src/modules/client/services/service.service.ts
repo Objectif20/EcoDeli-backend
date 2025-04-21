@@ -17,6 +17,7 @@ import { ProviderKeywordsList } from 'src/common/entities/provider_keywords_list
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { ProviderCommission } from 'src/common/entities/provider_commissions.entity';
+import { Users } from 'src/common/entities/user.entity';
 
 @Injectable()
 export class ServiceService {
@@ -31,6 +32,7 @@ export class ServiceService {
     @InjectRepository(PrestaReviewResponse) private reviewResponseRepo: Repository<PrestaReviewResponse>,
     @InjectRepository(ProviderCommission) private commissionRepo: Repository<ProviderCommission>,
     @InjectRepository(Client) private clientRepo: Repository<Client>,
+    @InjectRepository(Users) private userRepo: Repository<Users>,
     @InjectRepository(ProviderKeywordsList)
     private keywordListRepo: Repository<ProviderKeywordsList>,
     @InjectRepository(ProviderKeywords)
@@ -489,6 +491,67 @@ export class ServiceService {
 
     return providerDisponibilities
   }
+
+  async getReviewsByUserId(userId: string, page = 1, limit = 10): Promise<any> {
+    const provider = await this.providerRepo.findOne({
+      where: { user: { user_id: userId } },
+      relations: ['user'],
+    });
+  
+    if (!provider) {
+      throw new Error('Provider not found');
+    }
+  
+    const appointments = await this.appointmentRepo.find({
+      where: { provider: { provider_id: provider.provider_id } },
+      relations: ['review_presta', 'service', 'client', 'client.user'],
+    });
+  
+    const reviews = await Promise.all(appointments.map(async (appointment) => {
+      if (!appointment.review_presta) {
+        return null;
+      }
+  
+      const review = appointment.review_presta;
+      const client = appointment.client;
+      const user = client.user;
+  
+      const response = await this.reviewResponseRepo.findOne({
+        where: { review: { review_presta_id: review.review_presta_id } },
+      });
+  
+      return {
+        id: review.review_presta_id,
+        content: review.comment,
+        author: {
+          id: user.user_id,
+          name: `${client.first_name} ${client.last_name}`,
+          photo: user.profile_picture || null,
+        },
+        reply: !!response,
+        reply_content: response?.comment || null,
+        date: appointment.service_date.toISOString().split('T')[0],
+        services_name: appointment.service.name,
+        rate: review.rating,
+      };
+    }));
+  
+    const filteredReviews = reviews.filter(review => review !== null);
+  
+    const totalRows = filteredReviews.length;
+    const totalPages = Math.ceil(totalRows / limit);
+    const startIndex = (page - 1) * limit;
+    const paginatedReviews = filteredReviews.slice(startIndex, startIndex + limit);
+  
+    return {
+      data: paginatedReviews,
+      totalRows,
+      totalPages,
+      currentPage: page,
+      limit,
+    };
+  }
+
   
 }
 

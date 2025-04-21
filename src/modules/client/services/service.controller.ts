@@ -46,6 +46,14 @@ export class ServiceController {
     return this.serviceService.getValidatedServices(page, limit, search, city);
   }
 
+  @Get('reviews')
+  async getProviderReviews(
+    @Body() body: { user_id: string, page?: number, limit?: number }
+  ) {
+    const { user_id, page = 1, limit = 10 } = body;
+    return this.serviceService.getReviewsByUserId(user_id, page, limit);
+  }
+
   @Get(':id')
   getServiceById(@Param('id') id: string) {
     return this.serviceService.getServiceDetails(id);
@@ -96,4 +104,6 @@ export class ServiceController {
   getProviderDisponibility(@Param('id') service_id: string) {
     return this.serviceService.getProviderDisponibility(service_id);
   }
+
+
 }
