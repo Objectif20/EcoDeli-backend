@@ -47,6 +47,7 @@ export class ServiceController {
   }
 
   @Get('reviews')
+  @UseGuards(ClientJwtGuard)
   async getProviderReviews(
     @Body() body: { user_id: string, page?: number, limit?: number }
   ) {
@@ -55,6 +56,7 @@ export class ServiceController {
   }
 
   @Post('reviews/:reviews_id/reply')
+  @UseGuards(ClientJwtGuard)
   async replyToReview(
     @Param('reviews_id') reviews_id: string,
     @Body() body: { user_id: string, content: string }

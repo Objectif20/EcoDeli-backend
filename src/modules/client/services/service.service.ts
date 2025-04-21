@@ -552,7 +552,6 @@ export class ServiceService {
     };
   }
 
-
   async replyToReview(reviews_id: string, user_id : string, content: string) {
 
       const provider = await this.providerRepo.findOne({
