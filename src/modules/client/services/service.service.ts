@@ -16,6 +16,8 @@ import { MinioService } from 'src/common/services/file/minio.service';
 import { ProviderKeywordsList } from 'src/common/entities/provider_keywords_list.entity';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { ProviderCommission } from 'src/common/entities/provider_commissions.entity';
+import { Users } from 'src/common/entities/user.entity';
 
 @Injectable()
 export class ServiceService {
@@ -28,7 +30,9 @@ export class ServiceService {
     @InjectRepository(Appointments) private appointmentRepo: Repository<Appointments>,
     @InjectRepository(PrestaReview) private reviewRepo: Repository<PrestaReview>,
     @InjectRepository(PrestaReviewResponse) private reviewResponseRepo: Repository<PrestaReviewResponse>,
+    @InjectRepository(ProviderCommission) private commissionRepo: Repository<ProviderCommission>,
     @InjectRepository(Client) private clientRepo: Repository<Client>,
+    @InjectRepository(Users) private userRepo: Repository<Users>,
     @InjectRepository(ProviderKeywordsList)
     private keywordListRepo: Repository<ProviderKeywordsList>,
     @InjectRepository(ProviderKeywords)
@@ -160,48 +164,232 @@ export class ServiceService {
 
   async getValidatedServices(page = 1, limit = 10, search = '', city = '') {
     const skip = (page - 1) * limit;
-    const [result, total] = await this.serviceRepo.findAndCount({
-      where: {
-        validated: true,
-        name: Like(`%${search}%`),
-        ...(city && { city: Like(`%${city}%`) }),
-      },
-      take: limit,
-      skip,
-    });
 
-    return { data: result, meta: { total, page, limit } };
-  }
+    const queryBuilder = this.serviceRepo.createQueryBuilder('serviceList')
+        .leftJoinAndSelect('serviceList.services', 'services')
+        .leftJoinAndSelect('services.provider', 'provider')
+        .leftJoinAndSelect('provider.user', 'user')
+        .leftJoinAndSelect('serviceList.images', 'images')
+        .leftJoinAndSelect('serviceList.keywords', 'keywords')
+        .leftJoinAndSelect('keywords.keywordList', 'keywordList')
+        .leftJoinAndSelect('serviceList.appointments', 'appointments')
+        .leftJoinAndSelect('appointments.review_presta', 'reviews')
+        .leftJoinAndSelect('reviews.responses', 'responses')
+        .leftJoinAndSelect('appointments.client', 'client')
+        .where('serviceList.validated = :validated', { validated: true })
+        .andWhere('serviceList.name LIKE :search', { search: `%${search}%` });
+
+    if (city) {
+        queryBuilder.andWhere('serviceList.city LIKE :city', { city: `%${city}%` });
+    }
+
+    queryBuilder.take(limit).skip(skip);
+
+    const [result, total] = await queryBuilder.getManyAndCount();
+
+    const services = await Promise.all(result.map(async (serviceList) => {
+        const providerAppointments = serviceList.appointments;
+        const firstService = serviceList.services[0];
+
+        const imageUrls = await Promise.all(serviceList.images.map(image =>
+            this.minioService.generateImageUrl('provider-images', image.image_service_url)
+        ));
+
+        const authorPhotoUrl = firstService && firstService.provider && firstService.provider.user
+            ? await this.minioService.generateImageUrl('client-images', firstService.provider.user.profile_picture)
+            : null;
+
+        return {
+            service_id: serviceList.service_id,
+            service_type: serviceList.service_type,
+            status: serviceList.status,
+            name: serviceList.name,
+            city: serviceList.city,
+            price: serviceList.price,
+            price_admin: serviceList.price_admin,
+            duration_time: serviceList.duration_minute,
+            available: serviceList.available,
+            keywords: serviceList.keywords.map(keyword => keyword.keywordList.keyword),
+            images: imageUrls,
+            description: serviceList.description,
+            author: firstService && firstService.provider && firstService.provider.user ? {
+                id: firstService.provider.provider_id,
+                name: `${firstService.provider.first_name} ${firstService.provider.last_name}`,
+                email: firstService.provider.user.email,
+                photo: authorPhotoUrl,
+            } : null,
+            rate: providerAppointments.reduce((acc, appointment) => acc + (appointment.review_presta?.rating || 0), 0) / (providerAppointments.filter(appointment => appointment.review_presta).length || 1),
+            comments: await Promise.all(providerAppointments.flatMap(async (appointment) => {
+                if (appointment.review_presta) {
+                    const clientPhotoUrl = appointment.client.user
+                        ? await this.minioService.generateImageUrl('client-images', appointment.client.user.profile_picture)
+                        : null;
+
+                    const responseAuthorPhotoUrl = firstService && firstService.provider && firstService.provider.user
+                        ? await this.minioService.generateImageUrl('client-images', firstService.provider.user.profile_picture)
+                        : null;
+
+                    return [{
+                        id: appointment.review_presta.review_presta_id,
+                        author: {
+                            id: appointment.client.client_id,
+                            name: `${appointment.client.first_name} ${appointment.client.last_name}`,
+                            photo: clientPhotoUrl,
+                        },
+                        content: appointment.review_presta.comment,
+                        response: appointment.review_presta.responses?.length ? {
+                            id: appointment.review_presta.responses[0].review_presta_response_id,
+                            author: {
+                                id: firstService.provider.provider_id,
+                                name: `${firstService.provider.first_name} ${firstService.provider.last_name}`,
+                                photo: responseAuthorPhotoUrl,
+                            },
+                            content: appointment.review_presta.responses[0].comment,
+                        } : undefined,
+                    }];
+                }
+                return [];
+            })),
+        };
+    }));
+
+    return { data: services, meta: { total, page, limit } };
+}
 
   async getServiceDetails(service_id: string) {
+    const serviceList = await this.serviceRepo.findOne({
+      where: { service_id },
+      relations: [
+        'services',
+        'services.provider',
+        'services.provider.user',
+        'images',
+        'keywords',
+        'keywords.keywordList',
+        'appointments',
+        'appointments.review_presta',
+        'appointments.review_presta.responses',
+        'appointments.client',
+        'appointments.client.user',
+      ],
+    });
+
+    if (!serviceList) {
+      throw new NotFoundException('Service introuvable');
+    }
+
+    const providerAppointments = serviceList.appointments;
+    const firstService = serviceList.services[0];
+
+    const imageUrls = await Promise.all(serviceList.images.map(image =>
+      this.minioService.generateImageUrl('provider-images', image.image_service_url)
+    ));
+
+    const authorPhotoUrl = firstService && firstService.provider && firstService.provider.user
+      ? await this.minioService.generateImageUrl('client-images', firstService.provider.user.profile_picture)
+      : null;
+
+    const comments = await Promise.all(providerAppointments.flatMap(async (appointment) => {
+      if (appointment.review_presta) {
+        const clientPhotoUrl = appointment.client.user
+          ? await this.minioService.generateImageUrl('client-images', appointment.client.user.profile_picture)
+          : null;
+
+        const responseAuthorPhotoUrl = firstService && firstService.provider && firstService.provider.user
+          ? await this.minioService.generateImageUrl('client-images', firstService.provider.user.profile_picture)
+          : null;
+
+        return [{
+          id: appointment.review_presta.review_presta_id,
+          author: {
+            id: appointment.client.client_id,
+            name: `${appointment.client.first_name} ${appointment.client.last_name}`,
+            photo: clientPhotoUrl,
+          },
+          content: appointment.review_presta.comment,
+          response: appointment.review_presta.responses?.length ? {
+            id: appointment.review_presta.responses[0].review_presta_response_id,
+            author: {
+              id: firstService.provider.provider_id,
+              name: `${firstService.provider.first_name} ${firstService.provider.last_name}`,
+              photo: responseAuthorPhotoUrl,
+            },
+            content: appointment.review_presta.responses[0].comment,
+          } : undefined,
+        }];
+      }
+      return [];
+    }));
+
+    const rate = providerAppointments.reduce((acc, appointment) => acc + (appointment.review_presta?.rating || 0), 0)
+      / (providerAppointments.filter(appointment => appointment.review_presta).length || 1);
+
+    return {
+      service_id: serviceList.service_id,
+      service_type: serviceList.service_type,
+      status: serviceList.status,
+      name: serviceList.name,
+      city: serviceList.city,
+      price: serviceList.price,
+      price_admin: serviceList.price_admin,
+      duration_time: serviceList.duration_minute,
+      available: serviceList.available,
+      keywords: serviceList.keywords.map(keyword => keyword.keywordList.keyword),
+      images: imageUrls,
+      description: serviceList.description,
+      author: firstService && firstService.provider && firstService.provider.user ? {
+        id: firstService.provider.provider_id,
+        name: `${firstService.provider.first_name} ${firstService.provider.last_name}`,
+        email: firstService.provider.user.email,
+        photo: authorPhotoUrl,
+      } : null,
+      rate,
+      comments,
+    };
+  }
+
+  async createAppointment(service_id: string, data: {user_id: string; service_date: Date }) {
+
+    const client = await this.clientRepo.findOne({
+      where: { user: { user_id: data.user_id } },
+    });
+    if (!client) throw new NotFoundException('Client non trouvé');
+
     const service = await this.serviceRepo.findOne({
       where: { service_id },
-      relations: ['images'],
     });
+    if (!service) throw new NotFoundException('Service non trouvé');
 
-    if (!service) throw new NotFoundException('Service introuvable');
-    return service;
-  }
+    const provider = await this.providerRepo.findOne({
+      where: { services: { service_id } },
+    });
+    if (!provider) throw new NotFoundException('Prestataire non trouvé');
 
-  async createAppointment(service_id: string, data: any) {
+    const commission = await this.commissionRepo.find();
+    if (!commission) throw new NotFoundException('Commission non trouvée');
+    const commissionValue = commission[0].value;
+    
     const appointment = this.appointmentRepo.create({
-      service_payment_id: data.service_payment_id,
-      stripe_payment_id: data.stripe_payment_id,
-      amount: data.amount,
-      commission: data.commission,
-      status: data.status,
+      amount: service.price,
+      status: 'pending',
       service_date: data.service_date,
-      payment_date: data.payment_date,
-      client: { client_id: data.client_id }, // 🔥 ici on met bien l'objet lié
-      service: { service_id }, // 🔥 via l'URL
-      provider: { provider_id: data.provider_id }, // si besoin
-      presta_commission: { provider_commission_id: data.presta_commission_id },
+      duration: service.duration_minute,
+      commission: commissionValue,
+      presta_commission : commission[0],
+      client,
+      service,
+      provider,
     });
-  
-    return this.appointmentRepo.save(appointment);
+
+    const savedAppointment = await this.appointmentRepo.save(appointment);
+
+    if (!savedAppointment) {
+      throw new NotFoundException('Erreur lors de la création du rendez-vous');
+    }
+
+    
   }
   
-
   async getServiceAppointments(service_id: string) {
     return this.appointmentRepo.find({ where: { service: { service_id } } });
   }
@@ -266,6 +454,134 @@ export class ServiceService {
   
     return await this.reviewResponseRepo.save(response);
   }
+
+  async getProviderDisponibility(service_id: string) {
+
+    const service = await this.serviceRepo.findOne({
+      where: { service_id },
+    });
+  
+    const provider = await this.providerRepo.findOne({
+      where: { services: { service_id } },
+      relations: ['availabilities'], 
+    });
+    
+    if (!service) throw new NotFoundException('Service non trouvé');
+    if (!provider) throw new NotFoundException('Prestataire non trouvé');
+  
+    const availabilities = provider.availabilities;
+  
+    const appointments = await this.appointmentRepo.find({
+      where: { provider: provider },
+    });
+  
+    const formattedAppointments = appointments.map(appointment => ({
+      date: appointment.service_date.toISOString().split('T')[0],
+      time: appointment.service_date.toISOString().split('T')[1].substring(0, 5),
+      end: new Date(appointment.service_date.getTime() + appointment.duration * 60000)
+      .toISOString()
+      .split('T')[1]
+      .substring(0, 5),
+    }));
+  
+    const providerDisponibilities = {
+      availabilities,
+      appointments: formattedAppointments,
+    }
+
+    return providerDisponibilities
+  }
+
+  async getReviewsByUserId(userId: string, page = 1, limit = 10): Promise<any> {
+    const provider = await this.providerRepo.findOne({
+      where: { user: { user_id: userId } },
+      relations: ['user'],
+    });
+  
+    if (!provider) {
+      throw new Error('Provider not found');
+    }
+  
+    const appointments = await this.appointmentRepo.find({
+      where: { provider: { provider_id: provider.provider_id } },
+      relations: ['review_presta', 'service', 'client', 'client.user'],
+    });
+  
+    const reviews = await Promise.all(appointments.map(async (appointment) => {
+      if (!appointment.review_presta) {
+        return null;
+      }
+  
+      const review = appointment.review_presta;
+      const client = appointment.client;
+      const user = client.user;
+  
+      const response = await this.reviewResponseRepo.findOne({
+        where: { review: { review_presta_id: review.review_presta_id } },
+      });
+  
+      return {
+        id: review.review_presta_id,
+        content: review.comment,
+        author: {
+          id: user.user_id,
+          name: `${client.first_name} ${client.last_name}`,
+          photo: user.profile_picture || null,
+        },
+        reply: !!response,
+        reply_content: response?.comment || null,
+        date: appointment.service_date.toISOString().split('T')[0],
+        services_name: appointment.service.name,
+        rate: review.rating,
+      };
+    }));
+  
+    const filteredReviews = reviews.filter(review => review !== null);
+  
+    const totalRows = filteredReviews.length;
+    const totalPages = Math.ceil(totalRows / limit);
+    const startIndex = (page - 1) * limit;
+    const paginatedReviews = filteredReviews.slice(startIndex, startIndex + limit);
+  
+    return {
+      data: paginatedReviews,
+      totalRows,
+      totalPages,
+      currentPage: page,
+      limit,
+    };
+  }
+
+  async replyToReview(reviews_id: string, user_id : string, content: string) {
+
+      const provider = await this.providerRepo.findOne({
+        where: { user: { user_id } },
+        relations: ['user'],
+      });
+
+      if (!provider) {
+        throw new Error('Provider not found');
+      }
+
+      const review = await this.reviewRepo.findOne({
+        where: { review_presta_id: reviews_id },
+      });
+      if (!review) {
+        throw new Error('Review not found');
+      }
+
+      const response = this.reviewResponseRepo.create({
+        comment: content,
+        review: review,
+      });
+      const savedResponse = await this.reviewResponseRepo.save(response);
+      if (!savedResponse) {
+        throw new Error('Error saving response');
+      }
+
+      return { reply : "ok" }
+  }
+
   
 }
 

@@ -3,6 +3,7 @@ import { Admin } from "./admin.entity";
 import { Services } from "./service.entity";
 import { ProviderKeywords } from "./provider_keyword.entity";
 import { ServiceImage } from "./services_image.entity";
+import { Appointments } from "./appointments.entity";
 
 @Entity({ name: 'services_list' })
 export class ServicesList {
@@ -51,4 +52,8 @@ export class ServicesList {
 
   @OneToMany(() => ServiceImage, image => image.serviceList)
   images: ServiceImage[];
+
+  @OneToMany(() => Appointments, appointment => appointment.service)
+  appointments: Appointments[];
+
 }

@@ -10,11 +10,13 @@ import { Merchant } from "src/common/entities/merchant.entity";
 import { SharedModule } from "src/common/shared/shared.module";
 import { PlanningController } from "./planning.controller";
 import { PlanningService } from "./planning.service";
+import { Appointments } from "src/common/entities/appointments.entity";
+import { ServicesList } from "src/common/entities/services_list.entity";
 
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant]),
+        TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Appointments, ServicesList]),
         JwtModule.register({}),
         SharedModule,
     ],

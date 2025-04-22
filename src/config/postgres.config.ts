@@ -18,6 +18,6 @@ export const getDatabaseConfig = async (secretsService: SecretsService): Promise
     url: databaseUrl,
     entities,
     synchronize: false,
-    logging: true,
+    logging: false,
   };
 };

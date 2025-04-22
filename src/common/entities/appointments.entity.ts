@@ -40,6 +40,9 @@ export class Appointments {
     @Column({ type: 'text', nullable: true })
     review: string | null;
 
+    @Column({ type: "int", nullable: true })
+    duration: number; 
+
     @ManyToOne(() => ProviderCommission, (commission) => commission.appointments, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'presta_commission_id' })
     presta_commission: ProviderCommission;

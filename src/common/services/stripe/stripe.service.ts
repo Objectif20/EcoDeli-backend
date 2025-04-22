@@ -57,26 +57,101 @@ export class StripeService {
     }
   }
 
-  async createConnectedAccountWithIban(email: string, country: string, paymentMethodId: string): Promise<Stripe.Account> {
+  async createConnectedAccountWithToken(accountToken: string): Promise<Stripe.Account> {
+    console.log('Creating connected account with token:', accountToken);
     try {
       const account = await this.stripeClient.accounts.create({
         type: 'custom',
-        country: country,
-        email: email,
         capabilities: {
+          card_payments: { requested: true },
           transfers: { requested: true },
         },
-        business_type: 'individual',
-        tos_acceptance: { date: Math.floor(Date.now() / 1000), ip: '127.0.0.1' },
+        account_token: accountToken,
+        country: 'FR',
       });
-
-      await this.stripeClient.paymentMethods.attach(paymentMethodId, {
-        customer: account.id,
-      });
-
+  
+      console.log('Compte Stripe créé avec succès:', account);
       return account;
     } catch (error) {
-      throw new BadRequestException("Erreur lors de la création du compte Stripe Connect avec IBAN", error);
+      console.error('Erreur lors de la création du compte Stripe:', error);
+      
+      if (error.response) {
+        console.error('Détails de l\'erreur Stripe:', error.response.data);
+      }
+  
+      throw new BadRequestException(
+        'Erreur lors de la création du compte Stripe Connect',
+        error
+      );
+    }
+  }
+  
+
+  async createSetupIntentForConnectedAccount(stripeAccountId: string): Promise<Stripe.SetupIntent> {
+    try {
+      const setupIntent = await this.stripeClient.setupIntents.create(
+        {
+          payment_method_types: ['sepa_debit'],
+          usage: 'off_session',
+        },
+        {
+          stripeAccount: stripeAccountId,
+        }
+      );
+  
+      return setupIntent;
+    } catch (error) {
+      throw new BadRequestException('Erreur lors de la création du SetupIntent Stripe', error);
+    }
+  }
+
+  async createAccountLink(stripeAccountId: string): Promise<string> {
+    try {
+      const accountLink = await this.stripeClient.accountLinks.create({
+        account: stripeAccountId,
+        refresh_url: 'https://example.com/reauth',
+        return_url: 'https://ecodeli.remythibaut.fr/office/billing-settings',
+        type: 'account_onboarding',
+      });
+
+      const accountLinkUrl = accountLink.url;
+      console.log('URL pour le formulaire de validation du profil:', accountLinkUrl);
+      return accountLinkUrl;
+    } catch (error) {
+      console.error('Erreur lors de la création du lien du compte Stripe:', error);
+      throw new BadRequestException('Erreur lors de la création du lien du compte Stripe', error);
+    }
+  }
+
+  async isStripeAccountValid(stripeAccountId: string): Promise<boolean> {
+    try {
+      const account = await this.stripeClient.accounts.retrieve(stripeAccountId);
+      return account.details_submitted && account.charges_enabled;
+    } catch (error) {
+      console.error("Erreur lors de la récupération du compte Stripe :", error);
+      return false;
+    }
+  }
+
+  async getStripeAccountStatus(stripeAccountId: string): Promise<{
+    isValid: boolean,
+    isEnabled: boolean,
+    needsIdCard: boolean
+  }> {
+    try {
+      const account = await this.stripeClient.accounts.retrieve(stripeAccountId);
+  
+      const isValid = account.details_submitted && account.charges_enabled;
+      const isEnabled = account.charges_enabled && account.payouts_enabled;
+  
+      const needsIdCard = !!account.requirements?.currently_due?.some((item: string) =>
+        item.includes("verification.document")
+      );
+  
+      return { isValid, isEnabled, needsIdCard };
+    } catch (error) {
+      console.error("Erreur lors de la récupération du compte Stripe :", error);
+      return { isValid: false, isEnabled: false, needsIdCard: false };
     }
   }
 }

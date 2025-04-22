@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpException, HttpStatus, Ip, NotFoundException, Param, Patch, Post, Put, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags} from '@nestjs/swagger';
 import { ProfileService } from './profile.service';
 import { User } from './type';
@@ -6,6 +6,8 @@ import { ClientJwtGuard } from 'src/common/guards/user-jwt.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UpdateMyBasicProfileDto } from './dto/update-basic-profile.dto';
 import { CreateReportDto } from './dto/create-report.dto';
+import { Availability } from 'src/common/entities/availibities.entity';
+import { AvailabilityDto } from './dto/availitity.dto';
 
 
 
@@ -72,6 +74,72 @@ export class ClientProfileController {
     return this.profileService.createReport(dto);
   }
 
+  @Get('stripe-account')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Get Stripe Account', operationId: 'getStripeAccount' })
+  @ApiResponse({ status: 200, description: 'Stripe account retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Stripe account not found' })
+  async getStripeAccount(@Body() body : {user_id : string}): Promise<{ stripeAccountId: string }> {
+    const userId = body.user_id;
+
+    const stripeAccountId = await this.profileService.getStripeAccountId(userId);
+
+    if (!stripeAccountId) {
+      console.log('Aucun compte Stripe trouvé pour cet utilisateur.');
+      throw new NotFoundException('Aucun compte Stripe trouvé pour cet utilisateur.');
+    }
+
+    return { stripeAccountId };
+  }
+
+  @Post('create-account')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Create Stripe Account', operationId: 'createStripeAccount' })
+  @ApiResponse({ status: 200, description: 'Stripe account created successfully' })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  async createStripeAccount(
+    @Body() body: { user_id: string; accountToken: string }
+  ) {
+    try {
+      const stripeAccountId = await this.profileService.getOrCreateStripeAccountId(
+        body.user_id, 
+        body.accountToken
+      );
+  
+      return { stripeAccountId };
+    } catch (error) {
+      throw new BadRequestException('Erreur lors de la création du compte Stripe', error.message);
+    }
+  }
+
+  @Get('stripe-validity')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Check Stripe Account Validity', operationId: 'checkStripeAccountValidity' })
+  @ApiResponse({
+    status: 200,
+    description: 'Stripe account validity checked successfully',
+    schema: {
+      example: {
+        valid: true,
+        enabled: false,
+        needs_id_card: true,
+        url_complete: 'https://connect.stripe.com/...',
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Stripe account not found' })
+  async checkStripeAccountValidity(
+    @Body() body: { user_id: string }
+  ): Promise<{
+    valid: boolean;
+    enabled: boolean;
+    needs_id_card: boolean;
+    url_complete?: string;
+  }> {
+    const userId = body.user_id;
+    return this.profileService.isStripeAccountValid(userId);
+  }
+
   @Get('provider/documents')
   @UseGuards(ClientJwtGuard)
   @ApiOperation({ summary: 'Get My Documents', operationId: 'getMyDocuments' })
@@ -95,6 +163,45 @@ export class ClientProfileController {
       throw new BadRequestException('Aucun fichier fourni');
     }
     return this.profileService.addDocument(userId, body.name, file, body.description);
+  }
+
+  @Get('availability')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Get Availability', operationId: 'getAvailability' })
+  @ApiResponse({ status: 200, description: 'Availability retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Availability not found' })
+  async getAvailability(@Body() body : { user_id: string },): Promise<Availability[]> {
+    try {
+      return await this.profileService.getAvailabilityForUser(body.user_id);
+    } catch (error) {
+      throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+    }
+  }
+
+
+  @Put('availability')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Update Availability', operationId: 'updateAvailability' })
+  @ApiResponse({ status: 200, description: 'Availability updated successfully' })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  async updateAvailability(
+    @Body()
+    body: {
+      user_id: string;
+      availabilities: AvailabilityDto[];
+    },
+  ): Promise<Availability[]> {
+    try {
+      return await this.profileService.updateAvailabilityForUser(body.user_id, body.availabilities);
+    } catch (error) {
+      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  @Get("myDocuments")
+  @UseGuards(ClientJwtGuard)
+  async getDocuments() {
+    return this.profileService.getMyProfileDocuments();
   }
 
 }

@@ -6,6 +6,7 @@ import { Subscription } from './subscription.entity';
 import { Client } from "./client.entity";
 import { DeliveryPerson } from "./delivery_persons.entity";
 import { Blocked } from "./blocked.entity";
+import { Providers } from "./provider.entity";
 
 
 @Entity({ name: 'users' })
@@ -63,8 +64,8 @@ export class Users {
     @Column({ type: "text", nullable: true })
     secret_totp: string;
 
-    @OneToMany(() => Merchant, merchant => merchant.user)
-    providers: Merchant[];
+    @OneToMany(() => Providers, provider => provider.user)
+    providers: Providers[];
 
     @OneToMany(() => Client, client => client.user)
     clients: Client[];

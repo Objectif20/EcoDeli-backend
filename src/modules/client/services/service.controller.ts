@@ -46,14 +46,34 @@ export class ServiceController {
     return this.serviceService.getValidatedServices(page, limit, search, city);
   }
 
+  @Get('reviews')
+  @UseGuards(ClientJwtGuard)
+  async getProviderReviews(
+    @Body() body: { user_id: string, page?: number, limit?: number }
+  ) {
+    const { user_id, page = 1, limit = 10 } = body;
+    return this.serviceService.getReviewsByUserId(user_id, page, limit);
+  }
+
+  @Post('reviews/:reviews_id/reply')
+  @UseGuards(ClientJwtGuard)
+  async replyToReview(
+    @Param('reviews_id') reviews_id: string,
+    @Body() body: { user_id: string, content: string }
+  ) {
+    const { user_id, content } = body;
+    return this.serviceService.replyToReview(reviews_id, user_id, content);
+  }
+
   @Get(':id')
   getServiceById(@Param('id') id: string) {
     return this.serviceService.getServiceDetails(id);
   }
 
   @Post(':id/appointments')
-  createAppointment(@Param('id') id: string, @Body() data: any) {
-    return this.serviceService.createAppointment(id, data);
+  createAppointment(@Param('id') service_id: string,
+  @Body() data: {user_id : string, service_date: Date}) {
+    return this.serviceService.createAppointment(service_id, data);
   }
 
   @Get(':id/appointments')
@@ -90,4 +110,11 @@ export class ServiceController {
   replyToComment(@Param('id') comment_id: string, @Body() body: { provider_id: string, content: string }) {
     return this.serviceService.replyToComment(comment_id, body.provider_id, body.content);
   }
+
+  @Get(':id/providerDisponibility')
+  getProviderDisponibility(@Param('id') service_id: string) {
+    return this.serviceService.getProviderDisponibility(service_id);
+  }
+
+
 }
