@@ -287,7 +287,7 @@ import { AvailabilityDto } from "./dto/availitity.dto";
       if (!user) throw new NotFoundException('Utilisateur introuvable');
   
       const oldPath = user.profile_picture;
-      const filename = `${user_id}/image-${uuidv4()}`;
+      const filename = `${user_id}/image-${uuidv4()}.${file.originalname.split('.').pop()}`;
       const bucket = 'client-images';
   
       const uploaded = await this.minioService.uploadFileToBucket(bucket, filename, file);
