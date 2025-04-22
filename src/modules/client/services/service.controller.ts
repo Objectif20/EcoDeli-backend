@@ -71,6 +71,7 @@ export class ServiceController {
   }
 
   @Post(':id/appointments')
+  @UseGuards(ClientJwtGuard)
   createAppointment(@Param('id') service_id: string,
   @Body() data: {user_id : string, service_date: Date}) {
     return this.serviceService.createAppointment(service_id, data);
