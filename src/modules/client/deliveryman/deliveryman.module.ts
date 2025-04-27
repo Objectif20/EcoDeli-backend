@@ -10,12 +10,15 @@ import { SharedModule } from "src/common/shared/shared.module";
 import { DeliveryManController } from "./deliveryman.controller";
 import { DeliveryManService } from "./deliveryman.service";
 import { Trip } from "src/common/entities/trips.entity";
+import { Category } from "src/common/entities/category.entity";
+import { Vehicle } from "src/common/entities/vehicle.entity";
+import { VehicleDocument } from "src/common/entities/vehicle_documents.entity";
 
 
 @Module({
 
     imports: [
-        TypeOrmModule.forFeature([Users, DeliveryPerson, Trip]),
+        TypeOrmModule.forFeature([Users, DeliveryPerson, Trip, Category, Vehicle, VehicleDocument]),
         JwtModule.register({}),
         SharedModule,
     ],

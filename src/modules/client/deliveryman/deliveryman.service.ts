@@ -6,6 +6,10 @@ import { Repository } from 'typeorm';
 import axios from 'axios';
 import { Trip } from 'src/common/entities/trips.entity';
 import { DeliveryPerson } from 'src/common/entities/delivery_persons.entity';
+import { Category } from 'src/common/entities/category.entity';
+import { MinioService } from 'src/common/services/file/minio.service';
+import { Vehicle } from 'src/common/entities/vehicle.entity';
+import { VehicleDocument } from 'src/common/entities/vehicle_documents.entity';
 
 export interface RoutePostDto {
     from: string;
@@ -39,6 +43,13 @@ export class DeliveryManService {
     private tripRepository: Repository<Trip>,
     @InjectRepository(DeliveryPerson)
     private deliveryPersonRepository: Repository<DeliveryPerson>,
+    @InjectRepository(Category)
+    private categoryRepository: Repository<Category>,
+    @InjectRepository(Vehicle)
+    private vehicleRepository: Repository<Vehicle>,
+    @InjectRepository(VehicleDocument)
+    private vehicleDocumentRepository: Repository<VehicleDocument>,
+    private readonly minioService: MinioService,
   ) {}
 
   private async getCoordinates(city: string): Promise<{ lat: number; lng: number }> {
@@ -120,5 +131,55 @@ export class DeliveryManService {
       tolerate_radius: trip.tolerated_radius,
       comeback_today_or_tomorrow: trip.comeback_today_or_tomorrow as "today" | "tomorrow" | "later", // <--- ici, cast propre
     }));
+  }
+
+  async getVehicleCategories(): Promise<Category[]> {
+    return this.categoryRepository.find();
+  }
+
+  async addVehicle(userId: string, vehicleData: {
+      model: string,
+      registrationNumber: string,
+      electric: boolean,
+      co2Consumption: number,
+      categoryId: number,
+      image: Express.Multer.File,
+      document: Express.Multer.File
+  }): Promise<Vehicle> {
+      const deliveryPerson = await this.deliveryPersonRepository.findOne({ where: { user: { user_id: userId } } });
+      if (!deliveryPerson) {
+          throw new Error('Livreur non trouvé');
+      }
+
+      const category = await this.categoryRepository.findOne({ where: { category_id: vehicleData.categoryId } });
+      if (!category) {
+          throw new Error('Catégorie non trouvée');
+      }
+
+      const imageFileName = `${userId}/deliveryman/vehicle/${vehicleData.model}_${vehicleData.registrationNumber}_${Date.now()}.${vehicleData.image.originalname.split('.').pop()}`;
+      await this.minioService.uploadFileToBucket('client-documents', imageFileName, vehicleData.image);
+
+      const newVehicle = this.vehicleRepository.create();
+      newVehicle.model = vehicleData.model;
+      newVehicle.registration_number = vehicleData.registrationNumber;
+      newVehicle.electric = vehicleData.electric;
+      newVehicle.co2_consumption = vehicleData.co2Consumption;
+      newVehicle.category = category;
+      newVehicle.deliveryPerson = deliveryPerson;
+      newVehicle.image_url = imageFileName;
+
+      const savedVehicle = await this.vehicleRepository.save(newVehicle);
+
+      const documentFileName = `${userId}/deliveryman/vehicle/documents/${savedVehicle.vehicle_id}/${vehicleData.document.originalname}`;
+      const documentUrl = await this.minioService.uploadFileToBucket('client-documents', documentFileName, vehicleData.document);
+
+      const newDocument = this.vehicleDocumentRepository.create();
+      newDocument.name = vehicleData.document.originalname;
+      newDocument.vehicle_document_url = documentFileName;
+      newDocument.vehicle = savedVehicle;
+
+      await this.vehicleDocumentRepository.save(newDocument);
+
+      return savedVehicle;
   }
 }
