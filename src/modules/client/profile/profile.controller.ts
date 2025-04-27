@@ -204,4 +204,15 @@ export class ClientProfileController {
     return this.profileService.getMyProfileDocuments();
   }
 
+  @Post('newPassword')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({
+    summary: 'Reset Client Password',
+    operationId: 'resetClientPassword',
+  })
+  @ApiResponse({ status: 200, description: 'Password reset successfully' })
+  async newPassword(@Body() body: { user_id: string }) {
+    return await this.profileService.newPassword(body.user_id);
+  }
+
 }

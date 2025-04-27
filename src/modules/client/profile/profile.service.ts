@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Client } from "src/common/entities/client.entity";
 import { DeliveryPerson } from "src/common/entities/delivery_persons.entity";
@@ -15,10 +15,10 @@ import { v4 as uuidv4 } from "uuid";
 import { Report } from "src/common/entities/report.entity";
 import { CreateReportDto } from "./dto/create-report.dto";
 import { StripeService } from "src/common/services/stripe/stripe.service";
-import Stripe from "stripe";
-import { error } from "console";
 import { Availability } from "src/common/entities/availibities.entity";
 import { AvailabilityDto } from "./dto/availitity.dto";
+import * as nodemailer from 'nodemailer';
+
 
   @Injectable()
   export class ProfileService {
@@ -44,7 +44,9 @@ import { AvailabilityDto } from "./dto/availitity.dto";
       @InjectRepository(Availability)
       private readonly availabilityRepository: Repository<Availability>,
       private readonly minioService: MinioService,
-      private readonly stripeService: StripeService
+      private readonly stripeService: StripeService,
+      @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
+      
     ) {}
   
     async getMyProfile(user_id: string): Promise<any> {
@@ -124,7 +126,6 @@ import { AvailabilityDto } from "./dto/availitity.dto";
     
       return userData;
     }
-
 
     async getMyBasicProfile(user_id: string): Promise<any> {
       const user = await this.userRepository.findOne({ where: { user_id } });
@@ -320,8 +321,6 @@ import { AvailabilityDto } from "./dto/availitity.dto";
       return this.reportRepository.save(report);
     }
 
-
-
     async getStripeAccountId(userId: string): Promise<string | null> {
       const provider = await this.providerRepository.findOne({
         where: { user: { user_id: userId } },
@@ -406,8 +405,30 @@ import { AvailabilityDto } from "./dto/availitity.dto";
       };
     }
 
+
+    async newPassword(user_id: string): Promise<{ message: string }> {
+        const user = await this.userRepository.findOne({ where: { user_id } });
+        if (!user) throw new UnauthorizedException('User not found');
+      
+        const passwordCode = uuidv4(); 
+      
+        user.password_code = passwordCode;
+        await this.userRepository.save(user);
+      
+        try {
+          const fromEmail = this.mailer.options.auth.user;
+          const info = await this.mailer.sendMail({
+            from: fromEmail,
+            to: user.email,
+            subject: 'Réinitialisation de mot de passe',
+            text: 'Voici votre code temporaire pour réinitialiser votre mot de passe: ' + passwordCode,
+          });
+        } catch (error) {
+          throw new Error(`Erreur lors de l'envoi de l'email: ${error.message}`);
+        }
     
-    // Provider 
+        return { message: 'Email sent' };
+      }
 
     async getMyDocuments(user_id: string): Promise<any[]> {
       const provider = await this.providerRepository.findOne({
