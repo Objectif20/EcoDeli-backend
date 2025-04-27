@@ -10,6 +10,7 @@ import { UtilsModule } from './utils/utils.module';
 import { ProfileModule } from './profile/profile.module';
 import { MessagesModule } from './message/message.module';
 import { PlanningModule } from './planning/planning.module';
+import { DeliverymanModule } from './deliveryman/deliveryman.module';
 
 @Module({
     imports: [
@@ -23,7 +24,8 @@ import { PlanningModule } from './planning/planning.module';
         UtilsModule,
         ProfileModule,
         MessagesModule,
-        PlanningModule
+        PlanningModule,
+        DeliverymanModule
     ],
     providers: [],
 })
