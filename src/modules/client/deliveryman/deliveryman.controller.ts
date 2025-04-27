@@ -59,6 +59,16 @@ async addVehicle(
   return this.deliveryManService.addVehicle(req.user.user_id, { ...vehicleData, image, document });
 }
 
+  @Get('my-vehicles')
+  @UseGuards(ClientJwtGuard)
+  async getMyVehicules(
+    @Query('user_id') userId: string,  
+    @Query('page') page: number = 1,   
+    @Query('limit') limit: number = 10
+  ) {
+    return this.deliveryManService.getMyVehicles(userId, page, limit);
+  }
+
   @Get('vehicle-categories')
   @UseGuards(ClientJwtGuard)
   async getVehicleCategories() {

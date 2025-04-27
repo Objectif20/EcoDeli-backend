@@ -36,6 +36,16 @@ export interface RoutePostDto {
     comeback_today_or_tomorrow: "today" | "tomorrow" | "later";
   }
 
+  export class VehicleResponseDto {
+    id: string;
+    name: string;
+    matricule: string;
+    co2: number;
+    allow: boolean;
+    image: string;
+    justification_file: string;
+  }
+
 @Injectable()
 export class DeliveryManService {
   constructor(
@@ -181,5 +191,32 @@ export class DeliveryManService {
       await this.vehicleDocumentRepository.save(newDocument);
 
       return savedVehicle;
+  }
+
+  async getMyVehicles(userId: string, page: number = 1, limit: number = 10): Promise<{ data: VehicleResponseDto[], totalRows: number }> {
+    const deliveryPerson = await this.deliveryPersonRepository.findOne({ where: { user: { user_id: userId } } });
+    if (!deliveryPerson) {
+      throw new Error('Livreur non trouvé');
+    }
+  
+    const [vehicles, totalRows] = await this.vehicleRepository.findAndCount({
+      where: { deliveryPerson },
+      skip: (page - 1) * limit,  
+      take: limit,   
+      relations: {
+        vehicleDocuments: true,
+      },          
+    });
+  
+    const data = await Promise.all(vehicles.map(async (vehicle) => ({
+      id: vehicle.vehicle_id,
+      name: vehicle.model,
+      matricule: vehicle.registration_number,
+      co2: vehicle.co2_consumption || 0,
+      allow: vehicle.validated,
+      image: vehicle.image_url ? await this.minioService.generateImageUrl("client-documents", vehicle.image_url) : "",
+      justification_file: vehicle.vehicleDocuments && vehicle.vehicleDocuments[0] ? await this.minioService.generateImageUrl("client-documents", vehicle.vehicleDocuments[0].vehicle_document_url) : "",
+    })));
+    return { data, totalRows };
   }
 }
