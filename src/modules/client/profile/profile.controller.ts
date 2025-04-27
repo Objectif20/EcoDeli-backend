@@ -63,8 +63,8 @@ export class ClientProfileController {
   @Put('picture')
   @UseGuards(ClientJwtGuard)
   @UseInterceptors(FileInterceptor('image'))
-  async updateProfilePic(@Body () body: { user_id: string }, @UploadedFile() file: Express.Multer.File) {
-    const userId = body.user_id;
+  async updateProfilePic(  @Req() req: { user: { user_id: string }; body: any }, @UploadedFile() file: Express.Multer.File) {
+    const userId = (req as any).user?.user_id;
     return this.profileService.updateProfilePicture(userId, file);
   }
 

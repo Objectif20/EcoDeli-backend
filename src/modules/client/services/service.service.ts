@@ -582,6 +582,57 @@ export class ServiceService {
       return { reply : "ok" }
   }
 
+  async getMyServicesHistory(userId: string, page = 1, limit = 10): Promise<any> {
+    const provider = await this.providerRepo.findOne({
+      where: { user: { user_id: userId } },
+      relations: ['user'],
+    });
+  
+    if (!provider) {
+      throw new Error('Provider not found');
+    }
+  
+    const appointments = await this.appointmentRepo.find({
+      where: { provider: { provider_id: provider.provider_id } },
+      relations: ['client', 'client.user', 'service', 'review_presta'],
+      order: { service_date: 'DESC' },
+    });
+  
+    const servicesHistory = await Promise.all(
+      appointments.map(async (appointment) => {
+        const client = appointment.client;
+        const user = client.user;
+        const service = appointment.service;
+    
+        return {
+          id: appointment.appointment_id,
+          clientName: `${client.first_name} ${client.last_name}`,
+          clientImage: user.profile_picture 
+            ? await this.minioService.generateImageUrl('client-images', user.profile_picture)
+            : null,
+          date: appointment.service_date.toISOString().split('T')[0],
+          time: appointment.service_date.toISOString().split('T')[1].slice(0,5), // HH:MM
+          serviceName: service.name,
+          rating: appointment.review_presta ? appointment.review_presta.rating : null,
+        };
+      })
+    );
+
+  
+    const totalRows = servicesHistory.length;
+    const totalPages = Math.ceil(totalRows / limit);
+    const startIndex = (page - 1) * limit;
+    const paginatedHistory = servicesHistory.slice(startIndex, startIndex + limit);
+  
+    return {
+      data: paginatedHistory,
+      totalRows,
+      totalPages,
+      currentPage: page,
+      limit,
+    };
+  }
+
   
 }
 

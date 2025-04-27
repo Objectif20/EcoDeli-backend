@@ -46,6 +46,18 @@ export class ServiceController {
     return this.serviceService.getValidatedServices(page, limit, search, city);
   }
 
+  @Get('history')
+  @UseGuards(ClientJwtGuard)
+  async getMyServicesHistory(
+    @Body() body : { user_id: string },
+    @Query('page') page = 1,
+    @Query('limit') limit = 10,
+  ) {
+
+    const history = await this.serviceService.getMyServicesHistory(body.user_id, Number(page), Number(limit));
+    return history;
+  }
+
   @Get('reviews')
   @UseGuards(ClientJwtGuard)
   async getProviderReviews(
