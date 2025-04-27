@@ -63,8 +63,8 @@ export class ClientProfileController {
   @Put('picture')
   @UseGuards(ClientJwtGuard)
   @UseInterceptors(FileInterceptor('image'))
-  async updateProfilePic(@Body () body: { user_id: string }, @UploadedFile() file: Express.Multer.File) {
-    const userId = body.user_id;
+  async updateProfilePic(  @Req() req: { user: { user_id: string }; body: any }, @UploadedFile() file: Express.Multer.File) {
+    const userId = (req as any).user?.user_id;
     return this.profileService.updateProfilePicture(userId, file);
   }
 
@@ -202,6 +202,17 @@ export class ClientProfileController {
   @UseGuards(ClientJwtGuard)
   async getDocuments() {
     return this.profileService.getMyProfileDocuments();
+  }
+
+  @Post('newPassword')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({
+    summary: 'Reset Client Password',
+    operationId: 'resetClientPassword',
+  })
+  @ApiResponse({ status: 200, description: 'Password reset successfully' })
+  async newPassword(@Body() body: { user_id: string }) {
+    return await this.profileService.newPassword(body.user_id);
   }
 
 }
