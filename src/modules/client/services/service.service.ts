@@ -465,6 +465,58 @@ export class ServiceService {
     return await this.reviewResponseRepo.save(response);
   }
 
+  async getMyServiceReviewsAsClient(user_id: string, page = 1, limit = 10): Promise<any> {
+    const client = await this.clientRepo.findOne({
+      where: { user: { user_id } },
+      relations: ['user'],
+    });
+  
+    if (!client) {
+      throw new Error('Client not found');
+    }
+  
+    const [reviews, totalRows] = await this.reviewRepo.findAndCount({
+      where: { appointment: { client: { client_id: client.client_id } } },
+      relations: ['appointment', 'appointment.provider', 'appointment.service', 'appointment.provider.user'],
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+  
+    const reviewsList = await Promise.all(
+      reviews.map(async (review) => {
+        const appointment = review.appointment;
+        const provider = appointment.provider;
+        const providerUser = provider.user;
+        const service = appointment.service;
+  
+        return {
+          id: review.review_presta_id,
+          content: review.comment,
+          provider: {
+            id: provider.provider_id,
+            name: `${provider.first_name} ${provider.last_name}`,
+            photo: providerUser?.profile_picture
+              ? await this.minioService.generateImageUrl('client-images', providerUser.profile_picture)
+              : null,
+          },
+          date: appointment.service_date.toISOString().split('T')[0],
+          service_name: service.name,
+          rate: review.rating,
+        };
+      })
+    );
+  
+    const totalPages = Math.ceil(totalRows / limit);
+  
+    return {
+      data: reviewsList,
+      totalRows,
+      totalPages,
+      currentPage: page,
+      limit,
+    };
+  }
+
   async getProviderDisponibility(service_id: string) {
 
     const service = await this.serviceRepo.findOne({

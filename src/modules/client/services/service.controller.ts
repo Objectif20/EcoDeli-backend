@@ -78,6 +78,18 @@ export class ServiceController {
     return this.serviceService.getReviewsByUserId(user_id, page, limit);
   }
 
+
+  @Get('myReviews')
+  @UseGuards(ClientJwtGuard)
+  async getMyReviews(
+    @Body() body: { user_id: string },
+    @Query('page') page = 1,
+    @Query('limit') limit = 10,
+  ) {
+    const { user_id } = body;
+    return this.serviceService.getMyServiceReviewsAsClient(user_id, page, limit);
+  }
+
   @Post('reviews/:reviews_id/reply')
   @UseGuards(ClientJwtGuard)
   async replyToReview(
