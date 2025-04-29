@@ -33,8 +33,10 @@ export class DeliveryController {
     }
 
     @Get(":id")
-    async getShipmentById() {
-        return "Delivery retrieved successfully";
+    async getShipmentById(
+        @Param("id") shipment_id : string,
+    ) {
+        return this.deliveryService.getShipmentById(shipment_id);
     }
 
     @Post(":id/book")
