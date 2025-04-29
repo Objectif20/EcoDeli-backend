@@ -99,7 +99,4 @@ export class CreateShipmentDTO {
     @ValidateNested()
     @Type(() => ShipmentDTO)
     shipment: ShipmentDTO;
-
-    @IsString()
-    user_id: string;
 }

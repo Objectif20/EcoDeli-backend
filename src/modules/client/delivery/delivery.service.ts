@@ -76,12 +76,12 @@ export class DeliveryService {
         private readonly minioService: MinioService, 
     ) {}
 
-    async createDelivery(createShipmentDTO: CreateShipmentDTO, files: Express.Multer.File[]) {
-        if (!createShipmentDTO.user_id) {
+    async createDelivery(createShipmentDTO: CreateShipmentDTO, files: Express.Multer.File[], user_id : string) {
+        if (!user_id) {
             throw new Error("User ID is required.");
         }
     
-        const user = await this.userRepository.findOneBy({ user_id: createShipmentDTO.user_id });
+        const user = await this.userRepository.findOneBy({ user_id: user_id });
         if (!user) {
             throw new Error("User not found.");
         }
