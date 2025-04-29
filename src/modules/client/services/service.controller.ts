@@ -58,6 +58,17 @@ export class ServiceController {
     return history;
   }
 
+  @Get('history/client')
+  @UseGuards(ClientJwtGuard)
+  async getClientHistory(
+    @Body() body: { user_id: string },
+    @Query('page') page = 1,
+    @Query('limit') limit = 10,
+  ) {
+    const history = await this.serviceService.getMyServiceHistoryAsClient(body.user_id, Number(page), Number(limit));
+    return history;
+  }
+
   @Get('reviews')
   @UseGuards(ClientJwtGuard)
   async getProviderReviews(
@@ -65,6 +76,18 @@ export class ServiceController {
   ) {
     const { user_id, page = 1, limit = 10 } = body;
     return this.serviceService.getReviewsByUserId(user_id, page, limit);
+  }
+
+
+  @Get('myReviews')
+  @UseGuards(ClientJwtGuard)
+  async getMyReviews(
+    @Body() body: { user_id: string },
+    @Query('page') page = 1,
+    @Query('limit') limit = 10,
+  ) {
+    const { user_id } = body;
+    return this.serviceService.getMyServiceReviewsAsClient(user_id, page, limit);
   }
 
   @Post('reviews/:reviews_id/reply')
@@ -115,6 +138,7 @@ export class ServiceController {
   }
 
   @Post(':id/comments')
+  @UseGuards(ClientJwtGuard)
   addComment(@Param('id') service_id: string, @Body() body: { user_id: string, content: string, rating: number }) {
     return this.serviceService.addComment(service_id, body.user_id, body.content, body.rating);
   }
