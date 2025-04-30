@@ -1,9 +1,10 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFiles, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UploadedFiles, UseGuards, UseInterceptors } from "@nestjs/common";
 import { DeliveryService } from "./delivery.service";
 import { AnyFilesInterceptor } from "@nestjs/platform-express";
 import { CreateShipmentDTO } from "./dto/create-shipment.dto";
 import { GetShipmentsDTO } from "./dto/get-shipment.dto";
 import { CreateDeliveryDto } from "./dto/create-delivery.dto";
+import { ClientJwtGuard } from "src/common/guards/user-jwt.guard";
 
 @Controller("client/shipments")
 export class DeliveryController {
@@ -13,13 +14,15 @@ export class DeliveryController {
     ) {}
 
     @Post()
+    @UseGuards(ClientJwtGuard)
     @UseInterceptors(AnyFilesInterceptor())
     async createShipment(
         @Body() createShipmentDTO: CreateShipmentDTO,
-        @UploadedFiles() files: Express.Multer.File[]
+        @UploadedFiles() files: Express.Multer.File[],
+        @Req() req: { user: { user_id: string }; body: any }
     ) {
 
-        const shipment = await this.deliveryService.createDelivery(createShipmentDTO, files);
+        const shipment = await this.deliveryService.createDelivery(createShipmentDTO, files, req.user.user_id);
 
         return { message: "Shipment received successfully!", data: shipment };
     }
@@ -30,8 +33,10 @@ export class DeliveryController {
     }
 
     @Get(":id")
-    async getShipmentById() {
-        return "Delivery retrieved successfully";
+    async getShipmentById(
+        @Param("id") shipment_id : string,
+    ) {
+        return this.deliveryService.getShipmentById(shipment_id);
     }
 
     @Post(":id/book")
