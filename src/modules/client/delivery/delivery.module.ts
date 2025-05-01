@@ -33,6 +33,8 @@ import { ExchangePoint } from "src/common/entities/exchange_points.entity";
 import { DeliveryCommission } from "src/common/entities/delivery_commission.entity";
 import { DeliveryReview } from "src/common/entities/delivery_reviews.entity";
 import { DeliveryReviewResponse } from "src/common/entities/delivery_review_responses.entity";
+import { MongooseModule } from "@nestjs/mongoose";
+import { Message, MessageSchema } from "src/common/schemas/message.schema";
 
 
 @Module({
@@ -42,7 +44,8 @@ import { DeliveryReviewResponse } from "src/common/entities/delivery_review_resp
             ProviderContracts, ProviderDocuments, DeliveryPerson, DeliveryPersonDocument, Category, Delivery,
             Shipment, Keyword, DeliveryKeyword, Parcel, ParcelImage, Favorite, Store, ExchangePoint, Warehouse, DeliveryCommission, DeliveryReview, DeliveryReviewResponse, Client, DeliveryCommission]),
         JwtModule.register({}),
-        SharedModule
+        SharedModule,
+        MongooseModule.forFeature([{ name: Message.name, schema: MessageSchema }]),
     ],
     controllers: [DeliveryController],
     providers: [DeliveryController, JwtService, DeliveryService],

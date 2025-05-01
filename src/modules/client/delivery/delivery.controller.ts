@@ -58,6 +58,15 @@ export class DeliveryController {
         return this.deliveryService.bookPartial(bookPartialDTO, id);
     }
 
+    @Post(":id/askNegociation")
+    async askNegociation(
+        @Param("id") shipment_id : string,
+        @Body("user_id") user_id : string
+    )
+    {
+        return this.deliveryService.askToNegociate(shipment_id, user_id);
+    }
+
     @Delete("delivery/:id/cancel")
     async cancelDelivery(
         @Param("id") deliveryId : string,

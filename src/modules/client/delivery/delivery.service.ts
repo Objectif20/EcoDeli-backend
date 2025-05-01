@@ -28,6 +28,9 @@ import { DeliveryCommission } from "src/common/entities/delivery_commission.enti
 import * as crypto from 'crypto';
 import * as QRCode from 'qrcode';
 import { BookPartialDTO } from "./dto/book-partial.dto";
+import { InjectModel } from "@nestjs/mongoose";
+import { Model } from 'mongoose';
+import { Message } from "src/common/schemas/message.schema";
 
 
 @Injectable()
@@ -81,6 +84,9 @@ export class DeliveryService {
 
         @InjectRepository(DeliveryCommission)
         private readonly deliveryCommissionRepository: Repository<DeliveryCommission>,
+
+        @InjectModel(Message.name) private messageModel: Model<Message>,
+        
 
         private readonly stripeService : StripeService,
         private readonly minioService: MinioService, 
@@ -286,8 +292,6 @@ export class DeliveryService {
     
         return updatedShipments;
     }
-    
-    
 
     async getShipmentById(id: string): Promise<any> {
         const shipment = await this.shipmentRepository.findOne({
@@ -480,7 +484,6 @@ export class DeliveryService {
         return result;
     }
 
-
     async bookShipment(id: string, user_id: string): Promise<Delivery> {
         const shipment = await this.shipmentRepository.findOne({
             where: { shipment_id: id },
@@ -550,7 +553,6 @@ export class DeliveryService {
         return savedDelivery;
     }
     
-
     async bookPartial(dto: BookPartialDTO, shipment_id: string): Promise<Delivery> {
         const shipment = await this.shipmentRepository.findOne({
             where: { shipment_id },
@@ -639,6 +641,49 @@ export class DeliveryService {
         const savedDelivery = await this.deliveryRepository.save(delivery);
         return savedDelivery;
     }
+
+    async askToNegociate(shipment_id: string, user_id: string): Promise<{ message: string }> {
+        const shipment = await this.shipmentRepository.findOne({
+            where: { shipment_id },
+            relations: ["user"]
+        });
+        if (!shipment) {
+            throw new Error("Delivery not found.");
+        }
+    
+        const deliverPerson = await this.deliveryPersonRepository.findOne({
+            where: { user: { user_id } },
+            relations: ["user"],
+        });
+        if (!deliverPerson) {
+            throw new Error("Delivery person not found.");
+        }
+    
+        const client_id = shipment.user.user_id;
+        console.log("CLIENT ID:", client_id);
+        console.log("DELIVERY PERSON ID:", deliverPerson.user.user_id);
+    
+        const client = await this.clientRepository.findOne({
+            where: { user: { user_id: client_id } },
+            relations: ["user"],
+        });
+        if (!client) {
+            throw new Error("Client not found.");
+        }
+    
+        const deliveryName = shipment.description || "votre demande de livraison";
+        const messageContent = `Bonjour, je serais intéressé pour effectuer la livraison de "${deliveryName}", mais je ne pourrais en assurer l'intégralité. Seriez-vous intéressé pour que j'assure une partie ?`;
+    
+        const newMessage = new this.messageModel({
+            senderId: deliverPerson.user.user_id,
+            receiverId: client_id,
+            content: messageContent
+        });
+        await newMessage.save();
+    
+        return { message: "Negotiation request sent successfully." };
+    }
+    
     
     async cancelDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
         const delivery = await this.deliveryRepository.findOne({
@@ -940,7 +985,6 @@ export class DeliveryService {
         return this.deliveryRepository.save(delivery);
     }
 
-    // Création d'une livraison négociée (prix, date, etc.)
     async createNegotiatedDelivery(shipmentId: string, userId: string, updatedAmount: number): Promise<Delivery> {
         const shipment = await this.shipmentRepository.findOne({
             where: { shipment_id: shipmentId },
