@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { In, Repository } from "typeorm";
 import { CreateShipmentDTO } from "./dto/create-shipment.dto";
 import { Shipment } from "src/common/entities/shipment.entity";
 import { Parcel } from "src/common/entities/parcels.entity";
@@ -31,6 +31,22 @@ import { BookPartialDTO } from "./dto/book-partial.dto";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from 'mongoose';
 import { Message } from "src/common/schemas/message.schema";
+
+export interface DeliveryOnGoing {
+ 
+    id: string;
+    from: string;
+    to: string;
+    status: string;
+    pickupDate: string | null;
+    estimatedDeliveryDate: string | null;
+    coordinates: {
+      origin: [number, number];
+      destination: [number, number];
+    };
+    progress: number;
+  
+  }
 
 
 @Injectable()
@@ -805,6 +821,76 @@ export class DeliveryService {
         
         return { message: "Delivery validated successfully." };
     }
+
+    async getOngoingDeliveries(user_id: string): Promise<DeliveryOnGoing[]> {
+        const user = await this.userRepository.findOne({
+            where: { user_id: user_id },
+            relations: ['deliveryPerson'],
+        });
+
+        if (!user || !user.deliveryPerson) {
+            throw new Error('User or delivery person profile not found.');
+        }
+
+        const deliveries = await this.deliveryRepository.find({
+            where: {
+                delivery_person: { delivery_person_id: user.deliveryPerson.delivery_person_id },
+                status: In(['taken', 'pending']),
+            },
+            relations: ['shipment', 'shipment.stores', 'shipment.stores.exchangePoint'],
+        });
+
+        const ongoingDeliveries: DeliveryOnGoing[] = deliveries.map(delivery => {
+            const shipment = delivery.shipment;
+            const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
+
+            let currentCoordinates: [number, number] = [0, 0];
+            let progress = 0;
+
+            if (delivery.shipment_step === 0) {
+                currentCoordinates = shipment.departure_location.coordinates.slice().reverse() as [number, number];
+                progress = 0;
+            } else if (delivery.shipment_step === 1000) {
+                currentCoordinates = shipment.arrival_location.coordinates.slice().reverse() as [number, number];
+                progress = 100;
+            } else {
+                const currentStore = storesByStep.find(store => store.step === delivery.shipment_step);
+                if (currentStore) {
+                    currentCoordinates = currentStore.exchangePoint.coordinates.coordinates.slice().reverse() as [number, number];
+                    progress = (delivery.shipment_step / 1000) * 100;
+                }
+            }
+
+            return {
+                id: delivery.delivery_id,
+                from: shipment.departure_city ?? "Unknown",
+                to: shipment.arrival_city ?? "Unknown",
+                status: delivery.status,
+                pickupDate: shipment.deadline_date ? shipment.deadline_date.toISOString().split('T')[0] : null,
+                estimatedDeliveryDate: shipment.deadline_date ? shipment.deadline_date.toISOString().split('T')[0] : null,
+                coordinates: {
+                    origin: shipment.departure_location.coordinates.slice().reverse() as [number, number],
+                    destination: shipment.arrival_location.coordinates.slice().reverse() as [number, number],
+                    current: currentCoordinates,
+                },
+                progress: progress,
+            };
+        });
+
+        return ongoingDeliveries;
+    }
+
+
+
+
+// PAS ENCORE UTILISE
+
+
+
+
+
+
+
     
     async cancelDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
         const delivery = await this.deliveryRepository.findOne({
@@ -956,51 +1042,6 @@ export class DeliveryService {
         await this.deliveryReviewResponseRepository.save(deliveryReviewResponse);
     
         return {message: "Comment replied successfully"}
-    }
-
-    async startDelivery(deliveryId: string, delivery_code, user_id : string ) : Promise<{ message: string }> {
-
-        const delivery = await this.deliveryRepository.findOne({
-            where: { delivery_id: deliveryId },
-            relations: ["delivery_person", "shipment"],
-        });
-    
-        if (!delivery) {
-            throw new Error("Delivery not found.");
-        }
-    
-        if (delivery.delivery_person.user.user_id !== user_id) {
-            throw new Error("User is not authorized to start this delivery.");
-        }
-    
-        delivery.status = 'in_progress';
-        delivery.delivery_code = delivery_code;
-    
-        await this.deliveryRepository.save(delivery);
-    
-        return { message: "Delivery started successfully." };
-    }
-
-    async finsihDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
-
-        const delivery = await this.deliveryRepository.findOne({
-            where: { delivery_id: deliveryId },
-            relations: ["delivery_person", "shipment"],
-        });
-    
-        if (!delivery) {
-            throw new Error("Delivery not found.");
-        }
-    
-        if (delivery.delivery_person.user.user_id !== user_id) {
-            throw new Error("User is not authorized to finish this delivery.");
-        }
-    
-        delivery.status = 'finished';
-    
-        await this.deliveryRepository.save(delivery);
-    
-        return { message: "Delivery finished successfully." };
     }
 
     async getDeliveryStatus(deliveryId: string): Promise<{ status: string }> {

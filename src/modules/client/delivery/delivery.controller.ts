@@ -22,9 +22,7 @@ export class DeliveryController {
         @UploadedFiles() files: Express.Multer.File[],
         @Req() req: { user: { user_id: string }; body: any }
     ) {
-
         const shipment = await this.deliveryService.createDelivery(createShipmentDTO, files, req.user.user_id);
-
         return { message: "Shipment received successfully!", data: shipment };
     }
 
@@ -44,6 +42,42 @@ export class DeliveryController {
         @Body("user_id") user_id : string,
     ) {
         return this.deliveryService.getMyCurrentShipments(user_id);
+    }
+
+    @Get("onGoingDeliveries")
+    @UseGuards(ClientJwtGuard)
+    async getOngoingDeliveries(
+        @Body("user_id") user_id : string,
+    ) {
+        return this.deliveryService.getOngoingDeliveries(user_id);
+    }
+
+    @Post("delivery/:id/taken")
+    @UseGuards(ClientJwtGuard)
+    async takeDelivery(
+        @Param("id") deliveryId : string,
+        @Body("user_id") user_id : string,
+        @Body("secretCode") secretCode : string,
+    ) {
+        return this.deliveryService.takeDeliveryPackage(deliveryId, user_id, secretCode);
+    }
+
+    @Post("delivery/:id/finish")
+    @UseGuards(ClientJwtGuard)
+    async finishDelivery(
+        @Param("id") deliveryId : string,
+        @Body("user_id") user_id : string,
+    ) {
+        return this.deliveryService.finishDelivery(deliveryId, user_id);
+    }
+
+    @Post("delivery/:id/validate")
+    @UseGuards(ClientJwtGuard)
+    async validateDelivery(
+        @Param("id") deliveryId : string,
+        @Body("user_id") user_id : string,
+    ) {
+        return this.deliveryService.validateDelivery(deliveryId, user_id);
     }
 
     @Get(":id")
@@ -105,7 +139,6 @@ export class DeliveryController {
         @Body("shipment_id") shipmentId : string,
         @Body("user_id") user_id : string,
         @Body("updatedPrice") updatedPrice : number,
-
     ) {
         return this.deliveryService.createNegotiatedDelivery(shipmentId, user_id, updatedPrice);
     }
@@ -116,31 +149,6 @@ export class DeliveryController {
         @Body("user_id") user_id : string,
     ) {
         return this.deliveryService.deleteShipment(shipmentId, user_id);
-    }
-
-    @Post("delivery/:id/start")
-    async startDelivery(
-        @Param("id") delivery_id : string,
-        @Body("delivery_code") delivery_code : string,
-        @Body("user_id") user_id : string,
-    ) {
-        return this.deliveryService.startDelivery(delivery_id, delivery_code, user_id);
-    }
-
-    @Post("delivery/:id/finish")
-    async finishDelivery(
-        @Param("id") deliveryId : string,
-        @Body("user_id") user_id : string,
-    ) {
-        return this.deliveryService.finsihDelivery(deliveryId, user_id);
-    }
-
-    @Post("delivery/:id/validate")
-    async validateDelivery(
-        @Param("id") deliveryId : string,
-        @Body("user_id") user_id : string,
-    ) {
-        return this.deliveryService.validateDelivery(deliveryId, user_id);
     }
 
     @Patch(":id/route")
