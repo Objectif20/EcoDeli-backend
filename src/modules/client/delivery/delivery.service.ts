@@ -31,34 +31,7 @@ import { BookPartialDTO } from "./dto/book-partial.dto";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from 'mongoose';
 import { Message } from "src/common/schemas/message.schema";
-
-export interface DeliveryOnGoing {
- 
-    id: string;
-    from: string;
-    to: string;
-    status: string;
-    pickupDate: string | null;
-    estimatedDeliveryDate: string | null;
-    coordinates: {
-      origin: [number, number];
-      destination: [number, number];
-    };
-    progress: number;
-  
-  }
-
-  export interface HistoryDelivery {
-    id: string;
-    departure_city: string;
-    arrival_city: string;
-    price: number;
-    client: {
-      name: string;
-      photo_url: string;
-    };
-    status: string;
-  }
+import { DeliveryOnGoing, HistoryDelivery, ReviewAsDeliveryPerson } from "./types";
 
 
 @Injectable()
@@ -962,6 +935,76 @@ export class DeliveryService {
         return { data: historyDeliveries, totalRows: total };
     }
 
+    async getReviewsForDeliveryPerson(user_id: string, page: number = 1, limit: number = 10): Promise<{ data: ReviewAsDeliveryPerson[], totalRows: number }> {
+        const [deliveries, total] = await this.deliveryRepository.findAndCount({
+          where: {
+            delivery_person: { user: { user_id: user_id } },
+            status: 'validated',
+          },
+          relations: ['deliveryReviews', 'deliveryReviews.responses', 'shipment', 'shipment.user', 'shipment.user.clients'],
+          skip: (page - 1) * limit,
+          take: limit,
+        });
+    
+        const reviews: ReviewAsDeliveryPerson[] = [];
+    
+        for (const delivery of deliveries) {
+          const client = delivery.shipment.user.clients[0];
+          for (const review of delivery.deliveryReviews) {
+            const response = review.responses.length > 0 ? review.responses[0] : null;
+    
+            reviews.push({
+              id: review.review_id,
+              content: review.comment || '',
+              author: {
+                id: delivery.shipment.user.user_id,
+                name: `${client?.first_name || ''} ${client?.last_name || ''}`,
+                photo: delivery.shipment.user.profile_picture || '',
+              },
+              reply: response ? true : false,
+              reply_content: response ? response.comment : null,
+              delivery_name: delivery.shipment.description || '',
+              rate: review.rating,
+            });
+          }
+        }
+    
+        return { data: reviews, totalRows: total };
+    }
+
+    async replyComment(comment: string, userId: string, commentId: string): Promise<{ message: string }> {
+        
+    
+        const deliveryReview = await this.deliveryReviewRepository.findOne({
+            where: { review_id: commentId },
+            relations: ["responses"],
+        });
+    
+        if (!deliveryReview) {
+            throw new Error("Comment not found.");
+        }
+
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryReview.delivery.delivery_id },
+            relations: ["delivery_person", "shipment"],
+        });
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+
+        if (delivery.delivery_person.user.user_id !== userId) {
+            throw new Error("User is not authorized to reply to this comment.");
+        }
+    
+        const deliveryReviewResponse = new DeliveryReviewResponse();
+        deliveryReviewResponse.comment = comment;
+        deliveryReviewResponse.review = deliveryReview;
+    
+        await this.deliveryReviewResponseRepository.save(deliveryReviewResponse);
+    
+        return {message: "Comment replied successfully"}
+    }
+
 // PAS ENCORE UTILISE
 
 
@@ -1091,37 +1134,7 @@ export class DeliveryService {
         return {message: "Comment added successfully"};
     }
 
-    async replyComment(comment: string, userId: string, deliveryId: string, commentId: string): Promise<{ message: string }> {
-        const delivery = await this.deliveryRepository.findOne({
-            where: { delivery_id: deliveryId },
-            relations: ["delivery_person", "delivery_person.user"],
-        });
-    
-        if (!delivery) {
-            throw new Error("Delivery not found.");
-        }
-    
-        if (delivery.delivery_person.user.user_id !== userId) {
-            throw new Error("User is not authorized to reply to this comment.");
-        }
-    
-        const deliveryReview = await this.deliveryReviewRepository.findOne({
-            where: { review_id: commentId },
-            relations: ["responses"],
-        });
-    
-        if (!deliveryReview) {
-            throw new Error("Comment not found.");
-        }
-    
-        const deliveryReviewResponse = new DeliveryReviewResponse();
-        deliveryReviewResponse.comment = comment;
-        deliveryReviewResponse.review = deliveryReview;
-    
-        await this.deliveryReviewResponseRepository.save(deliveryReviewResponse);
-    
-        return {message: "Comment replied successfully"}
-    }
+
 
     async getDeliveryStatus(deliveryId: string): Promise<{ status: string }> {
 

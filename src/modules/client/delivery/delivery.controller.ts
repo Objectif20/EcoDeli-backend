@@ -1,11 +1,12 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UploadedFiles, UseGuards, UseInterceptors } from "@nestjs/common";
-import { DeliveryService, HistoryDelivery } from "./delivery.service";
+import { DeliveryService } from "./delivery.service";
 import { AnyFilesInterceptor } from "@nestjs/platform-express";
 import { CreateShipmentDTO } from "./dto/create-shipment.dto";
 import { GetShipmentsDTO } from "./dto/get-shipment.dto";
 import { CreateDeliveryDto } from "./dto/create-delivery.dto";
 import { ClientJwtGuard } from "src/common/guards/user-jwt.guard";
 import { BookPartialDTO } from "./dto/book-partial.dto";
+import { HistoryDelivery } from "./types";
 
 @Controller("client/shipments")
 export class DeliveryController {
@@ -90,6 +91,27 @@ export class DeliveryController {
         console.log("user_id", user_id);
         return this.deliveryService.getMyDeliveryHistory(user_id, page, limit);
     }
+
+    @Get("delivery/reviews")
+    @UseGuards(ClientJwtGuard)
+    async getMyReviews(
+        @Body("user_id") user_id : string,
+        @Query("page") page : number,
+        @Query("limit") limit : number,
+    ) {
+        return this.deliveryService.getReviewsForDeliveryPerson(user_id, page, limit);
+    }
+
+    @Post("delivery/comments/:id/reply")
+    @UseGuards(ClientJwtGuard)
+    async replyToComment(
+        @Param("id") comment_id : string,
+        @Body("user_id") user_id : string,
+        @Body("content") content : string,
+    ) {
+        return this.deliveryService.replyComment(comment_id, user_id, content);
+    }
+
 
     @Get(":id")
     async getShipmentById(
@@ -206,17 +228,6 @@ export class DeliveryController {
         @Param("id") delivery_id : string,
     ) {
         return this.deliveryService.addComment(comment, user_id, delivery_id);
-    }
-
-    @Post("delivery/:id/comments/:comment_id/reply")
-    async replyComment(
-        @Body("comment") comment : string,
-        @Body("user_id") user_id : string,
-        @Param("id") delivery_id : string,
-        @Param("comment_id") comment_id : string,
-
-    ) {
-        return this.deliveryService.replyComment(comment, user_id, delivery_id, comment_id);
     }
 
 }
