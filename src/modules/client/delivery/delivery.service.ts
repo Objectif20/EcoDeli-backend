@@ -580,13 +580,19 @@ export class DeliveryService {
         if (dto.warehouse_id) {
             const warehouse = await this.warehouseRepository.findOne({
                 where: { warehouse_id: dto.warehouse_id },
-                relations: ['exchangePoints'],
             });
+    
             if (!warehouse) {
                 throw new Error('Warehouse not found.');
             }
     
-            exchangePoint = warehouse.exchangePoints[0];
+            exchangePoint = this.exchangePointRepository.create({
+                city: warehouse.city,
+                coordinates: warehouse.coordinates,
+                warehouse_id: warehouse.warehouse_id,
+            });
+    
+            await this.exchangePointRepository.save(exchangePoint);
         } else if (dto.city && dto.latitude && dto.longitude) {
             exchangePoint = this.exchangePointRepository.create({
                 city: dto.city,
@@ -596,9 +602,10 @@ export class DeliveryService {
                 },
                 warehouse_id: undefined,
             });
+    
             await this.exchangePointRepository.save(exchangePoint);
         } else {
-            throw new Error('Either warehouse_id or city, latitude, and longitude must be provided.');
+            throw new Error('You must provide either a warehouse_id or city, latitude, and longitude.');
         }
     
         let startDate: Date;
@@ -612,7 +619,7 @@ export class DeliveryService {
         const endDate = dto.end_date || undefined;
     
         const store = this.storeRepository.create({
-            exchangePoint: exchangePoint,
+            exchangePoint,
             step: nextStep,
             start_date: startDate,
             end_date: endDate,
@@ -638,8 +645,7 @@ export class DeliveryService {
             delivery_code,
         });
     
-        const savedDelivery = await this.deliveryRepository.save(delivery);
-        return savedDelivery;
+        return await this.deliveryRepository.save(delivery);
     }
 
     async askToNegociate(shipment_id: string, user_id: string): Promise<{ message: string }> {
@@ -689,7 +695,26 @@ export class DeliveryService {
         
         return warehouses;
     }
+
+    async getMyCurrentShipments(user_id: string): Promise<Shipment[]> {
+        const user = await this.userRepository.findOne({
+            where: { user_id: user_id },
+        });
     
+        if (!user) {
+            throw new Error("User or delivery person profile not found.");
+        }
+    
+        const shipments = await this.shipmentRepository.find({
+            where: {
+                user: { user_id: user.user_id },
+                status: "pending"
+            },
+            relations: ["deliveries", "stores", "stores.exchangePoint"],
+        });
+    
+        return shipments;
+    }
     
     async cancelDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
         const delivery = await this.deliveryRepository.findOne({

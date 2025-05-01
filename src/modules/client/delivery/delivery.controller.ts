@@ -32,12 +32,19 @@ export class DeliveryController {
     async getShipments(@Query() filters: GetShipmentsDTO) {
         return this.deliveryService.getShipments(filters);
     }
-    
+
     @Get("warehouses")
     async getWarehouses() {
         return this.deliveryService.getWarehouseList();
     }
 
+    @Get("myCurrentShipments")
+    @UseGuards(ClientJwtGuard)
+    async getCurrentPendingShipments(
+        @Body("user_id") user_id : string,
+    ) {
+        return this.deliveryService.getMyCurrentShipments(user_id);
+    }
 
     @Get(":id")
     async getShipmentById(
