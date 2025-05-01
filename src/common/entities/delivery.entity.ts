@@ -49,7 +49,7 @@ export class Delivery {
 
     @ManyToOne(() => DeliveryPerson, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'delivery_person_id' })
-    delivery_person: DeliveryPerson; ù
+    delivery_person: DeliveryPerson; 
 
     @OneToMany(() => DeliveryReview, review => review.delivery)
     deliveryReviews: DeliveryReview[];

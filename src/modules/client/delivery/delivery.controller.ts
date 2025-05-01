@@ -5,6 +5,7 @@ import { CreateShipmentDTO } from "./dto/create-shipment.dto";
 import { GetShipmentsDTO } from "./dto/get-shipment.dto";
 import { CreateDeliveryDto } from "./dto/create-delivery.dto";
 import { ClientJwtGuard } from "src/common/guards/user-jwt.guard";
+import { BookPartialDTO } from "./dto/book-partial.dto";
 
 @Controller("client/shipments")
 export class DeliveryController {
@@ -40,9 +41,21 @@ export class DeliveryController {
     }
 
     @Post(":id/book")
-    async bookShipment() {
-        // Création de la livraison + des différents bordereau de colis
-        return "Delivery booked successfully";
+    @UseGuards(ClientJwtGuard)
+    async bookShipment(
+        @Param("id") shipment_id : string,
+        @Body("user_id") user_id : string,
+    ) {
+        return this.deliveryService.bookShipment(shipment_id, user_id);
+    }
+
+    @Post(':id/bookPartial')
+    @UseGuards(ClientJwtGuard)
+    async bookPartial(
+        @Param('id') id: string,
+        @Body() bookPartialDTO: BookPartialDTO,
+    ) {
+        return this.deliveryService.bookPartial(bookPartialDTO, id);
     }
 
     @Delete("delivery/:id/cancel")
