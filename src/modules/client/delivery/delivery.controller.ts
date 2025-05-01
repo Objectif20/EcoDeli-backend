@@ -102,7 +102,7 @@ export class DeliveryController {
         return this.deliveryService.getReviewsForDeliveryPerson(user_id, page, limit);
     }
 
-    @Post("delivery/comments/:id/reply")
+    @Post("delivery/reviews/:id/reply")
     @UseGuards(ClientJwtGuard)
     async replyToComment(
         @Param("id") comment_id : string,
@@ -110,6 +110,16 @@ export class DeliveryController {
         @Body("content") content : string,
     ) {
         return this.deliveryService.replyComment(comment_id, user_id, content);
+    }
+
+    @Get("delivery/myReviews")
+    @UseGuards(ClientJwtGuard)
+    async getMyReviewsAsClient(
+        @Body("user_id") user_id : string,
+        @Query("page") page : number,
+        @Query("limit") limit : number,
+    ) {
+        return this.deliveryService.getMyReviewsAsClient(user_id, page, limit);
     }
 
 

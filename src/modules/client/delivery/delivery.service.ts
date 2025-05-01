@@ -31,7 +31,7 @@ import { BookPartialDTO } from "./dto/book-partial.dto";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from 'mongoose';
 import { Message } from "src/common/schemas/message.schema";
-import { DeliveryOnGoing, HistoryDelivery, ReviewAsDeliveryPerson } from "./types";
+import { DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson } from "./types";
 
 
 @Injectable()
@@ -1003,6 +1003,45 @@ export class DeliveryService {
         await this.deliveryReviewResponseRepository.save(deliveryReviewResponse);
     
         return {message: "Comment replied successfully"}
+    }
+
+    async getMyReviewsAsClient(user_id: string, page: number = 1, limit: number = 10): Promise<{ data: ReviewAsClient[], totalRows: number }> {
+        const [deliveries, total] = await this.deliveryRepository.findAndCount({
+            where: {
+                shipment: { user: { user_id: user_id } },
+                status: 'validated',
+            },
+            relations: ['deliveryReviews', 'deliveryReviews.responses', 'delivery_person', 'delivery_person.user', 'delivery_person.user.clients'],
+            skip: (page - 1) * limit,
+            take: limit,
+        });
+    
+        const reviews: ReviewAsClient[] = [];
+    
+        for (const delivery of deliveries) {
+            const deliveryPerson = delivery.delivery_person.user;
+            const client = deliveryPerson.clients.find(client => client.user.user_id === deliveryPerson.user_id);
+    
+            for (const review of delivery.deliveryReviews) {
+                reviews.push({
+                    id: review.review_id,
+                    content: review.comment || '',
+                    delivery: {
+                        id: delivery.delivery_id,
+                        deliveryman: {
+                            id: deliveryPerson.user_id,
+                            name: `${client?.first_name || ''} ${client?.last_name || ''}`,
+                            photo: deliveryPerson.profile_picture || '',
+                            email: deliveryPerson.email || '',
+                        },
+                    },
+                    services_name: delivery.shipment.description || '',
+                    rate: review.rating,
+                });
+            }
+        }
+    
+        return { data: reviews, totalRows: total };
     }
 
 // PAS ENCORE UTILISE

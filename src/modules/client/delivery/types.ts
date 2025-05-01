@@ -39,3 +39,19 @@ export interface DeliveryOnGoing {
     delivery_name: string;
     rate: number;
   }
+
+  export interface ReviewAsClient {
+    id: string;
+    content: string;
+    delivery: {
+      id: string;
+      deliveryman: {
+        id: string;
+        name: string;
+        photo: string;
+        email: string;
+      };
+    };
+    services_name: string;
+    rate: number;
+  }
