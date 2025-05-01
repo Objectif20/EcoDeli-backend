@@ -892,7 +892,12 @@ export class DeliveryService {
         return ongoingDeliveries;
     }
 
-    async getMyDeliveryHistory(user_id: string, page: number, limit: number): Promise<HistoryDelivery[]> {
+    async getMyDeliveryHistory(user_id: string, page: number, limit: number): Promise<{ data: HistoryDelivery[], totalRows: number }> {
+        const pageNumber = typeof page === 'number' ? page : 1;
+        const pageSize = typeof limit === 'number' ? limit : 10;
+    
+        console.log("user_id", user_id);
+    
         const user = await this.userRepository.findOne({
             where: { user_id: user_id },
             relations: ['deliveryPerson'],
@@ -905,11 +910,10 @@ export class DeliveryService {
         const [deliveries, total] = await this.deliveryRepository.findAndCount({
             where: {
                 delivery_person: { delivery_person_id: user.deliveryPerson.delivery_person_id },
-                status: 'validated',
             },
-            relations: ['shipment', 'shipment.stores', 'shipment.stores.exchangePoint'],
-            skip: (page - 1) * limit,
-            take: limit,
+            relations: ['shipment', 'shipment.stores', 'shipment.stores.exchangePoint', 'shipment.user'],
+            skip: (pageNumber - 1) * pageSize,
+            take: pageSize,
             order: { send_date: 'DESC' },
         });
     
@@ -933,6 +937,8 @@ export class DeliveryService {
                     departureCity = previousStore?.exchangePoint?.city ?? shipment.departure_city;
                     arrivalCity = currentStore?.exchangePoint?.city ?? shipment.arrival_city;
                 }
+
+                console.log("shipment", shipment);
     
                 const client = await this.clientRepository.findOne({
                     where: { user: { user_id: shipment.user.user_id } },
@@ -953,7 +959,7 @@ export class DeliveryService {
             })
         );
     
-        return historyDeliveries;
+        return { data: historyDeliveries, totalRows: total };
     }
 
 // PAS ENCORE UTILISE

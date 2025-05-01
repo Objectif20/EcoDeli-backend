@@ -86,7 +86,8 @@ export class DeliveryController {
         @Body("user_id") user_id : string,
         @Query("page") page : number,
         @Query("limit") limit : number,
-    ) : Promise<HistoryDelivery[]> {
+    ) : Promise<{ data: HistoryDelivery[], totalRows: number }> {
+        console.log("user_id", user_id);
         return this.deliveryService.getMyDeliveryHistory(user_id, page, limit);
     }
 
