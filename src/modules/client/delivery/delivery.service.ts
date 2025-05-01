@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { In, Repository } from "typeorm";
 import { CreateShipmentDTO } from "./dto/create-shipment.dto";
 import { Shipment } from "src/common/entities/shipment.entity";
 import { Parcel } from "src/common/entities/parcels.entity";
@@ -24,6 +24,14 @@ import { Store } from "src/common/entities/stores.entity";
 import { CreateDeliveryDto } from "./dto/create-delivery.dto";
 import { StripeService } from "src/common/services/stripe/stripe.service";
 import { Client } from "src/common/entities/client.entity";
+import { DeliveryCommission } from "src/common/entities/delivery_commission.entity";
+import * as crypto from 'crypto';
+import * as QRCode from 'qrcode';
+import { BookPartialDTO } from "./dto/book-partial.dto";
+import { InjectModel } from "@nestjs/mongoose";
+import { Model } from 'mongoose';
+import { Message } from "src/common/schemas/message.schema";
+import { DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson } from "./types";
 
 
 @Injectable()
@@ -75,6 +83,11 @@ export class DeliveryService {
         @InjectRepository(Client)
         private readonly clientRepository: Repository<Client>,
 
+        @InjectRepository(DeliveryCommission)
+        private readonly deliveryCommissionRepository: Repository<DeliveryCommission>,
+
+        @InjectModel(Message.name) private messageModel: Model<Message>,
+        
 
         private readonly stripeService : StripeService,
         private readonly minioService: MinioService, 
@@ -176,7 +189,10 @@ export class DeliveryService {
     }
 
     async getShipments(filters: GetShipmentsDTO): Promise<Shipment[]> {
-        const queryBuilder = this.shipmentRepository.createQueryBuilder("shipment");
+        const queryBuilder = this.shipmentRepository.createQueryBuilder("shipment")
+            .leftJoinAndSelect("shipment.deliveries", "deliveries")
+            .leftJoinAndSelect("shipment.stores", "stores")
+            .leftJoinAndSelect("stores.exchangePoint", "exchangePoint");
     
         if (filters.latitude && filters.longitude && filters.radius) {
             queryBuilder.andWhere(
@@ -229,15 +245,53 @@ export class DeliveryService {
             queryBuilder.andWhere("shipment.weight <= :maxWeight AND shipment.weight IS NOT NULL", { maxWeight: filters.maxWeight });
         }
     
+        queryBuilder.andWhere("NOT EXISTS (SELECT 1 FROM deliveries WHERE deliveries.shipment_id = shipment.shipment_id AND (deliveries.shipment_step = 0 OR deliveries.shipment_step = 1000))");
+    
         if (filters.page && filters.limit) {
             const offset = (filters.page - 1) * filters.limit;
             queryBuilder.skip(offset).take(filters.limit);
         }
     
-        const result = await queryBuilder.getMany();
-        return result;
-    }
+        const shipments = await queryBuilder.getMany();
     
+        const updatedShipments = shipments.map(shipment => {
+            const deliveries = shipment.deliveries.sort((a, b) => a.shipment_step - b.shipment_step);
+            const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
+    
+            let departureCity = shipment.departure_city;
+            let departureLocation = shipment.departure_location;
+            let arrivalCity = shipment.arrival_city;
+            let arrivalLocation = shipment.arrival_location;
+    
+            if (deliveries.length > 0) {
+                const lastDelivery = deliveries[deliveries.length - 1];
+                if (lastDelivery.shipment_step !== 1000) {
+                    const lastStore = storesByStep.find(s => s.step === lastDelivery.shipment_step);
+                    departureCity = lastStore?.exchangePoint?.city ?? shipment.departure_city;
+                    departureLocation = lastStore?.exchangePoint?.coordinates ?? shipment.departure_location;
+                }
+    
+                if (lastDelivery.shipment_step === 1000) {
+                    arrivalCity = shipment.arrival_city;
+                    arrivalLocation = shipment.arrival_location;
+                } else {
+                    const nextStore = storesByStep.find(s => s.step === lastDelivery.shipment_step + 1);
+                    arrivalCity = nextStore?.exchangePoint?.city ?? shipment.arrival_city;
+                    arrivalLocation = nextStore?.exchangePoint?.coordinates ?? shipment.arrival_location;
+                }
+            }
+    
+            return {
+                ...shipment,
+                departure_city: departureCity,
+                departure_location: departureLocation,
+                arrival_city: arrivalCity,
+                arrival_location: arrivalLocation,
+            };
+        });
+    
+        return updatedShipments;
+    }
 
     async getShipmentById(id: string): Promise<any> {
         const shipment = await this.shipmentRepository.findOne({
@@ -247,32 +301,32 @@ export class DeliveryService {
                 'parcels.images',
                 'deliveries',
                 'deliveries.delivery_person',
+                'deliveries.delivery_person.user',
                 'stores',
                 'stores.exchangePoint',
             ],
         });
     
         if (!shipment) throw new Error('Shipment not found');
-
-
     
         const parcels = await Promise.all(
             shipment.parcels.map(async parcel => ({
-              id: parcel.parcel_id,
-              name: parcel.name,
-              fragility: parcel.fragility,
-              estimated_price: Number(parcel.estimate_price),
-              weight: Number(parcel.weight),
-              volume: Number(parcel.volume),
-              picture: await Promise.all(
-                parcel.images.map(img =>
-                  this.minioService.generateImageUrl("client-images", img.image_url)
-                )
-              ),
+                id: parcel.parcel_id,
+                name: parcel.name,
+                fragility: parcel.fragility,
+                estimated_price: Number(parcel.estimate_price),
+                weight: Number(parcel.weight),
+                volume: Number(parcel.volume),
+                picture: await Promise.all(
+                    parcel.images.map(img =>
+                        this.minioService.generateImageUrl("client-images", img.image_url)
+                    )
+                ),
             }))
-          );
+        );
     
         const deliveries = shipment.deliveries.sort((a, b) => a.shipment_step - b.shipment_step);
+        const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
     
         const initialPrice = Number(shipment.estimated_total_price ?? 0);
         const priceWithStep = deliveries.map(delivery => ({
@@ -298,89 +352,105 @@ export class DeliveryService {
                 date: shipment.deadline_date?.toISOString(),
                 departure: {
                     city: shipment.departure_city,
-                    coordinates: shipment.departure_location?.coordinates.reverse(),
+                    coordinates: shipment.departure_location?.coordinates?.slice().reverse(),
                 },
                 arrival: {
                     city: shipment.arrival_city,
-                    coordinates: shipment.arrival_location?.coordinates.reverse(),
+                    coordinates: shipment.arrival_location?.coordinates?.slice().reverse(),
                 },
                 courier: null,
             });
-        }
+        } else {
+            for (let i = 0; i < deliveries.length; i++) {
+                const delivery = deliveries[i];
+                const store = storesByStep.find(s => s.step === delivery.shipment_step);
+                const courier = delivery.delivery_person;
     
-        const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
-        for (let i = 0; i < deliveries.length; i++) {
-            const delivery = deliveries[i];
-            const store = storesByStep.find(s => s.step === delivery.shipment_step);
-            const courier = delivery.delivery_person;
+                let departureCity, departureCoords, arrivalCity, arrivalCoords;
     
-            let departureCity, departureCoords, arrivalCity, arrivalCoords;
+                if (delivery.shipment_step === 1) {
+                    departureCity = shipment.departure_city;
+                    departureCoords = shipment.departure_location?.coordinates?.slice().reverse();
+                    arrivalCity = store?.exchangePoint?.city;
+                    arrivalCoords = store?.exchangePoint?.coordinates.coordinates?.slice().reverse();
+                } else {
+                    const prevStore = storesByStep.find(s => s.step === delivery.shipment_step - 1);
+                    departureCity = prevStore?.exchangePoint?.city;
+                    departureCoords = prevStore?.exchangePoint?.coordinates.coordinates?.slice().reverse();
+                    arrivalCity = store?.exchangePoint?.city;
+                    arrivalCoords = store?.exchangePoint?.coordinates.coordinates?.slice().reverse();
+                }
     
-            if (delivery.shipment_step === 1) {
-                departureCity = shipment.departure_city;
-                departureCoords = shipment.departure_location?.coordinates.reverse();
-                arrivalCity = store?.exchangePoint?.city;
-                arrivalCoords = store?.exchangePoint?.coordinates.coordinates.reverse();
-            } else if (i < storesByStep.length) {
-                departureCity = storesByStep[i - 1]?.exchangePoint?.city;
-                departureCoords = storesByStep[i - 1]?.exchangePoint?.coordinates.coordinates.reverse();
-                arrivalCity = store?.exchangePoint?.city;
-                arrivalCoords = store?.exchangePoint?.coordinates.coordinates.reverse();
+                const client = await this.clientRepository.findOne({
+                    where: { user: { user_id: courier.user.user_id } },
+                    relations: ['user'],
+                });
+    
+                steps.push({
+                    id: delivery.shipment_step,
+                    title: `Step ${delivery.shipment_step}`,
+                    description: store?.exchangePoint?.description || 'Étape intermédiaire de livraison',
+                    date: delivery.send_date?.toISOString(),
+                    departure: {
+                        city: departureCity,
+                        coordinates: departureCoords,
+                    },
+                    arrival: {
+                        city: arrivalCity,
+                        coordinates: arrivalCoords,
+                    },
+                    courier: {
+                        name: client?.first_name + ' ' + client?.last_name,
+                        photoUrl: courier?.user.profile_picture || null,
+                    },
+                });
             }
-
-            const client = await this.clientRepository.findOne({
-                where: { user: { user_id: delivery.delivery_person.user.user_id } },
-                relations: ['user'],
-            });
     
-            steps.push({
-                id: delivery.shipment_step,
-                title: `Step ${delivery.shipment_step}`,
-                description: store?.exchangePoint?.description || 'Étape intermédiaire de livraison',
-                date: delivery.send_date?.toISOString(),
-                departure: {
-                    city: departureCity,
-                    coordinates: departureCoords,
-                },
-                arrival: {
-                    city: arrivalCity,
-                    coordinates: arrivalCoords,
-                },
-                courier: {
-                    name: client?.first_name + ' ' + client?.last_name,
-                    photoUrl: courier?.user.profile_picture || null,
-                },
-            });
+            // Ajoute la "Step finale" SEULEMENT si elle existe vraiment (shipment_step === 1000)
+            const finalDelivery = deliveries.find(delivery => delivery.shipment_step === 1000);
+            if (finalDelivery) {
+                const lastStore = storesByStep.find(s => s.step === finalDelivery.shipment_step - 1);
+    
+                const client = await this.clientRepository.findOne({
+                    where: { user: { user_id: finalDelivery.delivery_person.user.user_id } },
+                    relations: ['user'],
+                });
+    
+                steps.push({
+                    id: 1000,
+                    title: 'Step finale',
+                    description: 'Dernière étape de la livraison jusqu’au destinataire.',
+                    date: finalDelivery.send_date?.toISOString(),
+                    departure: {
+                        city: lastStore?.exchangePoint?.city || "",
+                        coordinates: lastStore?.exchangePoint?.coordinates.coordinates?.slice().reverse(),
+                    },
+                    arrival: {
+                        city: shipment.arrival_city,
+                        coordinates: shipment.arrival_location?.coordinates?.slice().reverse(),
+                    },
+                    courier: {
+                        name: client?.first_name + ' ' + client?.last_name,
+                        photoUrl: client?.user.profile_picture || null,
+                    },
+                });
+            }
         }
+    
+        // Détermination de l'arrivée réelle dans `details` :
+        let realArrivalCity = shipment.arrival_city;
+        let realArrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse();
     
         if (deliveries.length > 0) {
             const lastDelivery = deliveries[deliveries.length - 1];
-            const lastStore = storesByStep.find(s => s.step === lastDelivery.shipment_step);
-    
-            const client = await this.clientRepository.findOne({
-                where: { user: { user_id: lastDelivery.delivery_person.user.user_id } },
-                relations: ['user'],
-            });
-
-
-            steps.push({
-                id: 1000,
-                title: 'Step finale',
-                description: 'Dernière étape de la livraison jusqu’au destinataire.',
-                date: shipment.deadline_date?.toISOString(),
-                departure: {
-                    city: lastStore?.exchangePoint?.city || "",
-                    coordinates: lastStore?.exchangePoint?.coordinates.coordinates.reverse(),
-                },
-                arrival: {
-                    city: shipment.arrival_city,
-                    coordinates: shipment.arrival_location?.coordinates.reverse(),
-                },
-                courier: {
-                    name: client?.first_name + ' ' + client?.last_name,
-                    photoUrl: client?.user.profile_picture || null,
-                },
-            });
+            if (lastDelivery.shipment_step === 1000) {
+                realArrivalCity = shipment.arrival_city;
+                realArrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse();
+            } else {
+                const lastStore = storesByStep.find(s => s.step === lastDelivery.shipment_step);
+                realArrivalCity = lastStore?.exchangePoint?.city ?? shipment.arrival_city;
+                realArrivalCoords = lastStore?.exchangePoint?.coordinates.coordinates?.slice().reverse() ?? shipment.arrival_location?.coordinates?.slice().reverse();
+            }
         }
     
         const result = {
@@ -391,11 +461,11 @@ export class DeliveryService {
                 complementary_info: shipment.urgent ? "Livraison urgente à effectuer rapidement." : "Package to be delivered on time",
                 departure: {
                     city: shipment.departure_city,
-                    coordinates: shipment.departure_location?.coordinates.reverse(),
+                    coordinates: shipment.departure_location?.coordinates?.slice().reverse(),
                 },
                 arrival: {
-                    city: shipment.arrival_city,
-                    coordinates: shipment.arrival_location?.coordinates.reverse(),
+                    city: realArrivalCity, // Ici, on assure que l'arrivée pointe vers la destination finale
+                    coordinates: realArrivalCoords,
                 },
                 departure_date: shipment.deadline_date?.toISOString().split('T')[0],
                 arrival_date: shipment.deadline_date?.toISOString().split('T')[0],
@@ -417,20 +487,56 @@ export class DeliveryService {
     async bookShipment(id: string, user_id: string): Promise<Delivery> {
         const shipment = await this.shipmentRepository.findOne({
             where: { shipment_id: id },
+            relations: ['deliveries', 'stores', 'stores.exchangePoint'],
         });
     
         if (!shipment) {
-            throw new Error("Shipment not found.");
+            throw new Error('Shipment not found.');
         }
     
         const user = await this.userRepository.findOne({
-            where: { user_id: user_id },
-            relations: ["deliveryPerson"],
+            where: { user_id },
+            relations: ['deliveryPerson'],
         });
     
         if (!user || !user.deliveryPerson) {
-            throw new Error("User or delivery person profile not found.");
+            throw new Error('User or delivery person profile not found.');
         }
+    
+        const existingSteps = shipment.deliveries.map(d => d.shipment_step);
+        const isFinalStep = existingSteps.includes(1000);
+        const shipment_step = isFinalStep ? 1000 : 0;
+    
+        const reverseCoords = (point: any) => {
+            if (!point || !point.coordinates) return null;
+            return [...point.coordinates].reverse();
+        };
+    
+        const departureCoords = reverseCoords(shipment.departure_location);
+        const arrivalCoords = reverseCoords(shipment.arrival_location);
+    
+        console.log("DEPARTURE:", departureCoords);
+        console.log("ARRIVAL:", arrivalCoords);
+    
+        const commissions = await this.deliveryCommissionRepository.findOne({ where: {} });
+    
+        let existingDelivery = await this.deliveryRepository.findOne({
+            where: { shipment: { shipment_id: id } },
+            relations: ['shipment'],
+        });
+    
+        let delivery_code: string;
+    
+        if (existingDelivery && existingDelivery.delivery_code) {
+            delivery_code = existingDelivery.delivery_code;
+        } else {
+            delivery_code = crypto.randomBytes(16).toString('hex');
+        }
+    
+        const qrCodeBase64 = await QRCode.toDataURL(delivery_code);
+    
+        console.log("Delivery Code:", delivery_code);
+        console.log("QR Code Base64:", qrCodeBase64);
     
         const delivery = this.deliveryRepository.create({
             send_date: new Date(),
@@ -438,13 +544,515 @@ export class DeliveryService {
             amount: shipment.proposed_delivery_price ?? 0,
             shipment: shipment,
             delivery_person: user.deliveryPerson,
+            shipment_step,
+            delivery_commission: commissions ?? undefined,
+            delivery_code,
         });
     
         const savedDelivery = await this.deliveryRepository.save(delivery);
-    
         return savedDelivery;
     }
+    
+    async bookPartial(dto: BookPartialDTO, shipment_id: string): Promise<Delivery> {
+        const shipment = await this.shipmentRepository.findOne({
+            where: { shipment_id },
+            relations: ['stores', 'stores.exchangePoint'],
+        });
+    
+        if (!shipment) {
+            throw new Error('Shipment not found.');
+        }
+    
+        const user = await this.userRepository.findOne({
+            where: { user_id: dto.delivery_person_id },
+            relations: ['deliveryPerson'],
+        });
+    
+        if (!user || !user.deliveryPerson) {
+            throw new Error('User or delivery person profile not found.');
+        }
+    
+        const existingSteps = shipment.stores.map((store) => store.step);
+        const nextStep = existingSteps.length > 0 ? Math.max(...existingSteps) + 1 : 1;
+    
+        let exchangePoint: ExchangePoint;
+    
+        if (dto.warehouse_id) {
+            const warehouse = await this.warehouseRepository.findOne({
+                where: { warehouse_id: dto.warehouse_id },
+            });
+    
+            if (!warehouse) {
+                throw new Error('Warehouse not found.');
+            }
+    
+            exchangePoint = this.exchangePointRepository.create({
+                city: warehouse.city,
+                coordinates: warehouse.coordinates,
+                warehouse_id: warehouse.warehouse_id,
+            });
+    
+            await this.exchangePointRepository.save(exchangePoint);
+        } else if (dto.city && dto.latitude && dto.longitude) {
+            exchangePoint = this.exchangePointRepository.create({
+                city: dto.city,
+                coordinates: {
+                    type: 'Point',
+                    coordinates: [dto.longitude, dto.latitude],
+                },
+                warehouse_id: undefined,
+            });
+    
+            await this.exchangePointRepository.save(exchangePoint);
+        } else {
+            throw new Error('You must provide either a warehouse_id or city, latitude, and longitude.');
+        }
+    
+        let startDate: Date;
+        if (shipment.stores.length > 0) {
+            const lastStep = shipment.stores[shipment.stores.length - 1];
+            startDate = lastStep.end_date || new Date();
+        } else {
+            startDate = shipment.deadline_date || new Date();
+        }
+    
+        const endDate = dto.end_date || undefined;
+    
+        const store = this.storeRepository.create({
+            exchangePoint,
+            step: nextStep,
+            start_date: startDate,
+            end_date: endDate,
+            shipment_id: shipment.shipment_id,
+        });
+    
+        await this.storeRepository.save(store);
+    
+        shipment.proposed_delivery_price = dto.new_price;
+    
+        const delivery_code = crypto.createHmac('sha256', 'secret').update(shipment.shipment_id).digest('hex');
+    
+        const commissions = await this.deliveryCommissionRepository.findOne({ where: {} });
+    
+        const delivery = this.deliveryRepository.create({
+            send_date: new Date(),
+            status: 'pending',
+            amount: dto.price,
+            shipment: shipment,
+            delivery_person: user.deliveryPerson,
+            shipment_step: nextStep,
+            delivery_commission: commissions ?? undefined,
+            delivery_code,
+        });
+    
+        return await this.deliveryRepository.save(delivery);
+    }
 
+    async askToNegociate(shipment_id: string, user_id: string): Promise<{ message: string }> {
+        const shipment = await this.shipmentRepository.findOne({
+            where: { shipment_id },
+            relations: ["user"]
+        });
+        if (!shipment) {
+            throw new Error("Delivery not found.");
+        }
+    
+        const deliverPerson = await this.deliveryPersonRepository.findOne({
+            where: { user: { user_id } },
+            relations: ["user"],
+        });
+        if (!deliverPerson) {
+            throw new Error("Delivery person not found.");
+        }
+    
+        const client_id = shipment.user.user_id;
+        console.log("CLIENT ID:", client_id);
+        console.log("DELIVERY PERSON ID:", deliverPerson.user.user_id);
+    
+        const client = await this.clientRepository.findOne({
+            where: { user: { user_id: client_id } },
+            relations: ["user"],
+        });
+        if (!client) {
+            throw new Error("Client not found.");
+        }
+    
+        const deliveryName = shipment.description || "votre demande de livraison";
+        const messageContent = `Bonjour, je serais intéressé pour effectuer la livraison de "${deliveryName}", mais je ne pourrais en assurer l'intégralité. Seriez-vous intéressé pour que j'assure une partie ?`;
+    
+        const newMessage = new this.messageModel({
+            senderId: deliverPerson.user.user_id,
+            receiverId: client_id,
+            content: messageContent
+        });
+        await newMessage.save();
+    
+        return { message: "Negotiation request sent successfully." };
+    }
+
+    async getWarehouseList(): Promise<Warehouse[]> {
+        const warehouses = await this.warehouseRepository.find({where : {}});
+        
+        return warehouses;
+    }
+
+    async getMyCurrentShipments(user_id: string): Promise<Shipment[]> {
+        const user = await this.userRepository.findOne({
+            where: { user_id: user_id },
+        });
+    
+        if (!user) {
+            throw new Error("User or delivery person profile not found.");
+        }
+    
+        const shipments = await this.shipmentRepository.find({
+            where: {
+                user: { user_id: user.user_id },
+                status: "pending"
+            },
+            relations: ["deliveries", "stores", "stores.exchangePoint"],
+        });
+    
+        return shipments;
+    }
+
+    async takeDeliveryPackage(deliveryId : string, user_id : string, secretCode : string) : Promise<{ message: string }> {
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryId },
+            relations: ["delivery_person", "shipment"],
+        });
+
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+
+        if (delivery.delivery_person.user.user_id !== user_id) {
+            throw new Error("User is not authorized to take this delivery.");
+        }
+
+        if (delivery.status === 'finished') {
+            throw new Error("Cannot take a finished delivery.");
+        }
+
+        if (delivery.status === 'validated') {
+            throw new Error("Cannot take a validated delivery.");
+        }
+
+        if (delivery.delivery_code !== secretCode) {
+            throw new Error("Invalid secret code.");
+        }
+
+        delivery.status = 'taken';
+        await this.deliveryRepository.save(delivery);
+        
+        return { message: "Delivery taken successfully." };
+    }
+
+    async finishDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
+
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryId },
+            relations: ["delivery_person", "shipment"],
+        });
+
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+
+        if (delivery.status != 'taken'){
+            throw new Error("Delivery is not in a state that allows it to be finished.");
+        }
+
+        if (delivery.delivery_person.user.user_id !== user_id) {
+            throw new Error("User is not authorized to finish this delivery.");
+        }
+
+        delivery.status = 'finished';
+        await this.deliveryRepository.save(delivery);
+        
+        return { message: "Delivery finished successfully." };
+
+    }
+
+    async validateDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
+
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryId },
+            relations: ["delivery_person", "shipment"],
+        });
+
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+
+        if (delivery.status != 'finished'){
+            throw new Error("Delivery is not in a state that allows it to be validated.");
+        }
+
+        if (delivery.shipment.user.user_id !== user_id) {
+            throw new Error("User is not authorized to validate this delivery.");
+        }
+
+        delivery.status = 'validated';
+        await this.deliveryRepository.save(delivery);
+
+        const delivery_step = delivery.shipment_step;
+
+        if (delivery_step === 0 || delivery_step === 1000) {
+            await this.shipmentRepository.update(delivery.shipment.shipment_id, {
+                status: 'validated',
+            });
+        }
+        
+        return { message: "Delivery validated successfully." };
+    }
+
+    async getOngoingDeliveries(user_id: string): Promise<DeliveryOnGoing[]> {
+        const user = await this.userRepository.findOne({
+            where: { user_id: user_id },
+            relations: ['deliveryPerson'],
+        });
+
+        if (!user || !user.deliveryPerson) {
+            throw new Error('User or delivery person profile not found.');
+        }
+
+        const deliveries = await this.deliveryRepository.find({
+            where: {
+                delivery_person: { delivery_person_id: user.deliveryPerson.delivery_person_id },
+                status: In(['taken', 'pending']),
+            },
+            relations: ['shipment', 'shipment.stores', 'shipment.stores.exchangePoint'],
+        });
+
+        const ongoingDeliveries: DeliveryOnGoing[] = deliveries.map(delivery => {
+            const shipment = delivery.shipment;
+            const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
+
+            let currentCoordinates: [number, number] = [0, 0];
+            let progress = 0;
+
+            if (delivery.shipment_step === 0) {
+                currentCoordinates = shipment.departure_location.coordinates.slice().reverse() as [number, number];
+                progress = 0;
+            } else if (delivery.shipment_step === 1000) {
+                currentCoordinates = shipment.arrival_location.coordinates.slice().reverse() as [number, number];
+                progress = 100;
+            } else {
+                const currentStore = storesByStep.find(store => store.step === delivery.shipment_step);
+                if (currentStore) {
+                    currentCoordinates = currentStore.exchangePoint.coordinates.coordinates.slice().reverse() as [number, number];
+                    progress = (delivery.shipment_step / 1000) * 100;
+                }
+            }
+
+            return {
+                id: delivery.delivery_id,
+                from: shipment.departure_city ?? "Unknown",
+                to: shipment.arrival_city ?? "Unknown",
+                status: delivery.status,
+                pickupDate: shipment.deadline_date ? shipment.deadline_date.toISOString().split('T')[0] : null,
+                estimatedDeliveryDate: shipment.deadline_date ? shipment.deadline_date.toISOString().split('T')[0] : null,
+                coordinates: {
+                    origin: shipment.departure_location.coordinates.slice().reverse() as [number, number],
+                    destination: shipment.arrival_location.coordinates.slice().reverse() as [number, number],
+                    current: currentCoordinates,
+                },
+                progress: progress,
+            };
+        });
+
+        return ongoingDeliveries;
+    }
+
+    async getMyDeliveryHistory(user_id: string, page: number, limit: number): Promise<{ data: HistoryDelivery[], totalRows: number }> {
+        const pageNumber = typeof page === 'number' ? page : 1;
+        const pageSize = typeof limit === 'number' ? limit : 10;
+    
+        console.log("user_id", user_id);
+    
+        const user = await this.userRepository.findOne({
+            where: { user_id: user_id },
+            relations: ['deliveryPerson'],
+        });
+    
+        if (!user || !user.deliveryPerson) {
+            throw new Error('User or delivery person profile not found.');
+        }
+    
+        const [deliveries, total] = await this.deliveryRepository.findAndCount({
+            where: {
+                delivery_person: { delivery_person_id: user.deliveryPerson.delivery_person_id },
+            },
+            relations: ['shipment', 'shipment.stores', 'shipment.stores.exchangePoint', 'shipment.user'],
+            skip: (pageNumber - 1) * pageSize,
+            take: pageSize,
+            order: { send_date: 'DESC' },
+        });
+    
+        const historyDeliveries: HistoryDelivery[] = await Promise.all(
+            deliveries.map(async (delivery) => {
+                const shipment = delivery.shipment;
+                const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
+    
+                let departureCity, arrivalCity;
+    
+                if (delivery.shipment_step === 0) {
+                    departureCity = shipment.departure_city;
+                    arrivalCity = shipment.arrival_city;
+                } else if (delivery.shipment_step === 1000) {
+                    const lastStore = storesByStep[storesByStep.length - 1];
+                    departureCity = lastStore?.exchangePoint?.city ?? shipment.departure_city;
+                    arrivalCity = shipment.arrival_city;
+                } else {
+                    const currentStore = storesByStep.find(store => store.step === delivery.shipment_step);
+                    const previousStore = storesByStep.find(store => store.step === delivery.shipment_step - 1);
+                    departureCity = previousStore?.exchangePoint?.city ?? shipment.departure_city;
+                    arrivalCity = currentStore?.exchangePoint?.city ?? shipment.arrival_city;
+                }
+
+                console.log("shipment", shipment);
+    
+                const client = await this.clientRepository.findOne({
+                    where: { user: { user_id: shipment.user.user_id } },
+                    relations: ['user'],
+                });
+    
+                return {
+                    id: delivery.delivery_id,
+                    departure_city: departureCity,
+                    arrival_city: arrivalCity,
+                    price: delivery.amount,
+                    client: {
+                        name: client ? `${client.first_name} ${client.last_name}` : "Unknown",
+                        photo_url: client?.user?.profile_picture || "",
+                    },
+                    status: delivery.status,
+                };
+            })
+        );
+    
+        return { data: historyDeliveries, totalRows: total };
+    }
+
+    async getReviewsForDeliveryPerson(user_id: string, page: number = 1, limit: number = 10): Promise<{ data: ReviewAsDeliveryPerson[], totalRows: number }> {
+        const [deliveries, total] = await this.deliveryRepository.findAndCount({
+          where: {
+            delivery_person: { user: { user_id: user_id } },
+            status: 'validated',
+          },
+          relations: ['deliveryReviews', 'deliveryReviews.responses', 'shipment', 'shipment.user', 'shipment.user.clients'],
+          skip: (page - 1) * limit,
+          take: limit,
+        });
+    
+        const reviews: ReviewAsDeliveryPerson[] = [];
+    
+        for (const delivery of deliveries) {
+          const client = delivery.shipment.user.clients[0];
+          for (const review of delivery.deliveryReviews) {
+            const response = review.responses.length > 0 ? review.responses[0] : null;
+    
+            reviews.push({
+              id: review.review_id,
+              content: review.comment || '',
+              author: {
+                id: delivery.shipment.user.user_id,
+                name: `${client?.first_name || ''} ${client?.last_name || ''}`,
+                photo: delivery.shipment.user.profile_picture || '',
+              },
+              reply: response ? true : false,
+              reply_content: response ? response.comment : null,
+              delivery_name: delivery.shipment.description || '',
+              rate: review.rating,
+            });
+          }
+        }
+    
+        return { data: reviews, totalRows: total };
+    }
+
+    async replyComment(comment: string, userId: string, commentId: string): Promise<{ message: string }> {
+        
+    
+        const deliveryReview = await this.deliveryReviewRepository.findOne({
+            where: { review_id: commentId },
+            relations: ["responses"],
+        });
+    
+        if (!deliveryReview) {
+            throw new Error("Comment not found.");
+        }
+
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryReview.delivery.delivery_id },
+            relations: ["delivery_person", "shipment"],
+        });
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+
+        if (delivery.delivery_person.user.user_id !== userId) {
+            throw new Error("User is not authorized to reply to this comment.");
+        }
+    
+        const deliveryReviewResponse = new DeliveryReviewResponse();
+        deliveryReviewResponse.comment = comment;
+        deliveryReviewResponse.review = deliveryReview;
+    
+        await this.deliveryReviewResponseRepository.save(deliveryReviewResponse);
+    
+        return {message: "Comment replied successfully"}
+    }
+
+    async getMyReviewsAsClient(user_id: string, page: number = 1, limit: number = 10): Promise<{ data: ReviewAsClient[], totalRows: number }> {
+        const [deliveries, total] = await this.deliveryRepository.findAndCount({
+            where: {
+                shipment: { user: { user_id: user_id } },
+                status: 'validated',
+            },
+            relations: ['deliveryReviews', 'deliveryReviews.responses', 'delivery_person', 'delivery_person.user', 'delivery_person.user.clients'],
+            skip: (page - 1) * limit,
+            take: limit,
+        });
+    
+        const reviews: ReviewAsClient[] = [];
+    
+        for (const delivery of deliveries) {
+            const deliveryPerson = delivery.delivery_person.user;
+            const client = deliveryPerson.clients.find(client => client.user.user_id === deliveryPerson.user_id);
+    
+            for (const review of delivery.deliveryReviews) {
+                reviews.push({
+                    id: review.review_id,
+                    content: review.comment || '',
+                    delivery: {
+                        id: delivery.delivery_id,
+                        deliveryman: {
+                            id: deliveryPerson.user_id,
+                            name: `${client?.first_name || ''} ${client?.last_name || ''}`,
+                            photo: deliveryPerson.profile_picture || '',
+                            email: deliveryPerson.email || '',
+                        },
+                    },
+                    services_name: delivery.shipment.description || '',
+                    rate: review.rating,
+                });
+            }
+        }
+    
+        return { data: reviews, totalRows: total };
+    }
+
+// PAS ENCORE UTILISE
+
+
+
+
+
+
+
+    
     async cancelDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
         const delivery = await this.deliveryRepository.findOne({
             where: { delivery_id: deliveryId },
@@ -565,101 +1173,7 @@ export class DeliveryService {
         return {message: "Comment added successfully"};
     }
 
-    async replyComment(comment: string, userId: string, deliveryId: string, commentId: string): Promise<{ message: string }> {
-        const delivery = await this.deliveryRepository.findOne({
-            where: { delivery_id: deliveryId },
-            relations: ["delivery_person", "delivery_person.user"],
-        });
-    
-        if (!delivery) {
-            throw new Error("Delivery not found.");
-        }
-    
-        if (delivery.delivery_person.user.user_id !== userId) {
-            throw new Error("User is not authorized to reply to this comment.");
-        }
-    
-        const deliveryReview = await this.deliveryReviewRepository.findOne({
-            where: { review_id: commentId },
-            relations: ["responses"],
-        });
-    
-        if (!deliveryReview) {
-            throw new Error("Comment not found.");
-        }
-    
-        const deliveryReviewResponse = new DeliveryReviewResponse();
-        deliveryReviewResponse.comment = comment;
-        deliveryReviewResponse.review = deliveryReview;
-    
-        await this.deliveryReviewResponseRepository.save(deliveryReviewResponse);
-    
-        return {message: "Comment replied successfully"}
-    }
 
-    async startDelivery(deliveryId: string, delivery_code, user_id : string ) : Promise<{ message: string }> {
-
-        const delivery = await this.deliveryRepository.findOne({
-            where: { delivery_id: deliveryId },
-            relations: ["delivery_person", "shipment"],
-        });
-    
-        if (!delivery) {
-            throw new Error("Delivery not found.");
-        }
-    
-        if (delivery.delivery_person.user.user_id !== user_id) {
-            throw new Error("User is not authorized to start this delivery.");
-        }
-    
-        delivery.status = 'in_progress';
-        delivery.delivery_code = delivery_code;
-    
-        await this.deliveryRepository.save(delivery);
-    
-        return { message: "Delivery started successfully." };
-    }
-
-    async finsihDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
-
-        const delivery = await this.deliveryRepository.findOne({
-            where: { delivery_id: deliveryId },
-            relations: ["delivery_person", "shipment"],
-        });
-    
-        if (!delivery) {
-            throw new Error("Delivery not found.");
-        }
-    
-        if (delivery.delivery_person.user.user_id !== user_id) {
-            throw new Error("User is not authorized to finish this delivery.");
-        }
-    
-        delivery.status = 'finished';
-    
-        await this.deliveryRepository.save(delivery);
-    
-        return { message: "Delivery finished successfully." };
-    }
-
-    async validateDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
-
-        // user_id correspondà l'id du créateur de la livraison
-        const delivery = await this.deliveryRepository.findOne({
-            where: { delivery_id: deliveryId },
-            relations: ["shipment"],
-        });
-        if (!delivery) {
-            throw new Error("Delivery not found.");
-        }
-        if (delivery.shipment.user.user_id !== user_id) {
-            throw new Error("User is not authorized to validate this delivery.");
-        }
-        delivery.status = 'validated';
-        await this.deliveryRepository.save(delivery);
-        return { message: "Delivery validated successfully." }; 
-
-    }
 
     async getDeliveryStatus(deliveryId: string): Promise<{ status: string }> {
 
@@ -745,7 +1259,6 @@ export class DeliveryService {
         return this.deliveryRepository.save(delivery);
     }
 
-    // Création d'une livraison négociée (prix, date, etc.)
     async createNegotiatedDelivery(shipmentId: string, userId: string, updatedAmount: number): Promise<Delivery> {
         const shipment = await this.shipmentRepository.findOne({
             where: { shipment_id: shipmentId },

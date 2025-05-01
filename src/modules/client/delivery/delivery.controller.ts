@@ -5,6 +5,8 @@ import { CreateShipmentDTO } from "./dto/create-shipment.dto";
 import { GetShipmentsDTO } from "./dto/get-shipment.dto";
 import { CreateDeliveryDto } from "./dto/create-delivery.dto";
 import { ClientJwtGuard } from "src/common/guards/user-jwt.guard";
+import { BookPartialDTO } from "./dto/book-partial.dto";
+import { HistoryDelivery } from "./types";
 
 @Controller("client/shipments")
 export class DeliveryController {
@@ -21,9 +23,7 @@ export class DeliveryController {
         @UploadedFiles() files: Express.Multer.File[],
         @Req() req: { user: { user_id: string }; body: any }
     ) {
-
         const shipment = await this.deliveryService.createDelivery(createShipmentDTO, files, req.user.user_id);
-
         return { message: "Shipment received successfully!", data: shipment };
     }
 
@@ -31,6 +31,97 @@ export class DeliveryController {
     async getShipments(@Query() filters: GetShipmentsDTO) {
         return this.deliveryService.getShipments(filters);
     }
+
+    @Get("warehouses")
+    async getWarehouses() {
+        return this.deliveryService.getWarehouseList();
+    }
+
+    @Get("myCurrentShipments")
+    @UseGuards(ClientJwtGuard)
+    async getCurrentPendingShipments(
+        @Body("user_id") user_id : string,
+    ) {
+        return this.deliveryService.getMyCurrentShipments(user_id);
+    }
+
+    @Get("onGoingDeliveries")
+    @UseGuards(ClientJwtGuard)
+    async getOngoingDeliveries(
+        @Body("user_id") user_id : string,
+    ) {
+        return this.deliveryService.getOngoingDeliveries(user_id);
+    }
+
+    @Post("delivery/:id/taken")
+    @UseGuards(ClientJwtGuard)
+    async takeDelivery(
+        @Param("id") deliveryId : string,
+        @Body("user_id") user_id : string,
+        @Body("secretCode") secretCode : string,
+    ) {
+        return this.deliveryService.takeDeliveryPackage(deliveryId, user_id, secretCode);
+    }
+
+    @Post("delivery/:id/finish")
+    @UseGuards(ClientJwtGuard)
+    async finishDelivery(
+        @Param("id") deliveryId : string,
+        @Body("user_id") user_id : string,
+    ) {
+        return this.deliveryService.finishDelivery(deliveryId, user_id);
+    }
+
+    @Post("delivery/:id/validate")
+    @UseGuards(ClientJwtGuard)
+    async validateDelivery(
+        @Param("id") deliveryId : string,
+        @Body("user_id") user_id : string,
+    ) {
+        return this.deliveryService.validateDelivery(deliveryId, user_id);
+    }
+
+    @Get("delivery/myHistory")
+    @UseGuards(ClientJwtGuard)
+    async getMyHistory(
+        @Body("user_id") user_id : string,
+        @Query("page") page : number,
+        @Query("limit") limit : number,
+    ) : Promise<{ data: HistoryDelivery[], totalRows: number }> {
+        console.log("user_id", user_id);
+        return this.deliveryService.getMyDeliveryHistory(user_id, page, limit);
+    }
+
+    @Get("delivery/reviews")
+    @UseGuards(ClientJwtGuard)
+    async getMyReviews(
+        @Body("user_id") user_id : string,
+        @Query("page") page : number,
+        @Query("limit") limit : number,
+    ) {
+        return this.deliveryService.getReviewsForDeliveryPerson(user_id, page, limit);
+    }
+
+    @Post("delivery/reviews/:id/reply")
+    @UseGuards(ClientJwtGuard)
+    async replyToComment(
+        @Param("id") comment_id : string,
+        @Body("user_id") user_id : string,
+        @Body("content") content : string,
+    ) {
+        return this.deliveryService.replyComment(comment_id, user_id, content);
+    }
+
+    @Get("delivery/myReviews")
+    @UseGuards(ClientJwtGuard)
+    async getMyReviewsAsClient(
+        @Body("user_id") user_id : string,
+        @Query("page") page : number,
+        @Query("limit") limit : number,
+    ) {
+        return this.deliveryService.getMyReviewsAsClient(user_id, page, limit);
+    }
+
 
     @Get(":id")
     async getShipmentById(
@@ -40,10 +131,32 @@ export class DeliveryController {
     }
 
     @Post(":id/book")
-    async bookShipment() {
-        // Création de la livraison + des différents bordereau de colis
-        return "Delivery booked successfully";
+    @UseGuards(ClientJwtGuard)
+    async bookShipment(
+        @Param("id") shipment_id : string,
+        @Body("user_id") user_id : string,
+    ) {
+        return this.deliveryService.bookShipment(shipment_id, user_id);
     }
+
+    @Post(':id/bookPartial')
+    @UseGuards(ClientJwtGuard)
+    async bookPartial(
+        @Param('id') id: string,
+        @Body() bookPartialDTO: BookPartialDTO,
+    ) {
+        return this.deliveryService.bookPartial(bookPartialDTO, id);
+    }
+
+    @Post(":id/askNegociation")
+    async askNegociation(
+        @Param("id") shipment_id : string,
+        @Body("user_id") user_id : string
+    )
+    {
+        return this.deliveryService.askToNegociate(shipment_id, user_id);
+    }
+
 
     @Delete("delivery/:id/cancel")
     async cancelDelivery(
@@ -69,7 +182,6 @@ export class DeliveryController {
         @Body("shipment_id") shipmentId : string,
         @Body("user_id") user_id : string,
         @Body("updatedPrice") updatedPrice : number,
-
     ) {
         return this.deliveryService.createNegotiatedDelivery(shipmentId, user_id, updatedPrice);
     }
@@ -80,31 +192,6 @@ export class DeliveryController {
         @Body("user_id") user_id : string,
     ) {
         return this.deliveryService.deleteShipment(shipmentId, user_id);
-    }
-
-    @Post("delivery/:id/start")
-    async startDelivery(
-        @Param("id") delivery_id : string,
-        @Body("delivery_code") delivery_code : string,
-        @Body("user_id") user_id : string,
-    ) {
-        return this.deliveryService.startDelivery(delivery_id, delivery_code, user_id);
-    }
-
-    @Post("delivery/:id/finish")
-    async finishDelivery(
-        @Param("id") deliveryId : string,
-        @Body("user_id") user_id : string,
-    ) {
-        return this.deliveryService.finsihDelivery(deliveryId, user_id);
-    }
-
-    @Post("delivery/:id/validate")
-    async validateDelivery(
-        @Param("id") deliveryId : string,
-        @Body("user_id") user_id : string,
-    ) {
-        return this.deliveryService.validateDelivery(deliveryId, user_id);
     }
 
     @Patch(":id/route")
@@ -151,17 +238,6 @@ export class DeliveryController {
         @Param("id") delivery_id : string,
     ) {
         return this.deliveryService.addComment(comment, user_id, delivery_id);
-    }
-
-    @Post("delivery/:id/comments/:comment_id/reply")
-    async replyComment(
-        @Body("comment") comment : string,
-        @Body("user_id") user_id : string,
-        @Param("id") delivery_id : string,
-        @Param("comment_id") comment_id : string,
-
-    ) {
-        return this.deliveryService.replyComment(comment, user_id, delivery_id, comment_id);
     }
 
 }

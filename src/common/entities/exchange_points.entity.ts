@@ -13,7 +13,7 @@ export class ExchangePoint {
     city: string;
 
     @Column({ type: 'geography', spatialFeatureType: 'Point', srid: 4326 })
-    coordinates: Point; // Il y a un type pour les coordonnés ? Ce n'est pas float
+    coordinates: Point;
 
     @Column({ type: 'text', nullable: true })
     description?: string;
