@@ -683,6 +683,12 @@ export class DeliveryService {
     
         return { message: "Negotiation request sent successfully." };
     }
+
+    async getWarehouseList(): Promise<Warehouse[]> {
+        const warehouses = await this.warehouseRepository.find({where : {}});
+        
+        return warehouses;
+    }
     
     
     async cancelDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {

@@ -32,6 +32,12 @@ export class DeliveryController {
     async getShipments(@Query() filters: GetShipmentsDTO) {
         return this.deliveryService.getShipments(filters);
     }
+    
+    @Get("warehouses")
+    async getWarehouses() {
+        return this.deliveryService.getWarehouseList();
+    }
+
 
     @Get(":id")
     async getShipmentById(
@@ -66,6 +72,7 @@ export class DeliveryController {
     {
         return this.deliveryService.askToNegociate(shipment_id, user_id);
     }
+
 
     @Delete("delivery/:id/cancel")
     async cancelDelivery(
