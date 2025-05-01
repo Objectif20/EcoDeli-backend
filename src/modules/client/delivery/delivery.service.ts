@@ -253,7 +253,6 @@ export class DeliveryService {
     
         const shipments = await queryBuilder.getMany();
     
-        // Mettre à jour les informations de départ et d'arrivée en fonction des étapes
         const updatedShipments = shipments.map(shipment => {
             const deliveries = shipment.deliveries.sort((a, b) => a.shipment_step - b.shipment_step);
             const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
@@ -715,6 +714,97 @@ export class DeliveryService {
     
         return shipments;
     }
+
+    async takeDeliveryPackage(deliveryId : string, user_id : string, secretCode : string) : Promise<{ message: string }> {
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryId },
+            relations: ["delivery_person", "shipment"],
+        });
+
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+
+        if (delivery.delivery_person.user.user_id !== user_id) {
+            throw new Error("User is not authorized to take this delivery.");
+        }
+
+        if (delivery.status === 'finished') {
+            throw new Error("Cannot take a finished delivery.");
+        }
+
+        if (delivery.status === 'validated') {
+            throw new Error("Cannot take a validated delivery.");
+        }
+
+        if (delivery.delivery_code !== secretCode) {
+            throw new Error("Invalid secret code.");
+        }
+
+        delivery.status = 'taken';
+        await this.deliveryRepository.save(delivery);
+        
+        return { message: "Delivery taken successfully." };
+    }
+
+    async finishDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
+
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryId },
+            relations: ["delivery_person", "shipment"],
+        });
+
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+
+        if (delivery.status != 'taken'){
+            throw new Error("Delivery is not in a state that allows it to be finished.");
+        }
+
+        if (delivery.delivery_person.user.user_id !== user_id) {
+            throw new Error("User is not authorized to finish this delivery.");
+        }
+
+        delivery.status = 'finished';
+        await this.deliveryRepository.save(delivery);
+        
+        return { message: "Delivery finished successfully." };
+
+    }
+
+    async validateDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
+
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryId },
+            relations: ["delivery_person", "shipment"],
+        });
+
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+
+        if (delivery.status != 'finished'){
+            throw new Error("Delivery is not in a state that allows it to be validated.");
+        }
+
+        if (delivery.shipment.user.user_id !== user_id) {
+            throw new Error("User is not authorized to validate this delivery.");
+        }
+
+        delivery.status = 'validated';
+        await this.deliveryRepository.save(delivery);
+
+        const delivery_step = delivery.shipment_step;
+
+        if (delivery_step === 0 || delivery_step === 1000) {
+            await this.shipmentRepository.update(delivery.shipment.shipment_id, {
+                status: 'validated',
+            });
+        }
+        
+        return { message: "Delivery validated successfully." };
+    }
     
     async cancelDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
         const delivery = await this.deliveryRepository.findOne({
@@ -911,25 +1001,6 @@ export class DeliveryService {
         await this.deliveryRepository.save(delivery);
     
         return { message: "Delivery finished successfully." };
-    }
-
-    async validateDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
-
-        // user_id correspondà l'id du créateur de la livraison
-        const delivery = await this.deliveryRepository.findOne({
-            where: { delivery_id: deliveryId },
-            relations: ["shipment"],
-        });
-        if (!delivery) {
-            throw new Error("Delivery not found.");
-        }
-        if (delivery.shipment.user.user_id !== user_id) {
-            throw new Error("User is not authorized to validate this delivery.");
-        }
-        delivery.status = 'validated';
-        await this.deliveryRepository.save(delivery);
-        return { message: "Delivery validated successfully." }; 
-
     }
 
     async getDeliveryStatus(deliveryId: string): Promise<{ status: string }> {
