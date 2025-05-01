@@ -48,6 +48,18 @@ export interface DeliveryOnGoing {
   
   }
 
+  export interface HistoryDelivery {
+    id: string;
+    departure_city: string;
+    arrival_city: string;
+    price: number;
+    client: {
+      name: string;
+      photo_url: string;
+    };
+    status: string;
+  }
+
 
 @Injectable()
 export class DeliveryService {
@@ -880,8 +892,69 @@ export class DeliveryService {
         return ongoingDeliveries;
     }
 
-
-
+    async getMyDeliveryHistory(user_id: string, page: number, limit: number): Promise<HistoryDelivery[]> {
+        const user = await this.userRepository.findOne({
+            where: { user_id: user_id },
+            relations: ['deliveryPerson'],
+        });
+    
+        if (!user || !user.deliveryPerson) {
+            throw new Error('User or delivery person profile not found.');
+        }
+    
+        const [deliveries, total] = await this.deliveryRepository.findAndCount({
+            where: {
+                delivery_person: { delivery_person_id: user.deliveryPerson.delivery_person_id },
+                status: 'validated',
+            },
+            relations: ['shipment', 'shipment.stores', 'shipment.stores.exchangePoint'],
+            skip: (page - 1) * limit,
+            take: limit,
+            order: { send_date: 'DESC' },
+        });
+    
+        const historyDeliveries: HistoryDelivery[] = await Promise.all(
+            deliveries.map(async (delivery) => {
+                const shipment = delivery.shipment;
+                const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
+    
+                let departureCity, arrivalCity;
+    
+                if (delivery.shipment_step === 0) {
+                    departureCity = shipment.departure_city;
+                    arrivalCity = shipment.arrival_city;
+                } else if (delivery.shipment_step === 1000) {
+                    const lastStore = storesByStep[storesByStep.length - 1];
+                    departureCity = lastStore?.exchangePoint?.city ?? shipment.departure_city;
+                    arrivalCity = shipment.arrival_city;
+                } else {
+                    const currentStore = storesByStep.find(store => store.step === delivery.shipment_step);
+                    const previousStore = storesByStep.find(store => store.step === delivery.shipment_step - 1);
+                    departureCity = previousStore?.exchangePoint?.city ?? shipment.departure_city;
+                    arrivalCity = currentStore?.exchangePoint?.city ?? shipment.arrival_city;
+                }
+    
+                const client = await this.clientRepository.findOne({
+                    where: { user: { user_id: shipment.user.user_id } },
+                    relations: ['user'],
+                });
+    
+                return {
+                    id: delivery.delivery_id,
+                    departure_city: departureCity,
+                    arrival_city: arrivalCity,
+                    price: delivery.amount,
+                    client: {
+                        name: client ? `${client.first_name} ${client.last_name}` : "Unknown",
+                        photo_url: client?.user?.profile_picture || "",
+                    },
+                    status: delivery.status,
+                };
+            })
+        );
+    
+        return historyDeliveries;
+    }
 
 // PAS ENCORE UTILISE
 

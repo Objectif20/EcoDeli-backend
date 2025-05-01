@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UploadedFiles, UseGuards, UseInterceptors } from "@nestjs/common";
-import { DeliveryService } from "./delivery.service";
+import { DeliveryService, HistoryDelivery } from "./delivery.service";
 import { AnyFilesInterceptor } from "@nestjs/platform-express";
 import { CreateShipmentDTO } from "./dto/create-shipment.dto";
 import { GetShipmentsDTO } from "./dto/get-shipment.dto";
@@ -78,6 +78,16 @@ export class DeliveryController {
         @Body("user_id") user_id : string,
     ) {
         return this.deliveryService.validateDelivery(deliveryId, user_id);
+    }
+
+    @Get("delivery/myHistory")
+    @UseGuards(ClientJwtGuard)
+    async getMyHistory(
+        @Body("user_id") user_id : string,
+        @Query("page") page : number,
+        @Query("limit") limit : number,
+    ) : Promise<HistoryDelivery[]> {
+        return this.deliveryService.getMyDeliveryHistory(user_id, page, limit);
     }
 
     @Get(":id")
