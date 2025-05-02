@@ -55,3 +55,32 @@ export interface DeliveryOnGoing {
     services_name: string;
     rate: number;
   }
+
+
+  export interface DeliveriesLocation {
+    id: string;
+    coordinates: {
+      lat: number;
+      lng: number;
+    };
+    deliveryman?: {
+      id: string;
+      name: string;
+      photo: string;
+      email: string;
+    };
+    potential_address?: string;
+  }
+
+  export interface CurrentDeliveryAsClient {
+    id: string;
+    arrival_city: string;
+    departure_city: string;
+    date_departure: string;
+    date_arrival: string;
+    photo: string;
+    deliveryman: {
+      name: string;
+      photo: string;
+    };
+  }
