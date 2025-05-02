@@ -31,7 +31,7 @@ import { BookPartialDTO } from "./dto/book-partial.dto";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from 'mongoose';
 import { Message } from "src/common/schemas/message.schema";
-import { DeliveriesLocation, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson } from "./types";
+import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson } from "./types";
 
 
 @Injectable()
@@ -1065,7 +1065,7 @@ export class DeliveryService {
             const deliveries = await this.deliveryRepository.find({
                 where: {
                     shipment: { shipment_id: shipment.shipment_id },
-                    status: In(['taken', 'validated']),
+                    status: In(['taken', 'finished']),
                 },
                 relations: ['delivery_person', 'delivery_person.user', 'delivery_person.user.clients'],
             });
@@ -1085,6 +1085,57 @@ export class DeliveryService {
                         email: delivery.delivery_person.user.email,
                     } : undefined,
                     potential_address: shipment.arrival_location.address,
+                };
+            });
+        });
+    
+        const deliveries = (await Promise.all(deliveriesPromises)).flat();
+    
+        return deliveries;
+    }
+
+    async getCurrentDeliveriesAsClient(user_id: string): Promise<CurrentDeliveryAsClient[]> {
+        const user = await this.userRepository.findOne({
+            where: { user_id: user_id },
+            relations: ['clients'],
+        });
+    
+        if (!user) {
+            throw new Error('User not found.');
+        }
+    
+        const shipments = await this.shipmentRepository.find({
+            where: {
+                user: { user_id: user.user_id },
+            },
+            relations: ['stores', 'stores.exchangePoint'],
+        });
+    
+        const deliveriesPromises = shipments.map(async (shipment) => {
+            const deliveries = await this.deliveryRepository.find({
+                where: {
+                    shipment: { shipment_id: shipment.shipment_id },
+                    status: In(['pending', 'taken', 'finished']),
+                },
+                relations: ['delivery_person', 'delivery_person.user', 'delivery_person.user.clients'],
+            });
+    
+            return deliveries.map(delivery => {
+                const deliveryPersonClient = delivery.delivery_person?.user.clients[0];
+                return {
+                    id: delivery.delivery_id,
+                    arrival_city: shipment.arrival_city ?? '',
+                    departure_city: shipment.departure_city ?? '',
+                    date_departure: shipment.deadline_date?.toISOString().split('T')[0] || '',
+                    date_arrival: shipment.deadline_date?.toISOString().split('T')[0] || '',
+                    photo: delivery.delivery_person?.user.profile_picture || '',
+                    deliveryman: delivery.delivery_person ? {
+                        name: `${deliveryPersonClient?.first_name} ${deliveryPersonClient?.last_name}`,
+                        photo: delivery.delivery_person.user.profile_picture,
+                    } : {
+                        name: 'Unknown',
+                        photo: '',
+                    },
                 };
             });
         });
