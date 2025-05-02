@@ -102,6 +102,14 @@ export class DeliveryController {
         return this.deliveryService.getReviewsForDeliveryPerson(user_id, page, limit);
     }
 
+    @Get("delivery/myLocation")
+    @UseGuards(ClientJwtGuard)
+    async getMyLocation(
+        @Body("user_id") user_id : string,
+    ) {
+        return this.deliveryService.getDeliveriesLocation(user_id);
+    }
+
     @Post("delivery/reviews/:id/reply")
     @UseGuards(ClientJwtGuard)
     async replyToComment(

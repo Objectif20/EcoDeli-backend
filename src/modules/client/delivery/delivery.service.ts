@@ -31,7 +31,7 @@ import { BookPartialDTO } from "./dto/book-partial.dto";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from 'mongoose';
 import { Message } from "src/common/schemas/message.schema";
-import { DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson } from "./types";
+import { DeliveriesLocation, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson } from "./types";
 
 
 @Injectable()
@@ -1043,6 +1043,58 @@ export class DeliveryService {
     
         return { data: reviews, totalRows: total };
     }
+
+    async getDeliveriesLocation(user_id: string): Promise<DeliveriesLocation[]> {
+        const user = await this.userRepository.findOne({
+            where: { user_id: user_id },
+            relations: ['clients'],
+        });
+    
+        if (!user) {
+            throw new Error('User not found.');
+        }
+        
+        const shipments = await this.shipmentRepository.find({
+            where: {
+                user: { user_id: user.user_id },
+            },
+            relations: ['stores', 'stores.exchangePoint'],
+        });
+        
+        const deliveriesPromises = shipments.map(async (shipment) => {
+            const deliveries = await this.deliveryRepository.find({
+                where: {
+                    shipment: { shipment_id: shipment.shipment_id },
+                    status: In(['taken', 'validated']),
+                },
+                relations: ['delivery_person', 'delivery_person.user', 'delivery_person.user.clients'],
+            });
+    
+            return deliveries.map(delivery => {
+                const deliveryPersonClient = delivery.delivery_person?.user.clients[0];
+                return {
+                    id: delivery.delivery_id,
+                    coordinates: {
+                        lat: shipment.departure_location.coordinates[1],
+                        lng: shipment.departure_location.coordinates[0],
+                    },
+                    deliveryman: delivery.delivery_person ? {
+                        id: delivery.delivery_person.user.user_id,
+                        name: `${deliveryPersonClient?.first_name} ${deliveryPersonClient?.last_name}`,
+                        photo: delivery.delivery_person.user.profile_picture,
+                        email: delivery.delivery_person.user.email,
+                    } : undefined,
+                    potential_address: shipment.arrival_location.address,
+                };
+            });
+        });
+    
+        const deliveries = (await Promise.all(deliveriesPromises)).flat();
+    
+        return deliveries;
+    }
+    
+    
 
 // PAS ENCORE UTILISE
 
