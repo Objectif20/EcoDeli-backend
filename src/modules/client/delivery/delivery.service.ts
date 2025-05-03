@@ -667,8 +667,6 @@ export class DeliveryService {
         }
     
         const client_id = shipment.user.user_id;
-        console.log("CLIENT ID:", client_id);
-        console.log("DELIVERY PERSON ID:", deliverPerson.user.user_id);
     
         const client = await this.clientRepository.findOne({
             where: { user: { user_id: client_id } },
@@ -767,10 +765,7 @@ export class DeliveryService {
             throw new Error("User is not authorized to finish this delivery.");
         }
     
-        delivery.status = 'finished';
-
-        console.log("DELIVERY:", delivery);
-    
+        delivery.status = 'finished';    
         const secretCode = Math.floor(100000 + Math.random() * 900000).toString();
         delivery.end_code = secretCode;
     

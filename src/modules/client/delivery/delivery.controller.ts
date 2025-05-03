@@ -176,6 +176,7 @@ export class DeliveryController {
     }
 
     @Post(":id/askNegociation")
+    @UseGuards(ClientJwtGuard)
     async askNegociation(
         @Param("id") shipment_id : string,
         @Body("user_id") user_id : string
