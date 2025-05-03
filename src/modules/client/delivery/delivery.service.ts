@@ -346,18 +346,19 @@ export class DeliveryService {
         }[] = [];
     
         if (deliveries.length === 0) {
+            // Si aucune étape n'existe, renvoyer un tableau steps avec un objet ayant un id de -1
             steps.push({
-                id: "0",
-                title: 'Step 0',
-                description: 'Livraison directe sans étape intermédiaire.',
-                date: shipment.deadline_date?.toISOString(),
+                id: -1,
+                title: 'No Steps',
+                description: 'Aucune étape de livraison n\'existe.',
+                date: undefined,
                 departure: {
-                    city: shipment.departure_city,
-                    coordinates: shipment.departure_location?.coordinates?.slice().reverse(),
+                    city: null,
+                    coordinates: null,
                 },
                 arrival: {
-                    city: shipment.arrival_city,
-                    coordinates: shipment.arrival_location?.coordinates?.slice().reverse(),
+                    city: null,
+                    coordinates: null,
                 },
                 courier: null,
             });
@@ -407,7 +408,6 @@ export class DeliveryService {
                 });
             }
     
-            // Ajoute la "Step finale" SEULEMENT si elle existe vraiment (shipment_step === 1000)
             const finalDelivery = deliveries.find(delivery => delivery.shipment_step === 1000);
             if (finalDelivery) {
                 const lastStore = storesByStep.find(s => s.step === finalDelivery.shipment_step - 1);
@@ -438,7 +438,6 @@ export class DeliveryService {
             }
         }
     
-        // Détermination de l'arrivée réelle dans `details` :
         let realArrivalCity = shipment.arrival_city;
         let realArrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse();
     
@@ -454,18 +453,21 @@ export class DeliveryService {
             }
         }
     
+        let finished = false;
+        if (deliveries.some(delivery => delivery.shipment_step === 0)) {
+            finished = true;
+        }
+    
         const result = {
             details: {
                 id: shipment.shipment_id,
-                name: "Package Delivery",
-                description: shipment.description,
-                complementary_info: shipment.urgent ? "Livraison urgente à effectuer rapidement." : "Package to be delivered on time",
+                name: shipment.description,
                 departure: {
                     city: shipment.departure_city,
                     coordinates: shipment.departure_location?.coordinates?.slice().reverse(),
                 },
                 arrival: {
-                    city: realArrivalCity, // Ici, on assure que l'arrivée pointe vers la destination finale
+                    city: realArrivalCity,
                     coordinates: realArrivalCoords,
                 },
                 departure_date: shipment.deadline_date?.toISOString().split('T')[0],
@@ -477,6 +479,8 @@ export class DeliveryService {
                     name: p.name,
                     url_invoice: p.picture[0],
                 })),
+                urgent : shipment.urgent,
+                finished : finished,
             },
             package: parcels,
             steps: steps,
