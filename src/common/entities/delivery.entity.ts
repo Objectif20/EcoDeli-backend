@@ -62,4 +62,8 @@ export class Delivery {
 
     @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
     delivery_price: number | null;
+
+    @Column({ type : "varchar", length: 255, nullable: true })
+    end_code: string ;
+
 }

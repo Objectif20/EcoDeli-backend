@@ -89,7 +89,7 @@ class ShipmentDTO {
     @Type(() => LocationDTO)
     arrival_location: LocationDTO;
 
-    @IsEmail()
+    @IsString()
     delivery_mail: string;
 
     @IsArray()
