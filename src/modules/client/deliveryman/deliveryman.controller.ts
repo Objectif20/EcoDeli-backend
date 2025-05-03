@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Query, UseGuards, Req, UploadedFile, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query, UseGuards, Req, UploadedFile, UploadedFiles, UseInterceptors, Param } from '@nestjs/common';
 import { DeliveryManService, Route, RoutePostDto } from './deliveryman.service';
 import { ClientJwtGuard } from 'src/common/guards/user-jwt.guard';
 import { Vehicle } from 'src/common/entities/vehicle.entity';
@@ -73,6 +73,14 @@ async addVehicle(
   @UseGuards(ClientJwtGuard)
   async getVehicleCategories() {
     return this.deliveryManService.getVehicleCategories();
+  }
+
+  @Get(':id/elligible')
+  @UseGuards(ClientJwtGuard)
+  async isDeliveryManEligible(
+    @Param('id') id: string,
+  ) {
+    return this.deliveryManService.isUserEligibleForDelivery(id);
   }
 
 

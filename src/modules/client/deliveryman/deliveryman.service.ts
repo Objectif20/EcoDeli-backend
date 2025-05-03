@@ -219,4 +219,21 @@ export class DeliveryManService {
     })));
     return { data, totalRows };
   }
+
+  async isUserEligibleForDelivery(userId: string): Promise<boolean> {
+
+    const deliveryPerson = await this.deliveryPersonRepository.findOne({ where: { user: { user_id: userId } } });
+    if (!deliveryPerson) {
+      return false;
+    }
+
+    if (!deliveryPerson.validated) {
+      return false;
+    }
+
+    // On ajoutera plus tard pour checker si les véhicules du livreur sont cohérents avec les trajets possibles
+
+    return true;
+  }
+
 }
