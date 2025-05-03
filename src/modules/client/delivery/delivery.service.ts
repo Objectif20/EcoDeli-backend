@@ -720,7 +720,7 @@ export class DeliveryService {
     async takeDeliveryPackage(deliveryId : string, user_id : string, secretCode : string) : Promise<{ message: string }> {
         const delivery = await this.deliveryRepository.findOne({
             where: { delivery_id: deliveryId },
-            relations: ["delivery_person", "shipment"],
+            relations: ["delivery_person", "shipment", "delivery_person.user", "shipment.stores", "shipment.stores.exchangePoint"],
         });
 
         if (!delivery) {
@@ -752,7 +752,7 @@ export class DeliveryService {
     async finishDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
         const delivery = await this.deliveryRepository.findOne({
             where: { delivery_id: deliveryId },
-            relations: ["delivery_person", "shipment", "shipment.stores", "shipment.stores.exchangePoint"],
+            relations: ["delivery_person", "shipment", "shipment.stores", "shipment.stores.exchangePoint", "delivery_person.user"],
         });
     
         if (!delivery) {
@@ -768,6 +768,8 @@ export class DeliveryService {
         }
     
         delivery.status = 'finished';
+
+        console.log("DELIVERY:", delivery);
     
         const secretCode = Math.floor(100000 + Math.random() * 900000).toString();
         delivery.end_code = secretCode;
@@ -815,7 +817,7 @@ export class DeliveryService {
     
         const delivery = await this.deliveryRepository.findOne({
             where: { delivery_id: deliveryId },
-            relations: ["delivery_person", "shipment"],
+            relations: ["delivery_person", "shipment", "shipment.stores", "shipment.stores.exchangePoint", "delivery_person.user"],
         });
     
         if (!delivery) {
@@ -894,7 +896,7 @@ export class DeliveryService {
         const deliveries = await this.deliveryRepository.find({
             where: {
                 delivery_person: { delivery_person_id: user.deliveryPerson.delivery_person_id },
-                status: In(['taken', 'pending']),
+                status: In(['taken', 'pending', 'finished']),
             },
             relations: ['shipment', 'shipment.stores', 'shipment.stores.exchangePoint'],
         });

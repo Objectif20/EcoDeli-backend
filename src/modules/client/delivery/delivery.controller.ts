@@ -81,6 +81,16 @@ export class DeliveryController {
         return this.deliveryService.validateDelivery(deliveryId, user_id);
     }
 
+    @Post("delivery/:id/validateWithCode")
+    @UseGuards(ClientJwtGuard)
+    async validateDeliveryWithCode(
+        @Param("id") deliveryId : string,
+        @Body("user_id") user_id : string,
+        @Body("secretCode") secretCode : string,
+    ) {
+        return this.deliveryService.validateDeliveryWithCode(deliveryId, user_id, secretCode);
+    }
+
     @Get("delivery/myHistory")
     @UseGuards(ClientJwtGuard)
     async getMyHistory(
