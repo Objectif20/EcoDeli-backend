@@ -242,11 +242,13 @@ export class DeliveryManService {
   async isDeliveryPersonIsAdmissibleForThisDelivery(user_id : string, deliveryId : string) : Promise<boolean> {
 
     if (!user_id || !deliveryId) {
+      console.log("user_id or deliveryId is missing");
       return false;
     }
 
     const deliveryPerson = await this.deliveryPersonRepository.findOne({ where: { user: { user_id: user_id } } });
     if (!deliveryPerson) {
+      console.log("Delivery person not found");
       return false;
     }
 
@@ -255,14 +257,17 @@ export class DeliveryManService {
       relations: ['deliveries', 'stores', 'stores.exchangePoint', 'user'],
     });
     if (!shipment) {
+      console.log("Shipment not found");
       return false;
     }
 
     if (user_id == shipment.user.user_id) {
+      console.log("User is the same as the shipment user");
       return false;
     }
 
     if (deliveryPerson.validated == false) {
+      console.log("Delivery person is not validated");
       return false;
     }
 

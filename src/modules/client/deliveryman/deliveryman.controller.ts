@@ -75,14 +75,6 @@ async addVehicle(
     return this.deliveryManService.getVehicleCategories();
   }
 
-  @Get(':id/admissible')
-  @UseGuards(ClientJwtGuard)
-  async isDeliveryMan1dmissible(
-    @Param('id') id: string,
-  ) {
-    return this.deliveryManService.isUserAdmissibleForDelivery(id);
-  }
-
   @Get('admissible/:id')
   @UseGuards(ClientJwtGuard)
   async isDeliveryManAdmissible(
@@ -91,6 +83,16 @@ async addVehicle(
   ) {
     return this.deliveryManService.isDeliveryPersonIsAdmissibleForThisDelivery(userId, id);
   }
+
+  @Get(':id/admissible')
+  @UseGuards(ClientJwtGuard)
+  async isDeliveryMan1dmissible(
+    @Param('id') id: string,
+  ) {
+    return this.deliveryManService.isUserAdmissibleForDelivery(id);
+  }
+
+
 
 
 }
