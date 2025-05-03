@@ -117,6 +117,7 @@ export class DeliveryService {
             arrival_city: createShipmentDTO.shipment.arrival_city,
             image: "https://static.vecteezy.com/ti/vecteur-libre/p1/5720408-icone-image-croisee-image-non-disponible-supprimer-symbole-vecteur-image-gratuit-vectoriel.jpg",
             user: user,
+            delivery_mail: createShipmentDTO.shipment.delivery_mail,
         });
     
         const departureLatitude = parseFloat(createShipmentDTO.shipment.departure_location.latitude);

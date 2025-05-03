@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsEmail, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
 
 class LocationDTO {
     @IsString()
@@ -88,6 +88,9 @@ class ShipmentDTO {
     @ValidateNested()
     @Type(() => LocationDTO)
     arrival_location: LocationDTO;
+
+    @IsEmail()
+    delivery_mail: string;
 
     @IsArray()
     @ValidateNested({ each: true })
