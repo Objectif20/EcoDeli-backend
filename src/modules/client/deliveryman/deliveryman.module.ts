@@ -13,12 +13,13 @@ import { Trip } from "src/common/entities/trips.entity";
 import { Category } from "src/common/entities/category.entity";
 import { Vehicle } from "src/common/entities/vehicle.entity";
 import { VehicleDocument } from "src/common/entities/vehicle_documents.entity";
+import { Shipment } from "src/common/entities/shipment.entity";
 
 
 @Module({
 
     imports: [
-        TypeOrmModule.forFeature([Users, DeliveryPerson, Trip, Category, Vehicle, VehicleDocument]),
+        TypeOrmModule.forFeature([Users, DeliveryPerson, Trip, Category, Vehicle, VehicleDocument, Shipment]),
         JwtModule.register({}),
         SharedModule,
     ],
