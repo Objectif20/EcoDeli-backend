@@ -170,6 +170,14 @@ export class DeliveryController {
         return this.deliveryService.getSubscriptionPlanForClient(user_id);
     }
 
+    @Get("office/:id")
+    @UseGuards(ClientJwtGuard)
+    async getOfficeById(
+        @Param("id") shipment_id : string,
+    ) {
+        return this.deliveryService.getShipmentDetails(shipment_id);
+    }
+
 
     @Get(":id")
     async getShipmentById(
