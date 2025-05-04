@@ -97,7 +97,7 @@ export class DeliveryService {
         private readonly minioService: MinioService, 
     ) {}
 
-    async createDelivery(createShipmentDTO: CreateShipmentDTO, files: Express.Multer.File[], user_id : string) {
+    async createDelivery(createShipmentDTO: CreateShipmentDTO, files: Express.Multer.File[], user_id: string) {
         if (!user_id) {
             throw new Error("User ID is required.");
         }
@@ -113,7 +113,7 @@ export class DeliveryService {
             proposed_delivery_price: Number(createShipmentDTO.shipment.proposed_delivery_price),
             weight: parseFloat(createShipmentDTO.shipment.weight ?? "0"),
             volume: parseFloat(createShipmentDTO.shipment.volume ?? "0"),
-            deadline_date: createShipmentDTO.shipment.deadline_date,
+            deadline_date: createShipmentDTO.shipment.deadline_date ? new Date(createShipmentDTO.shipment.deadline_date) : undefined,
             time_slot: createShipmentDTO.shipment.time_slot,
             urgent: createShipmentDTO.shipment.urgent === 'true',
             status: createShipmentDTO.shipment.status,
@@ -144,6 +144,19 @@ export class DeliveryService {
         }
     
         const savedShipment = await this.shipmentRepository.save(shipment);
+    
+        if (createShipmentDTO.img) {
+            const file = files.find(file => file.fieldname === 'img');
+            if (file) {
+                const fileExtension = path.extname(file.originalname);
+                const uniqueFileName = `${uuidv4()}${fileExtension}`;
+                const filePath = `shipments/${savedShipment.shipment_id}/${uniqueFileName}`;
+                await this.minioService.uploadFileToBucket('client-images', filePath, file);
+    
+                savedShipment.image = filePath;
+                await this.shipmentRepository.save(savedShipment);
+            }
+        }
     
         const savedParcels: Parcel[] = [];
     
@@ -185,12 +198,9 @@ export class DeliveryService {
                 imageIndex++;
             }
         }
-
-
     
         const { user: shipmentUser, ...shipmentWithoutUser } = savedShipment;
         return shipmentWithoutUser;
-        
     }
 
     async getShipments(filters: GetShipmentsDTO): Promise<Shipment[]> {

@@ -96,10 +96,14 @@ class ShipmentDTO {
     @ValidateNested({ each: true })
     @Type(() => ParcelDTO)
     parcels: ParcelDTO[];
+
+    img: Express.Multer.File;
+
 }
 
 export class CreateShipmentDTO {
     @ValidateNested()
     @Type(() => ShipmentDTO)
     shipment: ShipmentDTO;
+    img: Express.Multer.File;
 }
