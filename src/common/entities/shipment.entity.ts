@@ -65,6 +65,9 @@ export class Shipment {
     @JoinColumn({ name: 'user_id' })
     user: Users;
 
+    @Column({type : "boolean", default : false})
+    trolleydrop: boolean;
+
     @OneToMany(() => Delivery, (delivery) => delivery.shipment)
     deliveries: Delivery[];
 
@@ -79,4 +82,5 @@ export class Shipment {
 
     @OneToMany(() => Favorite, (favorite) => favorite.shipment)
     favorites: Favorite[];
+
 }

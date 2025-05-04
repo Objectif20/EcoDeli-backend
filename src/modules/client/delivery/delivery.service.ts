@@ -33,6 +33,9 @@ import { Model } from 'mongoose';
 import { Message } from "src/common/schemas/message.schema";
 import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson, SubscriptionForClient } from "./types";
 import { Subscription } from "src/common/entities/subscription.entity";
+import axios from "axios";
+import { Merchant } from "src/common/entities/merchant.entity";
+import { CreateShipmentTrolleyDTO } from "./dto/create-trolley.dto";
 
 
 @Injectable()
@@ -90,6 +93,9 @@ export class DeliveryService {
         @InjectRepository(Subscription)
         private readonly subscriptionRepository: Repository<Subscription>,
 
+        @InjectRepository(Merchant)
+        private readonly merchantRepository: Repository<Merchant>,
+
         @InjectModel(Message.name) private messageModel: Model<Message>,
         
 
@@ -145,17 +151,144 @@ export class DeliveryService {
     
         const savedShipment = await this.shipmentRepository.save(shipment);
     
-        if (createShipmentDTO.img) {
-            const file = files.find(file => file.fieldname === 'img');
-            if (file) {
+        const imageFile = files.find(file => file.fieldname === 'shipment[img]');
+        if (imageFile) {
+            const fileExtension = path.extname(imageFile.originalname);
+            const uniqueFileName = `${uuidv4()}${fileExtension}`;
+            const filePath = `shipments/${savedShipment.shipment_id}/${uniqueFileName}`;
+            await this.minioService.uploadFileToBucket('client-images', filePath, imageFile);
+    
+            savedShipment.image = filePath;
+            await this.shipmentRepository.save(savedShipment);
+        }
+    
+        const savedParcels: Parcel[] = [];
+    
+        for (const [parcelIndex, parcelDTO] of createShipmentDTO.shipment.parcels.entries()) {
+            if (!parcelDTO.name) continue;
+    
+            const parcel = this.parcelRepository.create({
+                name: parcelDTO.name,
+                weight: parcelDTO.weight ? parseFloat(parcelDTO.weight) : null,
+                fragility: parcelDTO.fragility === 'true',
+                volume: parcelDTO.volume ? parseFloat(parcelDTO.volume) : null,
+                estimate_price: parcelDTO.estimate_price ? parseFloat(parcelDTO.estimate_price) : null,
+                shipment: savedShipment,
+            });
+    
+            const savedParcel = await this.parcelRepository.save(parcel);
+            savedParcels.push(savedParcel);
+    
+            let imageIndex = 1;
+            while (true) {
+                const imageFieldName = `shipment[parcels][${parcelIndex}][images_${imageIndex}]`;
+                const file = files.find(file => file.fieldname.trim() === imageFieldName);
+    
+                if (!file) {
+                    break;
+                }
+    
                 const fileExtension = path.extname(file.originalname);
                 const uniqueFileName = `${uuidv4()}${fileExtension}`;
-                const filePath = `shipments/${savedShipment.shipment_id}/${uniqueFileName}`;
+                const filePath = `shipments/${savedShipment.shipment_id}/parcels/${savedParcel.parcel_id}/images/${uniqueFileName}`;
                 await this.minioService.uploadFileToBucket('client-images', filePath, file);
     
-                savedShipment.image = filePath;
-                await this.shipmentRepository.save(savedShipment);
+                const parcelImage = this.parcelImageRepository.create({
+                    parcel: savedParcel,
+                    image_url: filePath,
+                });
+    
+                await this.parcelImageRepository.save(parcelImage);
+                imageIndex++;
             }
+        }
+    
+        const { user: shipmentUser, ...shipmentWithoutUser } = savedShipment;
+        return shipmentWithoutUser;
+    }
+
+    async createTrolleyShipment(createShipmentDTO: CreateShipmentTrolleyDTO, files: Express.Multer.File[], user_id: string) {
+        if (!user_id) {
+            throw new Error("User ID is required.");
+        }
+    
+        const user = await this.userRepository.findOne({
+            where: { user_id: user_id },
+            relations: ['merchant'],
+        });
+        if (!user) {
+            throw new Error("User not found.");
+        }
+    
+        const merchant = user.merchant;
+        if (!merchant) {
+            throw new Error("Merchant not found.");
+        }
+    
+        const address = `${merchant.address}, ${merchant.postal_code} ${merchant.city}`;
+        console.log("Merchant address:", address);
+        const response = await axios.get(`https://nominatim.openstreetmap.org/search`, {
+            params: {
+                q: address,
+                format: 'json',
+                limit: 1,
+            },
+        });
+
+    
+        if (response.data.length === 0) {
+            throw new Error("Unable to retrieve coordinates for the merchant's address.");
+        }
+    
+        const departureLatitude = parseFloat(response.data[0].lat);
+        const departureLongitude = parseFloat(response.data[0].lon);
+    
+        const shipment = this.shipmentRepository.create({
+            description: createShipmentDTO.shipment.description,
+            estimated_total_price: Number(createShipmentDTO.shipment.estimated_total_price),
+            proposed_delivery_price: Number(createShipmentDTO.shipment.proposed_delivery_price),
+            weight: parseFloat(createShipmentDTO.shipment.weight ?? "0"),
+            volume: parseFloat(createShipmentDTO.shipment.volume ?? "0"),
+            deadline_date: createShipmentDTO.shipment.deadline_date ? new Date(createShipmentDTO.shipment.deadline_date) : undefined,
+            time_slot: createShipmentDTO.shipment.time_slot,
+            urgent: createShipmentDTO.shipment.urgent === 'true',
+            status: createShipmentDTO.shipment.status,
+            departure_city: merchant.city,
+            arrival_city: createShipmentDTO.shipment.arrival_city,
+            image: "https://static.vecteezy.com/ti/vecteur-libre/p1/5720408-icone-image-croisee-image-non-disponible-supprimer-symbole-vecteur-image-gratuit-vectoriel.jpg",
+            user: user,
+            delivery_mail: createShipmentDTO.shipment.delivery_mail,
+            trolleydrop: true,
+        });
+    
+        if (!isNaN(departureLatitude) && !isNaN(departureLongitude)) {
+            shipment.departure_location = {
+                type: 'Point',
+                coordinates: [departureLongitude, departureLatitude],
+            };
+        }
+    
+        const arrivalLatitude = parseFloat(createShipmentDTO.shipment.arrival_location.latitude);
+        const arrivalLongitude = parseFloat(createShipmentDTO.shipment.arrival_location.longitude);
+    
+        if (!isNaN(arrivalLatitude) && !isNaN(arrivalLongitude)) {
+            shipment.arrival_location = {
+                type: 'Point',
+                coordinates: [arrivalLongitude, arrivalLatitude],
+            };
+        }
+    
+        const savedShipment = await this.shipmentRepository.save(shipment);
+    
+        const imageFile = files.find(file => file.fieldname === 'shipment[img]');
+        if (imageFile) {
+            const fileExtension = path.extname(imageFile.originalname);
+            const uniqueFileName = `${uuidv4()}${fileExtension}`;
+            const filePath = `shipments/${savedShipment.shipment_id}/${uniqueFileName}`;
+            await this.minioService.uploadFileToBucket('client-images', filePath, imageFile);
+    
+            savedShipment.image = filePath;
+            await this.shipmentRepository.save(savedShipment);
         }
     
         const savedParcels: Parcel[] = [];
@@ -269,7 +402,7 @@ export class DeliveryService {
     
         const shipments = await queryBuilder.getMany();
     
-        const updatedShipments = shipments.map(shipment => {
+        const updatedShipments = await Promise.all(shipments.map(async (shipment) => {
             const deliveries = shipment.deliveries.sort((a, b) => a.shipment_step - b.shipment_step);
             const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
     
@@ -296,14 +429,18 @@ export class DeliveryService {
                 }
             }
     
+            // Générer l'URL de l'image du shipment
+            const shipmentImageUrl = shipment.image ? await this.minioService.generateImageUrl("client-images", shipment.image) : null;
+    
             return {
                 ...shipment,
                 departure_city: departureCity,
                 departure_location: departureLocation,
                 arrival_city: arrivalCity,
                 arrival_location: arrivalLocation,
+                image: shipmentImageUrl, // Ajouter l'URL de l'image ici
             };
-        });
+        }));
     
         return updatedShipments;
     }

@@ -7,6 +7,7 @@ import { CreateDeliveryDto } from "./dto/create-delivery.dto";
 import { ClientJwtGuard } from "src/common/guards/user-jwt.guard";
 import { BookPartialDTO } from "./dto/book-partial.dto";
 import { HistoryDelivery } from "./types";
+import { CreateShipmentTrolleyDTO } from "./dto/create-trolley.dto";
 
 @Controller("client/shipments")
 export class DeliveryController {
@@ -25,6 +26,18 @@ export class DeliveryController {
     ) {
         const shipment = await this.deliveryService.createDelivery(createShipmentDTO, files, req.user.user_id);
         return { message: "Shipment received successfully!", data: shipment };
+    }
+
+    @Post("/trolley")
+    @UseGuards(ClientJwtGuard)
+    @UseInterceptors(AnyFilesInterceptor())
+    async createShipmentTrolley(
+        @Body() createShipmentDTO: CreateShipmentTrolleyDTO,
+        @UploadedFiles() files: Express.Multer.File[],
+        @Req() req: { user: { user_id: string }; body: any }
+    ) {
+        const shipment = await this.deliveryService.createTrolleyShipment(createShipmentDTO, files, req.user.user_id);
+        return { message: "Shipment Trolley received successfully!", data: shipment };
     }
 
     @Get()
