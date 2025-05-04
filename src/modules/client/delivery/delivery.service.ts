@@ -309,6 +309,7 @@ export class DeliveryService {
                 'deliveries.delivery_person.user',
                 'stores',
                 'stores.exchangePoint',
+                'user', // Ajoutez cette relation pour vérifier si c'est un client ou un commerçant
             ],
         });
     
@@ -350,7 +351,6 @@ export class DeliveryService {
         }[] = [];
     
         if (deliveries.length === 0) {
-            // Si aucune étape n'existe, renvoyer un tableau steps avec un objet ayant un id de -1
             steps.push({
                 id: -1,
                 title: 'No Steps',
@@ -387,10 +387,12 @@ export class DeliveryService {
                     arrivalCoords = store?.exchangePoint?.coordinates.coordinates?.slice().reverse();
                 }
     
-                const client = await this.clientRepository.findOne({
-                    where: { user: { user_id: courier.user.user_id } },
-                    relations: ['user'],
-                });
+                let clientOrMerchant;
+                if (shipment.user.clients.length > 0) {
+                    clientOrMerchant = shipment.user.clients[0];
+                } else if (shipment.user.merchant) {
+                    clientOrMerchant = shipment.user.merchant[0];
+                }
     
                 steps.push({
                     id: delivery.shipment_step,
@@ -406,7 +408,7 @@ export class DeliveryService {
                         coordinates: arrivalCoords,
                     },
                     courier: {
-                        name: client?.first_name + ' ' + client?.last_name,
+                        name: clientOrMerchant ? `${clientOrMerchant.first_name} ${clientOrMerchant.last_name}` : "Unknown",
                         photoUrl: courier?.user.profile_picture || null,
                     },
                 });
@@ -416,10 +418,12 @@ export class DeliveryService {
             if (finalDelivery) {
                 const lastStore = storesByStep.find(s => s.step === finalDelivery.shipment_step - 1);
     
-                const client = await this.clientRepository.findOne({
-                    where: { user: { user_id: finalDelivery.delivery_person.user.user_id } },
-                    relations: ['user'],
-                });
+                let clientOrMerchant;
+                if (shipment.user.clients.length > 0) {
+                    clientOrMerchant = shipment.user.clients[0];
+                } else if (shipment.user.merchant) {
+                    clientOrMerchant = shipment.user.merchant[0];
+                }
     
                 steps.push({
                     id: 1000,
@@ -435,8 +439,8 @@ export class DeliveryService {
                         coordinates: shipment.arrival_location?.coordinates?.slice().reverse(),
                     },
                     courier: {
-                        name: client?.first_name + ' ' + client?.last_name,
-                        photoUrl: client?.user.profile_picture || null,
+                        name: clientOrMerchant ? `${clientOrMerchant.first_name} ${clientOrMerchant.last_name}` : "Unknown",
+                        photoUrl: clientOrMerchant?.user.profile_picture || null,
                     },
                 });
             }
@@ -1016,36 +1020,42 @@ export class DeliveryService {
 
     async getReviewsForDeliveryPerson(user_id: string, page: number = 1, limit: number = 10): Promise<{ data: ReviewAsDeliveryPerson[], totalRows: number }> {
         const [deliveries, total] = await this.deliveryRepository.findAndCount({
-          where: {
-            delivery_person: { user: { user_id: user_id } },
-            status: 'validated',
-          },
-          relations: ['deliveryReviews', 'deliveryReviews.responses', 'shipment', 'shipment.user', 'shipment.user.clients'],
-          skip: (page - 1) * limit,
-          take: limit,
+            where: {
+                delivery_person: { user: { user_id: user_id } },
+                status: 'validated',
+            },
+            relations: ['deliveryReviews', 'deliveryReviews.responses', 'shipment', 'shipment.user', 'shipment.user.clients', 'shipment.user.merchants'],
+            skip: (page - 1) * limit,
+            take: limit,
         });
     
         const reviews: ReviewAsDeliveryPerson[] = [];
     
         for (const delivery of deliveries) {
-          const client = delivery.shipment.user.clients[0];
-          for (const review of delivery.deliveryReviews) {
-            const response = review.responses.length > 0 ? review.responses[0] : null;
+            let clientOrMerchant;
+            if (delivery.shipment.user.clients.length > 0) {
+                clientOrMerchant = delivery.shipment.user.clients[0];
+            } else if (delivery.shipment.user.merchant) {
+                clientOrMerchant = delivery.shipment.user.merchant[0];
+            }
     
-            reviews.push({
-              id: review.review_id,
-              content: review.comment || '',
-              author: {
-                id: delivery.shipment.user.user_id,
-                name: `${client?.first_name || ''} ${client?.last_name || ''}`,
-                photo: delivery.shipment.user.profile_picture || '',
-              },
-              reply: response ? true : false,
-              reply_content: response ? response.comment : null,
-              delivery_name: delivery.shipment.description || '',
-              rate: review.rating,
-            });
-          }
+            for (const review of delivery.deliveryReviews) {
+                const response = review.responses.length > 0 ? review.responses[0] : null;
+    
+                reviews.push({
+                    id: review.review_id,
+                    content: review.comment || '',
+                    author: {
+                        id: delivery.shipment.user.user_id,
+                        name: clientOrMerchant ? `${clientOrMerchant.first_name} ${clientOrMerchant.last_name}` : "Unknown",
+                        photo: delivery.shipment.user.profile_picture || '',
+                    },
+                    reply: response ? true : false,
+                    reply_content: response ? response.comment : null,
+                    delivery_name: delivery.shipment.description || '',
+                    rate: review.rating,
+                });
+            }
         }
     
         return { data: reviews, totalRows: total };
@@ -1262,7 +1272,6 @@ export class DeliveryService {
     
         return subscriptionForClient;
     }
-    
     
 
 // PAS ENCORE UTILISE

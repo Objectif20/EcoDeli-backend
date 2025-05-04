@@ -82,6 +82,9 @@ export class Users {
     @OneToOne(() => DeliveryPerson, deliveryPerson => deliveryPerson.user)
     deliveryPerson: DeliveryPerson;
 
+    @OneToOne(() => Merchant, merchant => merchant.user)
+    merchant: Merchant;
+
     @OneToMany(() => Blocked, blocked => blocked.user)
     blockedUsers: Blocked[];
 
