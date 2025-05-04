@@ -226,7 +226,6 @@ export class DeliveryService {
         }
     
         const address = `${merchant.address}, ${merchant.postal_code} ${merchant.city}`;
-        console.log("Merchant address:", address);
         const response = await axios.get(`https://nominatim.openstreetmap.org/search`, {
             params: {
                 q: address,
@@ -636,6 +635,7 @@ export class DeliveryService {
                 })),
                 urgent : shipment.urgent,
                 finished : finished,
+                trolleydrop : shipment.trolleydrop,
             },
             package: parcels,
             steps: steps,
