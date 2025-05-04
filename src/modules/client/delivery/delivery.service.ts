@@ -31,7 +31,8 @@ import { BookPartialDTO } from "./dto/book-partial.dto";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from 'mongoose';
 import { Message } from "src/common/schemas/message.schema";
-import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson } from "./types";
+import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson, SubscriptionForClient } from "./types";
+import { Subscription } from "src/common/entities/subscription.entity";
 
 
 @Injectable()
@@ -85,6 +86,9 @@ export class DeliveryService {
 
         @InjectRepository(DeliveryCommission)
         private readonly deliveryCommissionRepository: Repository<DeliveryCommission>,
+
+        @InjectRepository(Subscription)
+        private readonly subscriptionRepository: Repository<Subscription>,
 
         @InjectModel(Message.name) private messageModel: Model<Message>,
         
@@ -1218,6 +1222,45 @@ export class DeliveryService {
         const deliveries = (await Promise.all(deliveriesPromises)).flat();
     
         return deliveries;
+    }
+
+
+    async getSubscriptionPlanForClient(user_id: string): Promise<SubscriptionForClient> {
+
+        const user = await this.userRepository.findOne({ where: { user_id } });
+        if (!user) {
+            throw new Error('User not found');
+        }
+    
+        const subscription = await this.subscriptionRepository.findOne({
+            where: { user: user, status: 'active' },
+            relations: ['plan']
+        });
+    
+        if (!subscription) {
+            return {
+                planName: "Free",
+                priorityRate: 0.15,
+                insuranceLimit: null,
+                additionalInsuranceCost: null,
+            }
+        }
+    
+        const subscriptionForClient: SubscriptionForClient = {
+            planName: subscription.plan.name,
+            discountRate: subscription.plan.shipping_discount,
+            priorityRate: subscription.plan.priority_shipping_percentage,
+            insuranceLimit: subscription.plan.max_insurance_coverage,
+            additionalInsuranceCost: subscription.plan.extra_insurance_price,
+            freeShipmentAvailable: subscription.plan.first_shipping_free,
+            freePriorityShipmentsPerMonth: subscription.plan.priority_months_offered,
+            freePriotiryShipmentsIfLower: subscription.plan.first_shipping_free_threshold,
+            permanentDiscount: subscription.plan.permanent_discount,
+            hasUsedFreeShipment: false, 
+            remainingPriorityShipments: subscription.plan.priority_months_offered
+        };
+    
+        return subscriptionForClient;
     }
     
     

@@ -84,3 +84,18 @@ export interface DeliveryOnGoing {
       photo: string;
     };
   }
+
+
+  export interface SubscriptionForClient {
+    planName: string;
+    discountRate?: number; 
+    priorityRate: number;
+    insuranceLimit?: number | null; 
+    additionalInsuranceCost?: number | null; 
+    freeShipmentAvailable?: boolean;
+    freePriorityShipmentsPerMonth?: number;
+    freePriotiryShipmentsIfLower?: number;
+    permanentDiscount?: number; 
+    hasUsedFreeShipment?: boolean; 
+    remainingPriorityShipments?: number; 
+  }

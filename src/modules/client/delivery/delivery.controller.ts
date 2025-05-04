@@ -149,6 +149,14 @@ export class DeliveryController {
         return this.deliveryService.getMyReviewsAsClient(user_id, page, limit);
     }
 
+    @Get("subscriptionStat")
+    @UseGuards(ClientJwtGuard)
+    async getSubscriptionStat(
+        @Body("user_id") user_id : string,
+    ) {
+        return this.deliveryService.getSubscriptionPlanForClient(user_id);
+    }
+
 
     @Get(":id")
     async getShipmentById(
