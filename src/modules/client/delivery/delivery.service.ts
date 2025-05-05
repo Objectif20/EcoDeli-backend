@@ -31,7 +31,7 @@ import { BookPartialDTO } from "./dto/book-partial.dto";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from 'mongoose';
 import { Message } from "src/common/schemas/message.schema";
-import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryDetailsOffice, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson, ShipmentHistoryRequest, ShipmentListItem, SubscriptionForClient } from "./types";
+import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryDetailsOffice, DeliveryHistoryAsClient, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson, ShipmentHistoryRequest, ShipmentListItem, SubscriptionForClient } from "./types";
 import { Subscription } from "src/common/entities/subscription.entity";
 import axios from "axios";
 import { Merchant } from "src/common/entities/merchant.entity";
@@ -455,7 +455,7 @@ export class DeliveryService {
                 'deliveries.delivery_person.user',
                 'stores',
                 'stores.exchangePoint',
-                'user', // Ajoutez cette relation pour vérifier si c'est un client ou un commerçant
+                'user',
             ],
         });
     
@@ -1130,7 +1130,7 @@ export class DeliveryService {
                 let departureCity, arrivalCity;
     
                 if (delivery.shipment_step === 0) {
-                    departureCity = shipment.departure_city;
+                      departureCity = shipment.departure_city ?? "Unknown";
                     arrivalCity = shipment.arrival_city;
                 } else if (delivery.shipment_step === 1000) {
                     const lastStore = storesByStep[storesByStep.length - 1];
@@ -1698,6 +1698,88 @@ export class DeliveryService {
             totalRows: total,
         };
     }
+
+    async getDeliveryHistoryAsClient(
+        user_id: string,
+        page: number,
+        limit: number
+      ): Promise<{ data: DeliveryHistoryAsClient[]; totalRows: number }> {
+        const pageNumber = Number.isInteger(page) ? page : 1;
+        const pageSize = Number.isInteger(limit) ? limit : 10;
+      
+        const [shipments, total] = await this.shipmentRepository.findAndCount({
+          where: { user: { user_id } },
+          relations: [
+            'deliveries',
+            'deliveries.delivery_person',
+            'deliveries.delivery_person.user',
+            'deliveries.delivery_person.user.clients',
+            'stores',
+            'stores.exchangePoint',
+          ],
+          skip: (pageNumber - 1) * pageSize,
+          take: pageSize,
+        });
+      
+        const deliveryHistory: DeliveryHistoryAsClient[] = await Promise.all(
+          shipments.map(async (shipment) => {
+            const validatedDeliveries = shipment.deliveries.filter(
+              (delivery) => delivery.status === 'validated'
+            );
+      
+            const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
+      
+            return Promise.all(
+              validatedDeliveries.map(async (delivery) => {
+                let departureCity: string;
+                let arrivalCity: string;
+      
+                if (delivery.shipment_step === 0) {
+                  departureCity = shipment.departure_city || 'Unknown';
+                  arrivalCity = shipment.arrival_city || 'Unknown';
+                } else if (delivery.shipment_step === 1000) {
+                  const lastStore = storesByStep[storesByStep.length - 1];
+                  departureCity = lastStore?.exchangePoint?.city || shipment.departure_city || 'Unknown';
+                  arrivalCity = shipment.arrival_city || 'Unknown';
+                } else {
+                  const currentStore = storesByStep.find(store => store.step === delivery.shipment_step);
+                  const previousStore = storesByStep.find(store => store.step === delivery.shipment_step - 1);
+                  departureCity = previousStore?.exchangePoint?.city || shipment.departure_city || 'Unknown';
+                  arrivalCity = currentStore?.exchangePoint?.city || shipment.arrival_city || 'Unknown';
+                }
+      
+                const deliveryReview = await this.deliveryReviewRepository.findOne({
+                  where: { delivery_id: delivery.delivery_id },
+                });
+      
+                const user = delivery.delivery_person?.user;
+                const client = user?.clients?.[0];
+      
+                return {
+                  id: delivery.delivery_id,
+                  deliveryman: {
+                    id: delivery.delivery_person?.delivery_person_id ?? 'unknown',
+                    name: client
+                      ? `${client.first_name} ${client.last_name}`
+                      : 'Non défini',
+                    photo: user?.profile_picture || '',
+                  },
+                  departureDate: delivery.send_date?.toISOString() || '',
+                  arrivalDate: delivery.delivery_date?.toISOString() || '',
+                  departureCity,
+                  arrivalCity,
+                  announcementName: shipment.description || '',
+                  rate: deliveryReview?.rating ?? null,
+                  comment: deliveryReview?.comment ?? null,
+                };
+              })
+            );
+          })
+        ).then(results => results.flat());
+      
+        return { data: deliveryHistory, totalRows: total };
+      }
+    
     
 
 // PAS ENCORE UTILISE

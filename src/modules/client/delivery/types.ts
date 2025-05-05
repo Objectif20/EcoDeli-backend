@@ -190,3 +190,19 @@ export interface ShipmentHistoryRequest {
   nbColis: number;
   nbLivraisons: number;
 }
+
+export interface DeliveryHistoryAsClient {
+  id: string;
+  deliveryman: {
+    id: string;
+    name: string;
+    photo: string;
+  };
+  departureDate: string;
+  arrivalDate: string;
+  departureCity: string;
+  arrivalCity: string;
+  announcementName: string;
+  rate: number | null;
+  comment: string | null;
+}
