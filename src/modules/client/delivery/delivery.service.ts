@@ -31,7 +31,7 @@ import { BookPartialDTO } from "./dto/book-partial.dto";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from 'mongoose';
 import { Message } from "src/common/schemas/message.schema";
-import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryDetailsOffice, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson, ShipmentListItem, SubscriptionForClient } from "./types";
+import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryDetailsOffice, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson, ShipmentHistoryRequest, ShipmentListItem, SubscriptionForClient } from "./types";
 import { Subscription } from "src/common/entities/subscription.entity";
 import axios from "axios";
 import { Merchant } from "src/common/entities/merchant.entity";
@@ -1142,8 +1142,6 @@ export class DeliveryService {
                     departureCity = previousStore?.exchangePoint?.city ?? shipment.departure_city;
                     arrivalCity = currentStore?.exchangePoint?.city ?? shipment.arrival_city;
                 }
-
-                console.log("shipment", shipment);
     
                 const client = await this.clientRepository.findOne({
                     where: { user: { user_id: shipment.user.user_id } },
@@ -1658,6 +1656,48 @@ export class DeliveryService {
         console.log("shipmentListItems", shipmentListItems);
         return shipmentListItems;
     }
+
+    async getMyShipmentsHistory(userId: string, page: number, limit: number): Promise<{ data: ShipmentHistoryRequest[], totalRows: number }> {
+        const offset = (page - 1) * limit;
+    
+        const shipments = await this.shipmentRepository.find({
+            where: { user: { user_id: userId }, status: 'validated' },
+            relations: ['parcels', 'deliveries'],
+            skip: offset,
+            take: limit,
+        });
+    
+        const total = await this.shipmentRepository.count({
+            where: { user: { user_id: userId }, status: 'validated' },
+        });
+    
+        const shipmentRequests: ShipmentHistoryRequest[] = await Promise.all(
+            shipments.map(async (shipment) => {
+                try {
+                    const parcels = await this.parcelRepository.find({ where: { shipment: { shipment_id: shipment.shipment_id } } });
+                    const deliveries = await this.deliveryRepository.find({ where: { shipment: { shipment_id: shipment.shipment_id } } });
+    
+                    return {
+                        id: shipment.shipment_id,
+                        name: shipment.description ?? "Unnamed Shipment",
+                        departureCity: shipment.departure_city,
+                        arrivalCity: shipment.arrival_city,
+                        urgent: shipment.urgent,
+                        nbColis: parcels.length,
+                        nbLivraisons: deliveries.length,
+                    };
+                } catch (error) {
+                    console.error(`Error processing shipment ${shipment.shipment_id}:`, error);
+                    return null;
+                }
+            })
+        ).then(items => items.filter(item => item !== null)) as ShipmentHistoryRequest[];
+    
+        return {
+            data: shipmentRequests,
+            totalRows: total,
+        };
+    }
     
 
 // PAS ENCORE UTILISE
@@ -1867,7 +1907,7 @@ export class DeliveryService {
             shipment,
             delivery_person: deliveryPerson,
             status: 'pending',
-            amount: updatedAmount, // Utiliser le prix mis à jour
+            amount: updatedAmount,
             send_date: new Date(),
             shipment_step: newStep,
         });
@@ -1891,7 +1931,7 @@ export class DeliveryService {
         const delivery = this.deliveryRepository.create({
             send_date: new Date(),
             status: 'pending',
-            amount: updatedAmount, // Utiliser le prix mis à jour
+            amount: updatedAmount,
             shipment: shipment,
         });
     

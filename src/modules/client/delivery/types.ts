@@ -180,3 +180,13 @@ export interface ShipmentListItem {
   finished: boolean;
   initial_price: number;
 }
+
+export interface ShipmentHistoryRequest {
+  id: string;
+  name: string;
+  departureCity: string;
+  arrivalCity: string;
+  urgent: boolean;
+  nbColis: number;
+  nbLivraisons: number;
+}

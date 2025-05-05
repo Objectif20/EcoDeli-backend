@@ -6,7 +6,7 @@ import { GetShipmentsDTO } from "./dto/get-shipment.dto";
 import { CreateDeliveryDto } from "./dto/create-delivery.dto";
 import { ClientJwtGuard } from "src/common/guards/user-jwt.guard";
 import { BookPartialDTO } from "./dto/book-partial.dto";
-import { HistoryDelivery } from "./types";
+import { HistoryDelivery, ShipmentHistoryRequest, ShipmentListItem, SubscriptionForClient } from "./types";
 import { CreateShipmentTrolleyDTO } from "./dto/create-trolley.dto";
 
 @Controller("client/shipments")
@@ -166,7 +166,7 @@ export class DeliveryController {
     @UseGuards(ClientJwtGuard)
     async getSubscriptionStat(
         @Body("user_id") user_id : string,
-    ) {
+    ) : Promise<SubscriptionForClient> {
         return this.deliveryService.getSubscriptionPlanForClient(user_id);
     }
 
@@ -174,8 +174,18 @@ export class DeliveryController {
     @UseGuards(ClientJwtGuard)
     async getCurrentShipment(
         @Body("user_id") user_id : string,
-    ) {
+    ) : Promise<ShipmentListItem[]> {
         return this.deliveryService.getShipmentListItems(user_id);
+    }
+
+    @Get("myShipmentsHistory")
+    @UseGuards(ClientJwtGuard)
+    async getMyShipmentsHistory(
+        @Body("user_id") user_id : string,
+        @Query("page") page : number,
+        @Query("limit") limit : number,
+    ) : Promise<{ data: ShipmentHistoryRequest[], totalRows: number }> {
+        return this.deliveryService.getMyShipmentsHistory(user_id, page, limit);
     }
 
     @Get("office/:id")
