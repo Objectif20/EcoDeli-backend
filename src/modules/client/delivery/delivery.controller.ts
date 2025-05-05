@@ -221,12 +221,14 @@ export class DeliveryController {
     }
 
     @Post("delivery/:id/comments")
+    @UseGuards(ClientJwtGuard)
     async addComment(
         @Body("comment") comment : string,
+        @Body("rate") rate : number,
         @Body("user_id") user_id : string,
         @Param("id") delivery_id : string,
     ) {
-        return this.deliveryService.addComment(comment, user_id, delivery_id);
+        return this.deliveryService.addComment(comment, user_id, delivery_id, rate);
     }
 
     @Post(":id/book")

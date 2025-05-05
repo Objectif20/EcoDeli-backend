@@ -1171,7 +1171,7 @@ export class DeliveryService {
                 delivery_person: { user: { user_id: user_id } },
                 status: 'validated',
             },
-            relations: ['deliveryReviews', 'deliveryReviews.responses', 'shipment', 'shipment.user', 'shipment.user.clients', 'shipment.user.merchants'],
+            relations: ['deliveryReviews', 'deliveryReviews.responses', 'shipment', 'shipment.user', 'shipment.user.clients', 'shipment.user.merchant'],
             skip: (page - 1) * limit,
             take: limit,
         });
@@ -1780,6 +1780,41 @@ export class DeliveryService {
         return { data: deliveryHistory, totalRows: total };
       }
     
+
+    async addComment(comment: string, userId: string, deliveryId: string, rate : number): Promise<{ message: string }> {
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryId },
+            relations: ["shipment", "shipment.user"],
+        });
+
+
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+
+
+        if (delivery.status !== 'validated') {
+            throw new Error("Delivery is not validated.");
+        }
+
+        console.log("delivery", delivery);
+        console.log("userId", userId);
+        console.log("delivery.shipment.user.user_id", delivery.shipment.user.user_id);
+
+        if (delivery.shipment.user.user_id !== userId) {
+            throw new Error("User is not authorized to comment on this delivery.");
+        }
+
+        const deliveryReview = new DeliveryReview();
+        deliveryReview.comment = comment;
+        deliveryReview.rating = 0; 
+        deliveryReview.delivery = delivery;
+        deliveryReview.rating = rate;
+
+        await this.deliveryReviewRepository.save(deliveryReview);
+
+        return {message: "Comment added successfully"};
+    }
     
 
 // PAS ENCORE UTILISE
@@ -1887,29 +1922,7 @@ export class DeliveryService {
         return { message: "Favorite removed successfully." };
     }
 
-    async addComment(comment: string, userId: string, deliveryId: string): Promise<{ message: string }> {
-        const delivery = await this.deliveryRepository.findOne({
-            where: { delivery_id: deliveryId },
-            relations: ["shipment", "shipment.user"],
-        });
-    
-        if (!delivery) {
-            throw new Error("Delivery not found.");
-        }
-    
-        if (delivery.shipment.user.user_id !== userId) {
-            throw new Error("User is not authorized to comment on this delivery.");
-        }
-    
-        const deliveryReview = new DeliveryReview();
-        deliveryReview.comment = comment;
-        deliveryReview.rating = 0; 
-        deliveryReview.delivery = delivery;
-    
-        await this.deliveryReviewRepository.save(deliveryReview);
-    
-        return {message: "Comment added successfully"};
-    }
+
 
 
 
