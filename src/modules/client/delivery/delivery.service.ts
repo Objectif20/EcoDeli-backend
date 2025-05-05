@@ -1633,7 +1633,7 @@ export class DeliveryService {
                     return {
                         id: shipment.shipment_id,
                         name: shipment.description ?? "Unnamed Shipment",
-                        status: shipment.status ?? "In Progress",
+                        status: progress > 0 ? 'In Progress' : 'pending',
                         urgent: shipment.urgent,
                         departure: {
                             city: shipment.departure_city,
