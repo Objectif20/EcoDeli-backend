@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { In, Repository } from "typeorm";
+import { In, Not, Repository } from "typeorm";
 import { CreateShipmentDTO } from "./dto/create-shipment.dto";
 import { Shipment } from "src/common/entities/shipment.entity";
 import { Parcel } from "src/common/entities/parcels.entity";
@@ -31,7 +31,7 @@ import { BookPartialDTO } from "./dto/book-partial.dto";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from 'mongoose';
 import { Message } from "src/common/schemas/message.schema";
-import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryDetailsOffice, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson, SubscriptionForClient } from "./types";
+import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryDetailsOffice, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson, ShipmentListItem, SubscriptionForClient } from "./types";
 import { Subscription } from "src/common/entities/subscription.entity";
 import axios from "axios";
 import { Merchant } from "src/common/entities/merchant.entity";
@@ -856,7 +856,7 @@ export class DeliveryService {
         return warehouses;
     }
 
-    async getMyCurrentShipments(user_id: string): Promise<Shipment[]> {
+    async getMyCurrentShipmentsForNegoctation(user_id: string): Promise<Shipment[]> {
         const user = await this.userRepository.findOne({
             where: { user_id: user_id },
         });
@@ -1574,8 +1574,6 @@ export class DeliveryService {
     
         return result;
     }
-    
-
 
     async getSubscriptionPlanForClient(user_id: string): Promise<SubscriptionForClient> {
 
@@ -1613,6 +1611,52 @@ export class DeliveryService {
         };
     
         return subscriptionForClient;
+    }
+
+    async getShipmentListItems(userId: string): Promise<ShipmentListItem[]> {
+        const shipments = await this.shipmentRepository.find({
+            where: { user: { user_id: userId }, status: Not('validated') },
+            relations: ['parcels', 'deliveries'],
+        });
+        console.log("userId", userId);
+        console.log("shipments", shipments);
+    
+        const shipmentListItems: ShipmentListItem[] = await Promise.all(
+            shipments.map(async (shipment) => {
+                try {
+                    const parcels = await this.parcelRepository.find({ where: { shipment: { shipment_id: shipment.shipment_id } } });
+                    const deliveries = await this.deliveryRepository.find({ where: { shipment: { shipment_id: shipment.shipment_id } } });
+    
+                    const packageCount = parcels.length;
+                    const progress = (deliveries.length / (deliveries.length + 1))*100;
+    
+                    return {
+                        id: shipment.shipment_id,
+                        name: shipment.description ?? "Unnamed Shipment",
+                        status: shipment.status ?? "In Progress",
+                        urgent: shipment.urgent,
+                        departure: {
+                            city: shipment.departure_city,
+                            coordinates: shipment.departure_location?.coordinates ? [shipment.departure_location.coordinates[1], shipment.departure_location.coordinates[0]] : [0, 0],
+                        },
+                        arrival: {
+                            city: shipment.arrival_city,
+                            coordinates: shipment.arrival_location?.coordinates ? [shipment.arrival_location.coordinates[1], shipment.arrival_location.coordinates[0]] : [0, 0],
+                        },
+                        arrival_date: shipment.deadline_date ? shipment.deadline_date.toISOString().split('T')[0] : null,
+                        packageCount,
+                        progress,
+                        finished: shipment.status === 'finished',
+                        initial_price: Number(shipment.estimated_total_price),
+                    };
+                } catch (error) {
+                    console.error(`Error processing shipment ${shipment.shipment_id}:`, error);
+                    return null;
+                }
+            })
+        ).then(items => items.filter(item => item !== null)) as ShipmentListItem[];
+        console.log("shipmentListItems", shipmentListItems);
+        return shipmentListItems;
     }
     
 

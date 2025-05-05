@@ -50,12 +50,12 @@ export class DeliveryController {
         return this.deliveryService.getWarehouseList();
     }
 
-    @Get("myCurrentShipments")
+    @Get("myCurrentShipmentsForNegotiation")
     @UseGuards(ClientJwtGuard)
     async getCurrentPendingShipments(
         @Body("user_id") user_id : string,
     ) {
-        return this.deliveryService.getMyCurrentShipments(user_id);
+        return this.deliveryService.getMyCurrentShipmentsForNegoctation(user_id);
     }
 
     @Get("onGoingDeliveries")
@@ -168,6 +168,14 @@ export class DeliveryController {
         @Body("user_id") user_id : string,
     ) {
         return this.deliveryService.getSubscriptionPlanForClient(user_id);
+    }
+
+    @Get("myCurrentShipments")
+    @UseGuards(ClientJwtGuard)
+    async getCurrentShipment(
+        @Body("user_id") user_id : string,
+    ) {
+        return this.deliveryService.getShipmentListItems(user_id);
     }
 
     @Get("office/:id")

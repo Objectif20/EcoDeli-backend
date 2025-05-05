@@ -160,3 +160,23 @@ export interface DeliveryOnGoing {
       idLink: string;
     }[];
   }
+  
+export interface ShipmentListItem {
+  id: string;
+  name: string;
+  status: string;
+  urgent: boolean;
+  departure: {
+    city: string;
+    coordinates: [number, number];
+  };
+  arrival: {
+    city: string;
+    coordinates: [number, number];
+  };
+  arrival_date: string;
+  packageCount: number;
+  progress: number;
+  finished: boolean;
+  initial_price: number;
+}
