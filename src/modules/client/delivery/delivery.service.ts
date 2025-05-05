@@ -1213,16 +1213,18 @@ export class DeliveryService {
     
         const deliveryReview = await this.deliveryReviewRepository.findOne({
             where: { review_id: commentId },
-            relations: ["responses"],
+            relations: ["responses", "delivery"],
         });
     
         if (!deliveryReview) {
             throw new Error("Comment not found.");
         }
 
+        console.log("Delivery Review:", deliveryReview);
+
         const delivery = await this.deliveryRepository.findOne({
             where: { delivery_id: deliveryReview.delivery.delivery_id },
-            relations: ["delivery_person", "shipment"],
+            relations: ["delivery_person", "shipment", "shipment.user", "delivery_person.user"],
         });
         if (!delivery) {
             throw new Error("Delivery not found.");
@@ -1780,7 +1782,6 @@ export class DeliveryService {
         return { data: deliveryHistory, totalRows: total };
       }
     
-
     async addComment(comment: string, userId: string, deliveryId: string, rate : number): Promise<{ message: string }> {
         const delivery = await this.deliveryRepository.findOne({
             where: { delivery_id: deliveryId },

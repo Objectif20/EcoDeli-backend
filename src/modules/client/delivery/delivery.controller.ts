@@ -217,7 +217,7 @@ export class DeliveryController {
         @Body("user_id") user_id : string,
         @Body("content") content : string,
     ) {
-        return this.deliveryService.replyComment(comment_id, user_id, content);
+        return this.deliveryService.replyComment(content, user_id, comment_id);
     }
 
     @Post("delivery/:id/comments")
