@@ -1334,7 +1334,7 @@ export class DeliveryService {
 
     async getCurrentDeliveriesAsClient(user_id: string): Promise<CurrentDeliveryAsClient[]> {
         const user = await this.userRepository.findOne({
-            where: { user_id: user_id },
+            where: { user_id },
             relations: ['clients'],
         });
     
@@ -1358,24 +1358,32 @@ export class DeliveryService {
                 relations: ['delivery_person', 'delivery_person.user', 'delivery_person.user.clients'],
             });
     
-            return deliveries.map(delivery => {
-                const deliveryPersonClient = delivery.delivery_person?.user.clients[0];
+            return Promise.all(deliveries.map(async (delivery) => {
+                const deliveryPersonUser = delivery.delivery_person?.user;
+                const deliveryPersonClient = deliveryPersonUser?.clients[0];
+    
+                const profilePicture = deliveryPersonUser?.profile_picture
+                    ? await this.minioService.generateImageUrl("client-images", deliveryPersonUser.profile_picture)
+                    : '';
+
+                const deliveryPicture = shipment.image ? await this.minioService.generateImageUrl("client-images", shipment.image) : '';
+    
                 return {
                     id: delivery.delivery_id,
                     arrival_city: shipment.arrival_city ?? '',
                     departure_city: shipment.departure_city ?? '',
                     date_departure: shipment.deadline_date?.toISOString().split('T')[0] || '',
                     date_arrival: shipment.deadline_date?.toISOString().split('T')[0] || '',
-                    photo: delivery.delivery_person?.user.profile_picture || '',
-                    deliveryman: delivery.delivery_person ? {
-                        name: `${deliveryPersonClient?.first_name} ${deliveryPersonClient?.last_name}`,
-                        photo: delivery.delivery_person.user.profile_picture,
+                    photo: deliveryPicture,
+                    deliveryman: deliveryPersonClient ? {
+                        name: `${deliveryPersonClient.first_name} ${deliveryPersonClient.last_name}`,
+                        photo: profilePicture,
                     } : {
                         name: 'Unknown',
                         photo: '',
                     },
                 };
-            });
+            }));
         });
     
         const deliveries = (await Promise.all(deliveriesPromises)).flat();
@@ -1618,8 +1626,6 @@ export class DeliveryService {
             where: { user: { user_id: userId }, status: Not('validated') },
             relations: ['parcels', 'deliveries'],
         });
-        console.log("userId", userId);
-        console.log("shipments", shipments);
     
         const shipmentListItems: ShipmentListItem[] = await Promise.all(
             shipments.map(async (shipment) => {
@@ -1655,7 +1661,6 @@ export class DeliveryService {
                 }
             })
         ).then(items => items.filter(item => item !== null)) as ShipmentListItem[];
-        console.log("shipmentListItems", shipmentListItems);
         return shipmentListItems;
     }
 
@@ -1924,22 +1929,10 @@ export class DeliveryService {
         return deliveryDetails;
     }
     
-    
-
-// PAS ENCORE UTILISE
-
-
-
-
-
-
-
-    
     async cancelDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
         const delivery = await this.deliveryRepository.findOne({
             where: { delivery_id: deliveryId },
             relations: ["delivery_person", "shipment"],
-
         });
 
         if (!delivery) {
@@ -1948,6 +1941,10 @@ export class DeliveryService {
 
         if (delivery.delivery_person.user.user_id !== user_id) {
             throw new Error("User is not authorized to cancel this delivery.");
+        }
+
+        if (delivery.status === 'taken') {
+            throw new Error("Cannot cancel a taken delivery.");
         }
 
         if (delivery.status === 'finished') {
@@ -1960,8 +1957,27 @@ export class DeliveryService {
 
         delivery.status = 'canceled';
         await this.deliveryRepository.save(delivery);
+
+
+        // Logique plus tard de prévenir les gens
+
+
+
+
         return { message: "Delivery canceled successfully." };
     }
+    
+
+// PAS ENCORE UTILISE
+
+
+
+
+
+
+
+    
+
 
     async getShipmentFavorites(user_id: string, page: number, limit: number): Promise<Shipment[]> {
         const user = await this.userRepository.findOne({
