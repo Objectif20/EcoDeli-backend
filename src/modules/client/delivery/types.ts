@@ -206,3 +206,28 @@ export interface DeliveryHistoryAsClient {
   rate: number | null;
   comment: string | null;
 }
+
+export interface DeliveryDetails {
+  departure: {
+    city: string;
+    coordinates: [number, number];
+  };
+  arrival: {
+    city: string;
+    coordinates: [number, number];
+  };
+  departure_date: string;
+  arrival_date: string;
+  status: "pending" | "taken" | "finished" | "validated";
+  total_price: number;
+  cart_dropped: boolean;
+  packages: {
+    id: string;
+    name: string;
+    fragility: boolean;
+    estimated_price: number;
+    weight: number;
+    volume: number;
+    picture: string[];
+  }[];
+}

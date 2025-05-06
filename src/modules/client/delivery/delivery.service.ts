@@ -31,7 +31,7 @@ import { BookPartialDTO } from "./dto/book-partial.dto";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from 'mongoose';
 import { Message } from "src/common/schemas/message.schema";
-import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryDetailsOffice, DeliveryHistoryAsClient, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson, ShipmentHistoryRequest, ShipmentListItem, SubscriptionForClient } from "./types";
+import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryDetails, DeliveryDetailsOffice, DeliveryHistoryAsClient, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson, ShipmentHistoryRequest, ShipmentListItem, SubscriptionForClient } from "./types";
 import { Subscription } from "src/common/entities/subscription.entity";
 import axios from "axios";
 import { Merchant } from "src/common/entities/merchant.entity";
@@ -1780,7 +1780,7 @@ export class DeliveryService {
         ).then(results => results.flat());
       
         return { data: deliveryHistory, totalRows: total };
-      }
+    }
     
     async addComment(comment: string, userId: string, deliveryId: string, rate : number): Promise<{ message: string }> {
         const delivery = await this.deliveryRepository.findOne({
@@ -1816,6 +1816,114 @@ export class DeliveryService {
 
         return {message: "Comment added successfully"};
     }
+
+    async getDeliveryDetails(user_id: string, delivery_id: string): Promise<DeliveryDetails> {
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id },
+            relations: [
+                'delivery_person',
+                'delivery_person.user',
+                'shipment',
+                'shipment.user',
+                'shipment.stores',
+                'shipment.stores.exchangePoint',
+                'shipment.parcels',
+                'shipment.parcels.images',
+            ],
+        });
+    
+        if (!delivery) {
+            throw new Error('Delivery not found.');
+        }
+    
+        const shipment = delivery.shipment;
+        if (!shipment || !shipment.user) {
+            throw new Error('Shipment or associated user not found.');
+        }
+    
+        const isOwner = shipment.user.user_id === user_id;
+        const isDeliveryPerson = delivery.delivery_person?.user?.user_id === user_id;
+    
+        if (!isOwner && !isDeliveryPerson) {
+            throw new Error('Unauthorized access to delivery details.');
+        }
+    
+        const storesByStep = (shipment.stores || []).sort((a, b) => a.step - b.step);
+    
+        let departureCity: string | undefined;
+        let departureCoords: [number, number] | undefined;
+        let arrivalCity: string | undefined;
+        let arrivalCoords: [number, number] | undefined;
+    
+        const step = delivery.shipment_step;
+    
+        if (step === 0) {
+            departureCity = shipment.departure_city || "";
+            departureCoords = shipment.departure_location?.coordinates?.slice().reverse() as [number, number];
+        
+            arrivalCity = storesByStep[0]?.exchangePoint?.city ?? shipment.arrival_city;
+            arrivalCoords = storesByStep[0]?.exchangePoint?.coordinates.coordinates?.slice().reverse()
+                ?? shipment.arrival_location?.coordinates?.slice().reverse();
+        } else if (step === 1000) {
+            const lastStore = storesByStep.find(s => s.step === step - 1);
+            departureCity = lastStore?.exchangePoint?.city ?? shipment.departure_city ?? undefined;
+            departureCoords = lastStore?.exchangePoint?.coordinates.coordinates?.slice().reverse()
+                ?? shipment.departure_location?.coordinates?.slice().reverse();
+        
+            arrivalCity = shipment.arrival_city ?? undefined;
+            arrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse();
+        } else {
+            const prevStore = storesByStep.find(s => s.step === step - 1);
+            const currStore = storesByStep.find(s => s.step === step);
+        
+            if (!prevStore) {
+                departureCity = shipment.departure_city ?? undefined;
+                departureCoords = shipment.departure_location?.coordinates?.slice().reverse() as [number, number];
+            } else {
+                departureCity = prevStore.exchangePoint?.city;
+                departureCoords = prevStore.exchangePoint?.coordinates.coordinates?.slice().reverse() as [number, number];
+            }
+        
+            arrivalCity = currStore?.exchangePoint?.city;
+            arrivalCoords = currStore?.exchangePoint?.coordinates.coordinates?.slice().reverse() as [number, number];
+        }
+    
+        const deliveryDetails: DeliveryDetails = {
+            departure: {
+                city: departureCity || '',
+                coordinates: departureCoords ?? [0, 0],
+            },
+            arrival: {
+                city: arrivalCity || '',
+                coordinates: arrivalCoords ?? [0, 0],
+            },
+            departure_date: delivery.send_date?.toISOString().split('T')[0] || '',
+            arrival_date: delivery.delivery_date?.toISOString().split('T')[0] || '',
+            status: (['pending', 'taken', 'finished', 'validated'].includes(delivery.status)
+                ? delivery.status
+                : 'pending') as 'pending' | 'taken' | 'finished' | 'validated',
+            total_price: Number(delivery.delivery_price ?? delivery.amount),
+            cart_dropped: shipment.trolleydrop,
+            packages: await Promise.all(
+                (shipment.parcels || []).map(async (parcel: any) => ({
+                    id: parcel.parcel_id,
+                    name: parcel.name,
+                    fragility: parcel.fragility,
+                    estimated_price: Number(parcel.estimate_price),
+                    weight: Number(parcel.weight),
+                    volume: Number(parcel.volume),
+                    picture: await Promise.all(
+                        (parcel.images || []).map((img: any) =>
+                            this.minioService.generateImageUrl("client-images", img.image_url)
+                        )
+                    ),
+                }))
+            ),
+        };
+    
+        return deliveryDetails;
+    }
+    
     
 
 // PAS ENCORE UTILISE
@@ -1922,9 +2030,6 @@ export class DeliveryService {
     
         return { message: "Favorite removed successfully." };
     }
-
-
-
 
 
     async getDeliveryStatus(deliveryId: string): Promise<{ status: string }> {
