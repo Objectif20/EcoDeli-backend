@@ -1932,12 +1932,13 @@ export class DeliveryService {
     async cancelDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
         const delivery = await this.deliveryRepository.findOne({
             where: { delivery_id: deliveryId },
-            relations: ["delivery_person", "shipment"],
+            relations: ["delivery_person", "shipment", "delivery_person.user", "shipment.user"],
         });
 
         if (!delivery) {
             throw new Error("Delivery not found.");
         }
+
 
         if (delivery.delivery_person.user.user_id !== user_id) {
             throw new Error("User is not authorized to cancel this delivery.");

@@ -136,6 +136,7 @@ export class DeliveryController {
     }
 
     @Delete("delivery/:id/cancel")
+    @UseGuards(ClientJwtGuard)
     async cancelDelivery(
         @Param("id") deliveryId : string,
         @Body("user_id") user_id : string,
