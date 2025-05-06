@@ -16,12 +16,6 @@ export class DeliveryPerson {
     @Column({ length: 255 })
     license: string;
 
-    @Column({ length: 50, nullable: true })
-    vehicle_number?: string;
-
-    @Column({ length: 100 })
-    vehicle_type: string;
-
     @Column({ type: 'varchar', length: 50 })
     status: string;
 
@@ -86,5 +80,4 @@ export class DeliveryPerson {
 
     @OneToMany(() => Transfer, (transfer) => transfer.delivery_person)
     transfers: Transfer[];
-
 }

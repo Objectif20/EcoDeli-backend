@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsUUID, IsNumber, IsString, IsLatitude, IsLongitude, IsDateString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsUUID, IsNumber, IsString, IsLatitude, IsLongitude, IsDateString, IsBoolean } from 'class-validator';
 
 export class BookPartialDTO {
   @IsUUID()
@@ -33,4 +33,7 @@ export class BookPartialDTO {
   @IsOptional()
   @IsDateString()
   end_date?: string;
+
+  @IsBoolean()
+  isbox : boolean;
 }

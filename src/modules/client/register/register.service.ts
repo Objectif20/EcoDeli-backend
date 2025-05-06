@@ -424,18 +424,12 @@ export class RegisterService {
     }
 
 
-    async createDeliveryPerson(registerDeliveryPersonDto: RegisterDeliveryPersonDTO, deliveryPersonFiles: Array<Express.Multer.File>, vehicleFiles: Array<Express.Multer.File>): Promise<{ message: string }> {
-      const { license, vehicle_number, vehicle_type, status, professional_email, phone_number, country, city, address, postal_code, language_id, user_id, category_id, signature } = registerDeliveryPersonDto;
+    async createDeliveryPerson(registerDeliveryPersonDto: RegisterDeliveryPersonDTO, deliveryPersonFiles: Array<Express.Multer.File>, user_id : string): Promise<{ message: string }> {
+      const { license, professional_email, phone_number, country, city, address, postal_code, language_id, signature } = registerDeliveryPersonDto;
     
       const language = await this.languageRepository.findOne({ where: { language_id: language_id } });
       if (!language) {
         throw new BadRequestException('Langue non valide');
-      }
-    
-      const categoryToNumber = parseInt(category_id);
-      const category = await this.categoryRepository.findOne({ where: { category_id: categoryToNumber } });
-      if (!category) {
-        throw new BadRequestException('Catégorie de véhicule non valide');
       }
     
       const user = await this.userRepository.findOne({ where: { user_id } });
@@ -445,9 +439,6 @@ export class RegisterService {
     
       const deliveryPerson = this.deliveryPersonRepository.create({
         license,
-        vehicle_number,
-        vehicle_type,
-        status,
         professional_email,
         phone_number,
         country,
@@ -455,6 +446,7 @@ export class RegisterService {
         address,
         postal_code,
         validated: false,
+        status: 'pending',
         user,
       });
     
@@ -472,29 +464,6 @@ export class RegisterService {
         await this.deliveryPersonDocumentRepository.save(deliveryPersonDocument);
       }
     
-      const vehicle = this.vehicleRepository.create({
-        model: vehicle_type,
-        registration_number: vehicle_number,
-        electric: false,
-        validated: false,
-        category,
-        deliveryPerson: savedDeliveryPerson,
-      });
-    
-      const savedVehicle = await this.vehicleRepository.save(vehicle);
-    
-      for (const file of vehicleFiles) {
-        const filePath = `vehicle/${savedVehicle.vehicle_id}/documents/${file.originalname}`;
-        await this.minioService.uploadFileToBucket('client-documents', filePath, file);
-    
-        const vehicleDocument = this.vehicleDocumentRepository.create({
-          name: file.originalname,
-          vehicle_document_url: filePath,
-          vehicle: savedVehicle,
-        });
-        await this.vehicleDocumentRepository.save(vehicleDocument);
-      }
-    
       const contractUrl = await this.generateDeliveryPersonContractPdf(savedDeliveryPerson, signature);
     
       const deliveryPersonContract = this.deliveryPersonDocumentRepository.create({
@@ -504,31 +473,6 @@ export class RegisterService {
       });
     
       await this.deliveryPersonDocumentRepository.save(deliveryPersonContract);
-
-      const validateCode = uuidv4();
-
-      const savedValidateCode = await this.userRepository.save({
-        user_id: user.user_id,
-        validate_code: validateCode,
-      });
-
-      if (!savedValidateCode) {
-        throw new BadRequestException('Erreur lors de la génération du code de validation');
-      }
-
-      // Envoi par email du code de validation
-
-      try {
-        const fromEmail = this.mailer.options.auth.user;
-        const info = await this.mailer.sendMail({
-          from: fromEmail,
-          to: user.email,
-          subject: 'Valider votre compte',
-          text: 'Voici le code pour valider votre compte ' + validateCode,
-        });
-      } catch (error) {
-        throw new Error(`Erreur lors de l'envoi de l'email: ${error.message}`);
-      }
     
       return { message: 'Livreur enregistré avec succès' };
     }
@@ -553,8 +497,6 @@ export class RegisterService {
       doc.fontSize(14).text(`Numéro de Téléphone: ${deliveryPerson.phone_number}`);
       doc.fontSize(14).text(`Adresse: ${deliveryPerson.address}, ${deliveryPerson.postal_code} ${deliveryPerson.city}, ${deliveryPerson.country}`);
       doc.fontSize(14).text(`Numéro de Permis: ${deliveryPerson.license}`);
-      doc.fontSize(14).text(`Type de Véhicule: ${deliveryPerson.vehicle_type}`);
-      doc.fontSize(14).text(`Numéro de Véhicule: ${deliveryPerson.vehicle_number}`);
       doc.moveDown();
     
       doc.fontSize(14).text('Le livreur accepte que ses données soient étudiées par EcoDeli afin de valider ou non son accès à la plateforme.');

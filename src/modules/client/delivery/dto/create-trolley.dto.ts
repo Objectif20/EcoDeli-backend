@@ -76,13 +76,6 @@ class ShipmentDTO {
     keywords: string[];
 
     @IsString()
-    departure_city: string;
-
-    @ValidateNested()
-    @Type(() => LocationDTO)
-    departure_location: LocationDTO;
-
-    @IsString()
     arrival_city: string;
 
     @ValidateNested()
@@ -98,10 +91,9 @@ class ShipmentDTO {
     parcels: ParcelDTO[];
 
     img: Express.Multer.File;
-
 }
 
-export class CreateShipmentDTO {
+export class CreateShipmentTrolleyDTO {
     @ValidateNested()
     @Type(() => ShipmentDTO)
     shipment: ShipmentDTO;

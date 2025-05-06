@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { In, Repository } from "typeorm";
+import { In, Not, Repository } from "typeorm";
 import { CreateShipmentDTO } from "./dto/create-shipment.dto";
 import { Shipment } from "src/common/entities/shipment.entity";
 import { Parcel } from "src/common/entities/parcels.entity";
@@ -31,7 +31,11 @@ import { BookPartialDTO } from "./dto/book-partial.dto";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from 'mongoose';
 import { Message } from "src/common/schemas/message.schema";
-import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson } from "./types";
+import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryDetailsOffice, DeliveryHistoryAsClient, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson, ShipmentHistoryRequest, ShipmentListItem, SubscriptionForClient } from "./types";
+import { Subscription } from "src/common/entities/subscription.entity";
+import axios from "axios";
+import { Merchant } from "src/common/entities/merchant.entity";
+import { CreateShipmentTrolleyDTO } from "./dto/create-trolley.dto";
 
 
 @Injectable()
@@ -86,6 +90,12 @@ export class DeliveryService {
         @InjectRepository(DeliveryCommission)
         private readonly deliveryCommissionRepository: Repository<DeliveryCommission>,
 
+        @InjectRepository(Subscription)
+        private readonly subscriptionRepository: Repository<Subscription>,
+
+        @InjectRepository(Merchant)
+        private readonly merchantRepository: Repository<Merchant>,
+
         @InjectModel(Message.name) private messageModel: Model<Message>,
         
 
@@ -93,7 +103,7 @@ export class DeliveryService {
         private readonly minioService: MinioService, 
     ) {}
 
-    async createDelivery(createShipmentDTO: CreateShipmentDTO, files: Express.Multer.File[], user_id : string) {
+    async createDelivery(createShipmentDTO: CreateShipmentDTO, files: Express.Multer.File[], user_id: string) {
         if (!user_id) {
             throw new Error("User ID is required.");
         }
@@ -109,7 +119,7 @@ export class DeliveryService {
             proposed_delivery_price: Number(createShipmentDTO.shipment.proposed_delivery_price),
             weight: parseFloat(createShipmentDTO.shipment.weight ?? "0"),
             volume: parseFloat(createShipmentDTO.shipment.volume ?? "0"),
-            deadline_date: createShipmentDTO.shipment.deadline_date,
+            deadline_date: createShipmentDTO.shipment.deadline_date ? new Date(createShipmentDTO.shipment.deadline_date) : undefined,
             time_slot: createShipmentDTO.shipment.time_slot,
             urgent: createShipmentDTO.shipment.urgent === 'true',
             status: createShipmentDTO.shipment.status,
@@ -117,6 +127,7 @@ export class DeliveryService {
             arrival_city: createShipmentDTO.shipment.arrival_city,
             image: "https://static.vecteezy.com/ti/vecteur-libre/p1/5720408-icone-image-croisee-image-non-disponible-supprimer-symbole-vecteur-image-gratuit-vectoriel.jpg",
             user: user,
+            delivery_mail: createShipmentDTO.shipment.delivery_mail,
         });
     
         const departureLatitude = parseFloat(createShipmentDTO.shipment.departure_location.latitude);
@@ -139,6 +150,17 @@ export class DeliveryService {
         }
     
         const savedShipment = await this.shipmentRepository.save(shipment);
+    
+        const imageFile = files.find(file => file.fieldname === 'shipment[img]');
+        if (imageFile) {
+            const fileExtension = path.extname(imageFile.originalname);
+            const uniqueFileName = `${uuidv4()}${fileExtension}`;
+            const filePath = `shipments/${savedShipment.shipment_id}/${uniqueFileName}`;
+            await this.minioService.uploadFileToBucket('client-images', filePath, imageFile);
+    
+            savedShipment.image = filePath;
+            await this.shipmentRepository.save(savedShipment);
+        }
     
         const savedParcels: Parcel[] = [];
     
@@ -180,12 +202,137 @@ export class DeliveryService {
                 imageIndex++;
             }
         }
-
-
     
         const { user: shipmentUser, ...shipmentWithoutUser } = savedShipment;
         return shipmentWithoutUser;
-        
+    }
+
+    async createTrolleyShipment(createShipmentDTO: CreateShipmentTrolleyDTO, files: Express.Multer.File[], user_id: string) {
+        if (!user_id) {
+            throw new Error("User ID is required.");
+        }
+    
+        const user = await this.userRepository.findOne({
+            where: { user_id: user_id },
+            relations: ['merchant'],
+        });
+        if (!user) {
+            throw new Error("User not found.");
+        }
+    
+        const merchant = user.merchant;
+        if (!merchant) {
+            throw new Error("Merchant not found.");
+        }
+    
+        const address = `${merchant.address}, ${merchant.postal_code} ${merchant.city}`;
+        const response = await axios.get(`https://nominatim.openstreetmap.org/search`, {
+            params: {
+                q: address,
+                format: 'json',
+                limit: 1,
+            },
+        });
+
+    
+        if (response.data.length === 0) {
+            throw new Error("Unable to retrieve coordinates for the merchant's address.");
+        }
+    
+        const departureLatitude = parseFloat(response.data[0].lat);
+        const departureLongitude = parseFloat(response.data[0].lon);
+    
+        const shipment = this.shipmentRepository.create({
+            description: createShipmentDTO.shipment.description,
+            estimated_total_price: Number(createShipmentDTO.shipment.estimated_total_price),
+            proposed_delivery_price: Number(createShipmentDTO.shipment.proposed_delivery_price),
+            weight: parseFloat(createShipmentDTO.shipment.weight ?? "0"),
+            volume: parseFloat(createShipmentDTO.shipment.volume ?? "0"),
+            deadline_date: createShipmentDTO.shipment.deadline_date ? new Date(createShipmentDTO.shipment.deadline_date) : undefined,
+            time_slot: createShipmentDTO.shipment.time_slot,
+            urgent: createShipmentDTO.shipment.urgent === 'true',
+            status: createShipmentDTO.shipment.status,
+            departure_city: merchant.city,
+            arrival_city: createShipmentDTO.shipment.arrival_city,
+            image: "https://static.vecteezy.com/ti/vecteur-libre/p1/5720408-icone-image-croisee-image-non-disponible-supprimer-symbole-vecteur-image-gratuit-vectoriel.jpg",
+            user: user,
+            delivery_mail: createShipmentDTO.shipment.delivery_mail,
+            trolleydrop: true,
+        });
+    
+        if (!isNaN(departureLatitude) && !isNaN(departureLongitude)) {
+            shipment.departure_location = {
+                type: 'Point',
+                coordinates: [departureLongitude, departureLatitude],
+            };
+        }
+    
+        const arrivalLatitude = parseFloat(createShipmentDTO.shipment.arrival_location.latitude);
+        const arrivalLongitude = parseFloat(createShipmentDTO.shipment.arrival_location.longitude);
+    
+        if (!isNaN(arrivalLatitude) && !isNaN(arrivalLongitude)) {
+            shipment.arrival_location = {
+                type: 'Point',
+                coordinates: [arrivalLongitude, arrivalLatitude],
+            };
+        }
+    
+        const savedShipment = await this.shipmentRepository.save(shipment);
+    
+        const imageFile = files.find(file => file.fieldname === 'shipment[img]');
+        if (imageFile) {
+            const fileExtension = path.extname(imageFile.originalname);
+            const uniqueFileName = `${uuidv4()}${fileExtension}`;
+            const filePath = `shipments/${savedShipment.shipment_id}/${uniqueFileName}`;
+            await this.minioService.uploadFileToBucket('client-images', filePath, imageFile);
+    
+            savedShipment.image = filePath;
+            await this.shipmentRepository.save(savedShipment);
+        }
+    
+        const savedParcels: Parcel[] = [];
+    
+        for (const [parcelIndex, parcelDTO] of createShipmentDTO.shipment.parcels.entries()) {
+            if (!parcelDTO.name) continue;
+    
+            const parcel = this.parcelRepository.create({
+                name: parcelDTO.name,
+                weight: parcelDTO.weight ? parseFloat(parcelDTO.weight) : null,
+                fragility: parcelDTO.fragility === 'true',
+                volume: parcelDTO.volume ? parseFloat(parcelDTO.volume) : null,
+                estimate_price: parcelDTO.estimate_price ? parseFloat(parcelDTO.estimate_price) : null,
+                shipment: savedShipment,
+            });
+    
+            const savedParcel = await this.parcelRepository.save(parcel);
+            savedParcels.push(savedParcel);
+    
+            let imageIndex = 1;
+            while (true) {
+                const imageFieldName = `shipment[parcels][${parcelIndex}][images_${imageIndex}]`;
+                const file = files.find(file => file.fieldname.trim() === imageFieldName);
+    
+                if (!file) {
+                    break;
+                }
+    
+                const fileExtension = path.extname(file.originalname);
+                const uniqueFileName = `${uuidv4()}${fileExtension}`;
+                const filePath = `shipments/${savedShipment.shipment_id}/parcels/${savedParcel.parcel_id}/images/${uniqueFileName}`;
+                await this.minioService.uploadFileToBucket('client-images', filePath, file);
+    
+                const parcelImage = this.parcelImageRepository.create({
+                    parcel: savedParcel,
+                    image_url: filePath,
+                });
+    
+                await this.parcelImageRepository.save(parcelImage);
+                imageIndex++;
+            }
+        }
+    
+        const { user: shipmentUser, ...shipmentWithoutUser } = savedShipment;
+        return shipmentWithoutUser;
     }
 
     async getShipments(filters: GetShipmentsDTO): Promise<Shipment[]> {
@@ -254,7 +401,7 @@ export class DeliveryService {
     
         const shipments = await queryBuilder.getMany();
     
-        const updatedShipments = shipments.map(shipment => {
+        const updatedShipments = await Promise.all(shipments.map(async (shipment) => {
             const deliveries = shipment.deliveries.sort((a, b) => a.shipment_step - b.shipment_step);
             const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
     
@@ -281,14 +428,18 @@ export class DeliveryService {
                 }
             }
     
+            // Générer l'URL de l'image du shipment
+            const shipmentImageUrl = shipment.image ? await this.minioService.generateImageUrl("client-images", shipment.image) : null;
+    
             return {
                 ...shipment,
                 departure_city: departureCity,
                 departure_location: departureLocation,
                 arrival_city: arrivalCity,
                 arrival_location: arrivalLocation,
+                image: shipmentImageUrl, // Ajouter l'URL de l'image ici
             };
-        });
+        }));
     
         return updatedShipments;
     }
@@ -304,6 +455,7 @@ export class DeliveryService {
                 'deliveries.delivery_person.user',
                 'stores',
                 'stores.exchangePoint',
+                'user',
             ],
         });
     
@@ -342,23 +494,25 @@ export class DeliveryService {
             departure: { city: string | null; coordinates: any };
             arrival: { city: string | null; coordinates: any };
             courier: { name: string; photoUrl: string | null } | null;
+            idLink?: string;
         }[] = [];
     
         if (deliveries.length === 0) {
             steps.push({
-                id: "0",
-                title: 'Step 0',
-                description: 'Livraison directe sans étape intermédiaire.',
-                date: shipment.deadline_date?.toISOString(),
+                id: -1,
+                title: 'No Steps',
+                description: 'Aucune étape de livraison n\'existe.',
+                date: undefined,
                 departure: {
-                    city: shipment.departure_city,
-                    coordinates: shipment.departure_location?.coordinates?.slice().reverse(),
+                    city: null,
+                    coordinates: null,
                 },
                 arrival: {
-                    city: shipment.arrival_city,
-                    coordinates: shipment.arrival_location?.coordinates?.slice().reverse(),
+                    city: null,
+                    coordinates: null,
                 },
                 courier: null,
+                idLink: undefined,
             });
         } else {
             for (let i = 0; i < deliveries.length; i++) {
@@ -381,10 +535,12 @@ export class DeliveryService {
                     arrivalCoords = store?.exchangePoint?.coordinates.coordinates?.slice().reverse();
                 }
     
-                const client = await this.clientRepository.findOne({
-                    where: { user: { user_id: courier.user.user_id } },
-                    relations: ['user'],
-                });
+                let clientOrMerchant;
+                if (shipment.user.clients.length > 0) {
+                    clientOrMerchant = shipment.user.clients[0];
+                } else if (shipment.user.merchant) {
+                    clientOrMerchant = shipment.user.merchant[0];
+                }
     
                 steps.push({
                     id: delivery.shipment_step,
@@ -400,21 +556,22 @@ export class DeliveryService {
                         coordinates: arrivalCoords,
                     },
                     courier: {
-                        name: client?.first_name + ' ' + client?.last_name,
+                        name: clientOrMerchant ? `${clientOrMerchant.first_name} ${clientOrMerchant.last_name}` : "Unknown",
                         photoUrl: courier?.user.profile_picture || null,
                     },
                 });
             }
     
-            // Ajoute la "Step finale" SEULEMENT si elle existe vraiment (shipment_step === 1000)
             const finalDelivery = deliveries.find(delivery => delivery.shipment_step === 1000);
             if (finalDelivery) {
                 const lastStore = storesByStep.find(s => s.step === finalDelivery.shipment_step - 1);
     
-                const client = await this.clientRepository.findOne({
-                    where: { user: { user_id: finalDelivery.delivery_person.user.user_id } },
-                    relations: ['user'],
-                });
+                let clientOrMerchant;
+                if (shipment.user.clients.length > 0) {
+                    clientOrMerchant = shipment.user.clients[0];
+                } else if (shipment.user.merchant) {
+                    clientOrMerchant = shipment.user.merchant[0];
+                }
     
                 steps.push({
                     id: 1000,
@@ -430,14 +587,13 @@ export class DeliveryService {
                         coordinates: shipment.arrival_location?.coordinates?.slice().reverse(),
                     },
                     courier: {
-                        name: client?.first_name + ' ' + client?.last_name,
-                        photoUrl: client?.user.profile_picture || null,
+                        name: clientOrMerchant ? `${clientOrMerchant.first_name} ${clientOrMerchant.last_name}` : "Unknown",
+                        photoUrl: clientOrMerchant?.user.profile_picture || null,
                     },
                 });
             }
         }
     
-        // Détermination de l'arrivée réelle dans `details` :
         let realArrivalCity = shipment.arrival_city;
         let realArrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse();
     
@@ -453,18 +609,21 @@ export class DeliveryService {
             }
         }
     
+        let finished = false;
+        if (deliveries.some(delivery => delivery.shipment_step === 0)) {
+            finished = true;
+        }
+    
         const result = {
             details: {
                 id: shipment.shipment_id,
-                name: "Package Delivery",
-                description: shipment.description,
-                complementary_info: shipment.urgent ? "Livraison urgente à effectuer rapidement." : "Package to be delivered on time",
+                name: shipment.description,
                 departure: {
                     city: shipment.departure_city,
                     coordinates: shipment.departure_location?.coordinates?.slice().reverse(),
                 },
                 arrival: {
-                    city: realArrivalCity, // Ici, on assure que l'arrivée pointe vers la destination finale
+                    city: realArrivalCity,
                     coordinates: realArrivalCoords,
                 },
                 departure_date: shipment.deadline_date?.toISOString().split('T')[0],
@@ -476,6 +635,9 @@ export class DeliveryService {
                     name: p.name,
                     url_invoice: p.picture[0],
                 })),
+                urgent : shipment.urgent,
+                finished : finished,
+                trolleydrop : shipment.trolleydrop,
             },
             package: parcels,
             steps: steps,
@@ -666,8 +828,6 @@ export class DeliveryService {
         }
     
         const client_id = shipment.user.user_id;
-        console.log("CLIENT ID:", client_id);
-        console.log("DELIVERY PERSON ID:", deliverPerson.user.user_id);
     
         const client = await this.clientRepository.findOne({
             where: { user: { user_id: client_id } },
@@ -696,7 +856,7 @@ export class DeliveryService {
         return warehouses;
     }
 
-    async getMyCurrentShipments(user_id: string): Promise<Shipment[]> {
+    async getMyCurrentShipmentsForNegoctation(user_id: string): Promise<Shipment[]> {
         const user = await this.userRepository.findOne({
             where: { user_id: user_id },
         });
@@ -719,7 +879,7 @@ export class DeliveryService {
     async takeDeliveryPackage(deliveryId : string, user_id : string, secretCode : string) : Promise<{ message: string }> {
         const delivery = await this.deliveryRepository.findOne({
             where: { delivery_id: deliveryId },
-            relations: ["delivery_person", "shipment"],
+            relations: ["delivery_person", "shipment", "delivery_person.user", "shipment.stores", "shipment.stores.exchangePoint"],
         });
 
         if (!delivery) {
@@ -749,29 +909,101 @@ export class DeliveryService {
     }
 
     async finishDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
-
         const delivery = await this.deliveryRepository.findOne({
             where: { delivery_id: deliveryId },
-            relations: ["delivery_person", "shipment"],
+            relations: ["delivery_person", "shipment", "shipment.stores", "shipment.stores.exchangePoint", "delivery_person.user"],
         });
-
+    
         if (!delivery) {
             throw new Error("Delivery not found.");
         }
-
-        if (delivery.status != 'taken'){
+    
+        if (delivery.status != 'taken') {
             throw new Error("Delivery is not in a state that allows it to be finished.");
         }
-
+    
         if (delivery.delivery_person.user.user_id !== user_id) {
             throw new Error("User is not authorized to finish this delivery.");
         }
-
-        delivery.status = 'finished';
+    
+        delivery.status = 'finished';    
+        const secretCode = Math.floor(100000 + Math.random() * 900000).toString();
+        delivery.end_code = secretCode;
+    
         await this.deliveryRepository.save(delivery);
-        
+    
+        const currentStep = delivery.shipment_step;
+        const currentStore = delivery.shipment.stores.find(store => store.step === currentStep);
+    
+        if (currentStep === 0 || currentStep === 1000) {
+            console.log(`Email to: ${delivery.shipment.delivery_mail}, Code: ${secretCode}`);
+        } else if (currentStore) {
+            if (currentStore.exchangePoint.warehouse_id) {
+                console.log(`Email to: ecodeli@gmail.com, Code: ${secretCode}`);
+            } else if (currentStore.exchangePoint.isbox) {
+                console.log(`Code for box: ${secretCode}`);
+            } else {
+                const nextStepStore = delivery.shipment.stores.find(store => store.step === currentStep + 1);
+                if (nextStepStore) {
+                    const nextDelivery = await this.deliveryRepository.findOne({
+                        where: { shipment: { shipment_id: delivery.shipment.shipment_id }, shipment_step: currentStep + 1 },
+                        relations: ["delivery_person"]
+                    });
+                    if (nextDelivery) {
+                        console.log(`Code sent to delivery person of next step: ${nextDelivery.delivery_person.professional_email}, Code: ${secretCode}`);
+                    } else {
+                        console.log(`Code: ${secretCode}`);
+                        console.log(`Email to: personne`);
+                    }
+                } else {
+                    console.log(`Code: ${secretCode}`);
+                    console.log(`Email to: personne`);
+                }
+            }
+        } else {
+            console.log(`Code: ${secretCode}`);
+            console.log(`Email to: personne`);
+        }
+    
         return { message: "Delivery finished successfully." };
+    }
 
+    async validateDeliveryWithCode(deliveryId: string, user_id: string, code: string): Promise<{ message: string }> {
+
+    
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryId },
+            relations: ["delivery_person", "shipment", "shipment.stores", "shipment.stores.exchangePoint", "delivery_person.user"],
+        });
+    
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+    
+        if (delivery.status != 'finished') {
+            throw new Error("Delivery is not in a state that allows it to be validated.");
+        }
+    
+        if (delivery.end_code !== code) {
+            throw new Error("Invalid code.");
+        }
+    
+        if (delivery.delivery_person.user.user_id !== user_id) {
+            throw new Error("User is not authorized to validate this delivery.");
+        }
+    
+        delivery.status = 'validated';
+        await this.deliveryRepository.save(delivery);
+    
+        const delivery_step = delivery.shipment_step;
+    
+        if (delivery_step === 0 || delivery_step === 1000) {
+            await this.shipmentRepository.update(delivery.shipment.shipment_id, {
+                status: 'validated',
+            });
+        }
+    
+        return { message: "Delivery validated successfully." };
     }
 
     async validateDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
@@ -820,7 +1052,7 @@ export class DeliveryService {
         const deliveries = await this.deliveryRepository.find({
             where: {
                 delivery_person: { delivery_person_id: user.deliveryPerson.delivery_person_id },
-                status: In(['taken', 'pending']),
+                status: In(['taken', 'pending', 'finished']),
             },
             relations: ['shipment', 'shipment.stores', 'shipment.stores.exchangePoint'],
         });
@@ -898,7 +1130,7 @@ export class DeliveryService {
                 let departureCity, arrivalCity;
     
                 if (delivery.shipment_step === 0) {
-                    departureCity = shipment.departure_city;
+                      departureCity = shipment.departure_city ?? "Unknown";
                     arrivalCity = shipment.arrival_city;
                 } else if (delivery.shipment_step === 1000) {
                     const lastStore = storesByStep[storesByStep.length - 1];
@@ -910,8 +1142,6 @@ export class DeliveryService {
                     departureCity = previousStore?.exchangePoint?.city ?? shipment.departure_city;
                     arrivalCity = currentStore?.exchangePoint?.city ?? shipment.arrival_city;
                 }
-
-                console.log("shipment", shipment);
     
                 const client = await this.clientRepository.findOne({
                     where: { user: { user_id: shipment.user.user_id } },
@@ -937,36 +1167,42 @@ export class DeliveryService {
 
     async getReviewsForDeliveryPerson(user_id: string, page: number = 1, limit: number = 10): Promise<{ data: ReviewAsDeliveryPerson[], totalRows: number }> {
         const [deliveries, total] = await this.deliveryRepository.findAndCount({
-          where: {
-            delivery_person: { user: { user_id: user_id } },
-            status: 'validated',
-          },
-          relations: ['deliveryReviews', 'deliveryReviews.responses', 'shipment', 'shipment.user', 'shipment.user.clients'],
-          skip: (page - 1) * limit,
-          take: limit,
+            where: {
+                delivery_person: { user: { user_id: user_id } },
+                status: 'validated',
+            },
+            relations: ['deliveryReviews', 'deliveryReviews.responses', 'shipment', 'shipment.user', 'shipment.user.clients', 'shipment.user.merchant'],
+            skip: (page - 1) * limit,
+            take: limit,
         });
     
         const reviews: ReviewAsDeliveryPerson[] = [];
     
         for (const delivery of deliveries) {
-          const client = delivery.shipment.user.clients[0];
-          for (const review of delivery.deliveryReviews) {
-            const response = review.responses.length > 0 ? review.responses[0] : null;
+            let clientOrMerchant;
+            if (delivery.shipment.user.clients.length > 0) {
+                clientOrMerchant = delivery.shipment.user.clients[0];
+            } else if (delivery.shipment.user.merchant) {
+                clientOrMerchant = delivery.shipment.user.merchant[0];
+            }
     
-            reviews.push({
-              id: review.review_id,
-              content: review.comment || '',
-              author: {
-                id: delivery.shipment.user.user_id,
-                name: `${client?.first_name || ''} ${client?.last_name || ''}`,
-                photo: delivery.shipment.user.profile_picture || '',
-              },
-              reply: response ? true : false,
-              reply_content: response ? response.comment : null,
-              delivery_name: delivery.shipment.description || '',
-              rate: review.rating,
-            });
-          }
+            for (const review of delivery.deliveryReviews) {
+                const response = review.responses.length > 0 ? review.responses[0] : null;
+    
+                reviews.push({
+                    id: review.review_id,
+                    content: review.comment || '',
+                    author: {
+                        id: delivery.shipment.user.user_id,
+                        name: clientOrMerchant ? `${clientOrMerchant.first_name} ${clientOrMerchant.last_name}` : "Unknown",
+                        photo: delivery.shipment.user.profile_picture || '',
+                    },
+                    reply: response ? true : false,
+                    reply_content: response ? response.comment : null,
+                    delivery_name: delivery.shipment.description || '',
+                    rate: review.rating,
+                });
+            }
         }
     
         return { data: reviews, totalRows: total };
@@ -977,16 +1213,18 @@ export class DeliveryService {
     
         const deliveryReview = await this.deliveryReviewRepository.findOne({
             where: { review_id: commentId },
-            relations: ["responses"],
+            relations: ["responses", "delivery"],
         });
     
         if (!deliveryReview) {
             throw new Error("Comment not found.");
         }
 
+        console.log("Delivery Review:", deliveryReview);
+
         const delivery = await this.deliveryRepository.findOne({
             where: { delivery_id: deliveryReview.delivery.delivery_id },
-            relations: ["delivery_person", "shipment"],
+            relations: ["delivery_person", "shipment", "shipment.user", "delivery_person.user"],
         });
         if (!delivery) {
             throw new Error("Delivery not found.");
@@ -1144,7 +1382,440 @@ export class DeliveryService {
     
         return deliveries;
     }
+
+    async getShipmentDetails(shipment_id: string): Promise<DeliveryDetailsOffice> {
+        const shipment = await this.shipmentRepository.findOne({
+            where: { shipment_id: shipment_id },
+            relations: ['parcels', 'parcels.images', 'deliveries', 'deliveries.delivery_person', 'deliveries.delivery_person.user', 'deliveries.delivery_person.user.clients', 'stores', 'stores.exchangePoint'],
+        });
     
+        if (!shipment) {
+            throw new Error('Shipment not found');
+        }
+    
+        const parcels = await Promise.all(
+            shipment.parcels.map(async parcel => ({
+                id: parcel.parcel_id,
+                name: parcel.name,
+                fragility: parcel.fragility ?? false,
+                estimated_price: Number(parcel.estimate_price),
+                weight: Number(parcel.weight),
+                volume: Number(parcel.volume),
+                picture: await Promise.all(
+                    parcel.images.map(img =>
+                        this.minioService.generateImageUrl("client-images", img.image_url)
+                    )
+                ),
+            }))
+        );
+    
+        const deliveries = shipment.deliveries.sort((a, b) => a.shipment_step - b.shipment_step);
+        const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
+    
+        const initialPrice = Number(shipment.estimated_total_price ?? 0);
+        const priceWithStep = deliveries.map(delivery => ({
+            step: `Step ${delivery.shipment_step}`,
+            price: Number(delivery.delivery_price ?? delivery.amount),
+        }));
+    
+        const steps: {
+            id: number;
+            title: string;
+            description: string;
+            date: string;
+            departure: { city: string; coordinates: [number, number] };
+            arrival: { city: string; coordinates: [number, number] };
+            courier: { name: string; photoUrl: string };
+            idLink: string;
+        }[] = [];
+    
+        if (deliveries.length === 0) {
+            steps.push({
+                id: -1,
+                title: 'No Steps',
+                description: 'Aucune étape de livraison n\'existe.',
+                date: new Date().toISOString(),
+                departure: {
+                    city: shipment.departure_city || "",
+                    coordinates: shipment.departure_location?.coordinates?.slice().reverse() as [number, number],
+                },
+                arrival: {
+                    city: shipment.arrival_city || "",
+                    coordinates: shipment.arrival_location?.coordinates?.slice().reverse() as [number, number],
+                },
+                courier: {
+                    name: "Unknown",
+                    photoUrl: "",
+                },
+                idLink: "-1",
+            });
+        } else {
+            for (let i = 0; i < deliveries.length; i++) {
+                const delivery = deliveries[i];
+                const store = storesByStep.find(s => s.step === delivery.shipment_step);
+                const courier = delivery.delivery_person;
+    
+                let departureCity, departureCoords, arrivalCity, arrivalCoords;
+    
+                if (delivery.shipment_step === 1) {
+                    departureCity = shipment.departure_city;
+                    departureCoords = shipment.departure_location?.coordinates?.slice().reverse() as [number, number];
+                    arrivalCity = store?.exchangePoint?.city ?? "";
+                    arrivalCoords = store?.exchangePoint?.coordinates.coordinates?.slice().reverse() as [number, number];
+                } else {
+                    const prevStore = storesByStep.find(s => s.step === delivery.shipment_step - 1);
+                    departureCity = prevStore?.exchangePoint?.city ?? "";
+                    departureCoords = prevStore?.exchangePoint?.coordinates.coordinates?.slice().reverse() as [number, number];
+                    arrivalCity = store?.exchangePoint?.city ?? "";
+                    arrivalCoords = store?.exchangePoint?.coordinates.coordinates?.slice().reverse() as [number, number];
+                }
+    
+                const client = courier?.user.clients?.[0];
+    
+                steps.push({
+                    id: delivery.shipment_step,
+                    title: `Step ${delivery.shipment_step}`,
+                    description: store?.exchangePoint?.description || 'Étape intermédiaire de livraison',
+                    date: delivery.send_date?.toISOString() ?? new Date().toISOString(),
+                    departure: {
+                        city: departureCity,
+                        coordinates: departureCoords,
+                    },
+                    arrival: {
+                        city: arrivalCity,
+                        coordinates: arrivalCoords,
+                    },
+                    courier: {
+                        name: client ? `${client.first_name} ${client.last_name}` : "Unknown",
+                        photoUrl: courier?.user.profile_picture ?? "",
+                    },
+                    idLink: delivery.delivery_id,
+                });
+            }
+    
+            const finalDelivery = deliveries.find(delivery => delivery.shipment_step === 1000);
+            if (finalDelivery) {
+                const lastStore = storesByStep.find(s => s.step === finalDelivery.shipment_step - 1);
+                const client = finalDelivery.delivery_person?.user.clients?.[0];
+    
+                steps.push({
+                    id: 1000,
+                    title: 'Step finale',
+                    description: 'Dernière étape de la livraison jusqu’au destinataire.',
+                    date: finalDelivery.send_date?.toISOString() ?? new Date().toISOString(),
+                    departure: {
+                        city: lastStore?.exchangePoint?.city ?? "",
+                        coordinates: lastStore?.exchangePoint?.coordinates.coordinates?.slice().reverse() as [number, number],
+                    },
+                    arrival: {
+                        city: shipment.arrival_city || "",
+                        coordinates: shipment.arrival_location?.coordinates?.slice().reverse() as [number, number],
+                    },
+                    courier: {
+                        name: client ? `${client.first_name} ${client.last_name}` : "Unknown",
+                        photoUrl: finalDelivery.delivery_person?.user.profile_picture ?? "",
+                    },
+                    idLink: finalDelivery.delivery_id,
+                });
+            }
+        }
+    
+        let realArrivalCity = shipment.arrival_city;
+        let realArrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse() as [number, number];
+    
+        if (deliveries.length > 0) {
+            const lastDelivery = deliveries[deliveries.length - 1];
+            if (lastDelivery.shipment_step === 1000) {
+                realArrivalCity = shipment.arrival_city;
+                realArrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse() as [number, number];
+            } else {
+                const lastStore = storesByStep.find(s => s.step === lastDelivery.shipment_step);
+                realArrivalCity = lastStore?.exchangePoint?.city ?? shipment.arrival_city;
+                realArrivalCoords = lastStore?.exchangePoint?.coordinates.coordinates?.slice().reverse() as [number, number] ?? shipment.arrival_location?.coordinates?.slice().reverse() as [number, number];
+            }
+        }
+    
+        let finished = false;
+        if (deliveries.some(delivery => delivery.shipment_step === 0)) {
+            finished = true;
+        }
+    
+        const result: DeliveryDetailsOffice = {
+            details: {
+                id: shipment.shipment_id,
+                name: shipment.description || "",
+                description: shipment.description || "",
+                departure: {
+                    city: shipment.departure_city || "",
+                    coordinates: shipment.departure_location?.coordinates?.slice().reverse() as [number, number],
+                },
+                arrival: {
+                    city: realArrivalCity || "",
+                    coordinates: realArrivalCoords,
+                },
+                departure_date: shipment.deadline_date?.toISOString().split('T')[0] ?? new Date().toISOString().split('T')[0],
+                arrival_date: shipment.deadline_date?.toISOString().split('T')[0] ?? new Date().toISOString().split('T')[0],
+                status: shipment.status ?? 'In Progress',
+                initial_price: initialPrice,
+                price_with_step: priceWithStep,
+                invoice: parcels.map(p => ({
+                    name: p.name,
+                    url_invoice: "",
+                })),
+                urgent: shipment.urgent,
+                finished: finished,
+                trolleydrop: shipment.trolleydrop || false,
+                complementary_info: '',
+                facture_url: "",
+            },
+            package: parcels,
+            steps: steps,
+        };
+    
+        return result;
+    }
+
+    async getSubscriptionPlanForClient(user_id: string): Promise<SubscriptionForClient> {
+
+        const user = await this.userRepository.findOne({ where: { user_id } });
+        if (!user) {
+            throw new Error('User not found');
+        }
+    
+        const subscription = await this.subscriptionRepository.findOne({
+            where: { user: user, status: 'active' },
+            relations: ['plan']
+        });
+    
+        if (!subscription) {
+            return {
+                planName: "Free",
+                priorityRate: 0.15,
+                insuranceLimit: null,
+                additionalInsuranceCost: null,
+            }
+        }
+    
+        const subscriptionForClient: SubscriptionForClient = {
+            planName: subscription.plan.name,
+            discountRate: subscription.plan.shipping_discount,
+            priorityRate: subscription.plan.priority_shipping_percentage,
+            insuranceLimit: subscription.plan.max_insurance_coverage,
+            additionalInsuranceCost: subscription.plan.extra_insurance_price,
+            freeShipmentAvailable: subscription.plan.first_shipping_free,
+            freePriorityShipmentsPerMonth: subscription.plan.priority_months_offered,
+            freePriotiryShipmentsIfLower: subscription.plan.first_shipping_free_threshold,
+            permanentDiscount: subscription.plan.permanent_discount,
+            hasUsedFreeShipment: false, 
+            remainingPriorityShipments: subscription.plan.priority_months_offered
+        };
+    
+        return subscriptionForClient;
+    }
+
+    async getShipmentListItems(userId: string): Promise<ShipmentListItem[]> {
+        const shipments = await this.shipmentRepository.find({
+            where: { user: { user_id: userId }, status: Not('validated') },
+            relations: ['parcels', 'deliveries'],
+        });
+        console.log("userId", userId);
+        console.log("shipments", shipments);
+    
+        const shipmentListItems: ShipmentListItem[] = await Promise.all(
+            shipments.map(async (shipment) => {
+                try {
+                    const parcels = await this.parcelRepository.find({ where: { shipment: { shipment_id: shipment.shipment_id } } });
+                    const deliveries = await this.deliveryRepository.find({ where: { shipment: { shipment_id: shipment.shipment_id } } });
+    
+                    const packageCount = parcels.length;
+                    const progress = (deliveries.length / (deliveries.length + 1))*100;
+    
+                    return {
+                        id: shipment.shipment_id,
+                        name: shipment.description ?? "Unnamed Shipment",
+                        status: progress > 0 ? 'In Progress' : 'pending',
+                        urgent: shipment.urgent,
+                        departure: {
+                            city: shipment.departure_city,
+                            coordinates: shipment.departure_location?.coordinates ? [shipment.departure_location.coordinates[1], shipment.departure_location.coordinates[0]] : [0, 0],
+                        },
+                        arrival: {
+                            city: shipment.arrival_city,
+                            coordinates: shipment.arrival_location?.coordinates ? [shipment.arrival_location.coordinates[1], shipment.arrival_location.coordinates[0]] : [0, 0],
+                        },
+                        arrival_date: shipment.deadline_date ? shipment.deadline_date.toISOString().split('T')[0] : null,
+                        packageCount,
+                        progress,
+                        finished: shipment.status === 'finished',
+                        initial_price: Number(shipment.estimated_total_price),
+                    };
+                } catch (error) {
+                    console.error(`Error processing shipment ${shipment.shipment_id}:`, error);
+                    return null;
+                }
+            })
+        ).then(items => items.filter(item => item !== null)) as ShipmentListItem[];
+        console.log("shipmentListItems", shipmentListItems);
+        return shipmentListItems;
+    }
+
+    async getMyShipmentsHistory(userId: string, page: number, limit: number): Promise<{ data: ShipmentHistoryRequest[], totalRows: number }> {
+        const offset = (page - 1) * limit;
+    
+        const shipments = await this.shipmentRepository.find({
+            where: { user: { user_id: userId }, status: 'validated' },
+            relations: ['parcels', 'deliveries'],
+            skip: offset,
+            take: limit,
+        });
+    
+        const total = await this.shipmentRepository.count({
+            where: { user: { user_id: userId }, status: 'validated' },
+        });
+    
+        const shipmentRequests: ShipmentHistoryRequest[] = await Promise.all(
+            shipments.map(async (shipment) => {
+                try {
+                    const parcels = await this.parcelRepository.find({ where: { shipment: { shipment_id: shipment.shipment_id } } });
+                    const deliveries = await this.deliveryRepository.find({ where: { shipment: { shipment_id: shipment.shipment_id } } });
+    
+                    return {
+                        id: shipment.shipment_id,
+                        name: shipment.description ?? "Unnamed Shipment",
+                        departureCity: shipment.departure_city,
+                        arrivalCity: shipment.arrival_city,
+                        urgent: shipment.urgent,
+                        nbColis: parcels.length,
+                        nbLivraisons: deliveries.length,
+                    };
+                } catch (error) {
+                    console.error(`Error processing shipment ${shipment.shipment_id}:`, error);
+                    return null;
+                }
+            })
+        ).then(items => items.filter(item => item !== null)) as ShipmentHistoryRequest[];
+    
+        return {
+            data: shipmentRequests,
+            totalRows: total,
+        };
+    }
+
+    async getDeliveryHistoryAsClient(
+        user_id: string,
+        page: number,
+        limit: number
+      ): Promise<{ data: DeliveryHistoryAsClient[]; totalRows: number }> {
+        const pageNumber = Number.isInteger(page) ? page : 1;
+        const pageSize = Number.isInteger(limit) ? limit : 10;
+      
+        const [shipments, total] = await this.shipmentRepository.findAndCount({
+          where: { user: { user_id } },
+          relations: [
+            'deliveries',
+            'deliveries.delivery_person',
+            'deliveries.delivery_person.user',
+            'deliveries.delivery_person.user.clients',
+            'stores',
+            'stores.exchangePoint',
+          ],
+          skip: (pageNumber - 1) * pageSize,
+          take: pageSize,
+        });
+      
+        const deliveryHistory: DeliveryHistoryAsClient[] = await Promise.all(
+          shipments.map(async (shipment) => {
+            const validatedDeliveries = shipment.deliveries.filter(
+              (delivery) => delivery.status === 'validated'
+            );
+      
+            const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
+      
+            return Promise.all(
+              validatedDeliveries.map(async (delivery) => {
+                let departureCity: string;
+                let arrivalCity: string;
+      
+                if (delivery.shipment_step === 0) {
+                  departureCity = shipment.departure_city || 'Unknown';
+                  arrivalCity = shipment.arrival_city || 'Unknown';
+                } else if (delivery.shipment_step === 1000) {
+                  const lastStore = storesByStep[storesByStep.length - 1];
+                  departureCity = lastStore?.exchangePoint?.city || shipment.departure_city || 'Unknown';
+                  arrivalCity = shipment.arrival_city || 'Unknown';
+                } else {
+                  const currentStore = storesByStep.find(store => store.step === delivery.shipment_step);
+                  const previousStore = storesByStep.find(store => store.step === delivery.shipment_step - 1);
+                  departureCity = previousStore?.exchangePoint?.city || shipment.departure_city || 'Unknown';
+                  arrivalCity = currentStore?.exchangePoint?.city || shipment.arrival_city || 'Unknown';
+                }
+      
+                const deliveryReview = await this.deliveryReviewRepository.findOne({
+                  where: { delivery_id: delivery.delivery_id },
+                });
+      
+                const user = delivery.delivery_person?.user;
+                const client = user?.clients?.[0];
+      
+                return {
+                  id: delivery.delivery_id,
+                  deliveryman: {
+                    id: delivery.delivery_person?.delivery_person_id ?? 'unknown',
+                    name: client
+                      ? `${client.first_name} ${client.last_name}`
+                      : 'Non défini',
+                    photo: user?.profile_picture || '',
+                  },
+                  departureDate: delivery.send_date?.toISOString() || '',
+                  arrivalDate: delivery.delivery_date?.toISOString() || '',
+                  departureCity,
+                  arrivalCity,
+                  announcementName: shipment.description || '',
+                  rate: deliveryReview?.rating ?? null,
+                  comment: deliveryReview?.comment ?? null,
+                };
+              })
+            );
+          })
+        ).then(results => results.flat());
+      
+        return { data: deliveryHistory, totalRows: total };
+      }
+    
+    async addComment(comment: string, userId: string, deliveryId: string, rate : number): Promise<{ message: string }> {
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id: deliveryId },
+            relations: ["shipment", "shipment.user"],
+        });
+
+
+        if (!delivery) {
+            throw new Error("Delivery not found.");
+        }
+
+
+        if (delivery.status !== 'validated') {
+            throw new Error("Delivery is not validated.");
+        }
+
+        console.log("delivery", delivery);
+        console.log("userId", userId);
+        console.log("delivery.shipment.user.user_id", delivery.shipment.user.user_id);
+
+        if (delivery.shipment.user.user_id !== userId) {
+            throw new Error("User is not authorized to comment on this delivery.");
+        }
+
+        const deliveryReview = new DeliveryReview();
+        deliveryReview.comment = comment;
+        deliveryReview.rating = 0; 
+        deliveryReview.delivery = delivery;
+        deliveryReview.rating = rate;
+
+        await this.deliveryReviewRepository.save(deliveryReview);
+
+        return {message: "Comment added successfully"};
+    }
     
 
 // PAS ENCORE UTILISE
@@ -1252,29 +1923,7 @@ export class DeliveryService {
         return { message: "Favorite removed successfully." };
     }
 
-    async addComment(comment: string, userId: string, deliveryId: string): Promise<{ message: string }> {
-        const delivery = await this.deliveryRepository.findOne({
-            where: { delivery_id: deliveryId },
-            relations: ["shipment", "shipment.user"],
-        });
-    
-        if (!delivery) {
-            throw new Error("Delivery not found.");
-        }
-    
-        if (delivery.shipment.user.user_id !== userId) {
-            throw new Error("User is not authorized to comment on this delivery.");
-        }
-    
-        const deliveryReview = new DeliveryReview();
-        deliveryReview.comment = comment;
-        deliveryReview.rating = 0; 
-        deliveryReview.delivery = delivery;
-    
-        await this.deliveryReviewRepository.save(deliveryReview);
-    
-        return {message: "Comment added successfully"};
-    }
+
 
 
 
@@ -1354,7 +2003,7 @@ export class DeliveryService {
             shipment,
             delivery_person: deliveryPerson,
             status: 'pending',
-            amount: updatedAmount, // Utiliser le prix mis à jour
+            amount: updatedAmount,
             send_date: new Date(),
             shipment_step: newStep,
         });
@@ -1378,7 +2027,7 @@ export class DeliveryService {
         const delivery = this.deliveryRepository.create({
             send_date: new Date(),
             status: 'pending',
-            amount: updatedAmount, // Utiliser le prix mis à jour
+            amount: updatedAmount,
             shipment: shipment,
         });
     

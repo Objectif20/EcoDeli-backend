@@ -11,29 +11,6 @@ export class RegisterDeliveryPersonDTO {
     license: string;
 
     @ApiProperty({
-        description: 'The vehicle number of the delivery person',
-        example: 'XYZ789',
-        required: false,
-    })
-    @IsString()
-    @IsOptional()
-    vehicle_number?: string;
-
-    @ApiProperty({
-        description: 'The type of vehicle',
-        example: 'Motorcycle',
-    })
-    @IsString()
-    vehicle_type: string;
-
-    @ApiProperty({
-        description: 'The status of the delivery person',
-        example: 'active',
-    })
-    @IsString()
-    status: string;
-
-    @ApiProperty({
         description: 'The professional email of the delivery person',
         example: 'professional@example.com',
     })
@@ -80,22 +57,11 @@ export class RegisterDeliveryPersonDTO {
         example: 'en',
     })
     @IsString()
-    language_id: string;
+    @IsOptional()
+    language_id?: string;
 
-    @ApiProperty({
-        description: 'The user ID of the delivery person',
-        example: 'uuid-example',
-    })
-    @IsUUID()
-    user_id: string;
-
-    @ApiProperty({
-        description: 'The category ID of the vehicle',
-        example: 1,
-    })
-    @IsString()
-    category_id: string;
 
     @IsString()
-    signature: string;
+    @IsOptional()
+    signature?: string;
 }

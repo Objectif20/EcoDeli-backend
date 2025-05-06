@@ -10,6 +10,7 @@ import { Category } from 'src/common/entities/category.entity';
 import { MinioService } from 'src/common/services/file/minio.service';
 import { Vehicle } from 'src/common/entities/vehicle.entity';
 import { VehicleDocument } from 'src/common/entities/vehicle_documents.entity';
+import { Shipment } from 'src/common/entities/shipment.entity';
 
 export interface RoutePostDto {
     from: string;
@@ -59,6 +60,8 @@ export class DeliveryManService {
     private vehicleRepository: Repository<Vehicle>,
     @InjectRepository(VehicleDocument)
     private vehicleDocumentRepository: Repository<VehicleDocument>,
+    @InjectRepository(Shipment)
+    private readonly shipmentRepository: Repository<Shipment>,
     private readonly minioService: MinioService,
   ) {}
 
@@ -219,4 +222,59 @@ export class DeliveryManService {
     })));
     return { data, totalRows };
   }
+
+  async isUserAdmissibleForDelivery(userId: string): Promise<boolean> {
+
+    const deliveryPerson = await this.deliveryPersonRepository.findOne({ where: { user: { user_id: userId } } });
+    if (!deliveryPerson) {
+      return false;
+    }
+
+    if (!deliveryPerson.validated) {
+      return false;
+    }
+
+    // On ajoutera plus tard pour checker si les véhicules du livreur sont cohérents avec les trajets possibles
+
+    return true;
+  }
+
+  async isDeliveryPersonIsAdmissibleForThisDelivery(user_id : string, deliveryId : string) : Promise<boolean> {
+
+    if (!user_id || !deliveryId) {
+      console.log("user_id or deliveryId is missing");
+      return false;
+    }
+
+    const deliveryPerson = await this.deliveryPersonRepository.findOne({ where: { user: { user_id: user_id } } });
+    if (!deliveryPerson) {
+      console.log("Delivery person not found");
+      return false;
+    }
+
+    const shipment = await this.shipmentRepository.findOne({ 
+      where: { shipment_id: deliveryId },
+      relations: ['deliveries', 'stores', 'stores.exchangePoint', 'user'],
+    });
+    if (!shipment) {
+      console.log("Shipment not found");
+      return false;
+    }
+
+    if (user_id == shipment.user.user_id) {
+      console.log("User is the same as the shipment user");
+      return false;
+    }
+
+    if (deliveryPerson.validated == false) {
+      console.log("Delivery person is not validated");
+      return false;
+    }
+
+    // Ajout à l'avenir d'un conditionnement vis-à-vis des véhicules du livreur et de la livraison
+
+
+    return true;
+  }
+
 }

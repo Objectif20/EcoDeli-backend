@@ -72,16 +72,27 @@ import * as nodemailer from 'nodemailer';
     
       let first_name = 'N/A';
       let last_name = 'N/A';
+      let validateProfile = false;
     
       if (provider) {
         first_name = provider.first_name;
         last_name = provider.last_name;
+        validateProfile = provider.validated
       } else if (merchant) {
         first_name = merchant.first_name;
         last_name = merchant.last_name;
+        validateProfile = true;
       } else if (client) {
         first_name = client.first_name;
         last_name = client.last_name;
+        if (deliverymanExists > 0) {
+          const deliveryman = await this.deliveryPersonRepository.findOne({ where: { user: { user_id } } });
+          if (deliveryman) {
+            validateProfile = deliveryman.validated;
+          }
+        } else {
+          validateProfile = true;
+        }
       }
     
       const latestSubscription = user.subscriptions?.sort((a, b) =>
@@ -121,6 +132,7 @@ import * as nodemailer from 'nodemailer';
         profile,
         otp: user.two_factor_enabled,
         upgradablePlan,
+        validateProfile,
         planName,
       };
     

@@ -1,8 +1,17 @@
+import 'dd-trace';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import * as cookieParser from 'cookie-parser';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+
+import * as tracer from 'dd-trace';
+tracer.init({
+  service: 'ecodeli-backend',    
+  env: 'production',             
+  hostname: 'remythibaut.fr',    
+  port: 8126,                    
+});
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -32,6 +41,7 @@ async function bootstrap() {
   SwaggerModule.setup('swagger', app, documentFactory, { jsonDocumentUrl: 'swagger/json' });
 
   app.use(cookieParser());
+
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
   await app.listen(process.env.PORT || 3500);

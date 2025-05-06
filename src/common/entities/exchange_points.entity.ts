@@ -25,6 +25,9 @@ export class ExchangePoint {
     @JoinColumn({ name: 'warehouse_id' })
     warehouse: Warehouse;
 
+    @Column({type : 'boolean', default: false})
+    isbox: boolean;
+
     @OneToMany(() => Store, store => store.exchangePoint)
     stores: Store[];
 }

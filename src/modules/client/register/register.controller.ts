@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UploadedFiles, UseGuards, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Get, Post, Req, UploadedFiles, UseGuards, UseInterceptors } from "@nestjs/common";
 import { ApiOperation, ApiResponse, ApiTags, ApiBody, ApiConsumes } from "@nestjs/swagger";
 import { ClientProfile } from "src/common/decorator/client-profile.decorator";
 import { ClientProfileGuard } from "src/common/guards/client-profile.guard";
@@ -87,25 +87,26 @@ export class RegisterController {
         return 'register delivery';
     }
 
-    @Post("deliveryman")
-        @ApiOperation({
-            summary: 'Register a Delivery Person',
-            operationId: 'registerDeliveryPerson',
-        })
-        @ApiConsumes('multipart/form-data')
-        @ApiBody({ type: RegisterDeliveryPersonDTO })
-        @UseInterceptors(AnyFilesInterceptor()) 
-        @ApiResponse({ status: 201, description: 'Delivery person registered successfully' })
-        async registerDeliveryPerson(
-            @UploadedFiles() files: Array<Express.Multer.File>,  
-            @Body() registerDeliveryPersonDto: RegisterDeliveryPersonDTO,
-        ) {
-            const deliveryPersonFiles = files.filter(file => file.fieldname === 'delivery_person_documents');
-            const vehicleFiles = files.filter(file => file.fieldname === 'vehicle_documents');
-
-            const message = await this.registerService.createDeliveryPerson(registerDeliveryPersonDto, deliveryPersonFiles, vehicleFiles);
-            return { message };
-        }
+    @Post('deliveryman')
+    @ApiOperation({
+      summary: 'Register a Delivery Person',
+      operationId: 'registerDeliveryPerson',
+    })
+    @ApiConsumes('multipart/form-data')
+    @ApiBody({ type: RegisterDeliveryPersonDTO })
+    @UseInterceptors(AnyFilesInterceptor())
+    @UseGuards(ClientJwtGuard)
+    @ApiResponse({ status: 201, description: 'Delivery person registered successfully' })
+    async registerDeliveryPerson(
+      @UploadedFiles() files: Array<Express.Multer.File>,
+      @Body() registerDeliveryPersonDto: RegisterDeliveryPersonDTO,
+      @Req() req: { user: { user_id: string }; body: any }
+    ) {
+      const deliveryPersonFiles = files.filter(file => file.fieldname === 'delivery_person_documents');
+    
+      const message = await this.registerService.createDeliveryPerson(registerDeliveryPersonDto, deliveryPersonFiles, req.user.user_id);
+      return { message };
+    }
 
 
     @Get("plan")

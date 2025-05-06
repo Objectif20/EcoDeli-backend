@@ -61,10 +61,6 @@ import { v4 as uuidv4 } from 'uuid';
       if (!data.content && !data.fileUrl) {
         return;
       }
-
-      console.log('Sender ID:', senderId);
-        console.log('Receiver ID:', data.receiverId);
-        console.log('Content:', data.content);
     
       const newMessage = new this.messageModel({
         senderId,

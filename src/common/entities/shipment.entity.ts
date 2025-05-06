@@ -58,9 +58,15 @@ export class Shipment {
     @Column({ type: 'geometry', spatialFeatureType: 'Point', srid: 4326, nullable: true })
     arrival_location: Point | null;
 
+    @Column({type: 'varchar', length: 255, nullable: true})
+    delivery_mail: string | null;
+
     @ManyToOne(() => Users, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'user_id' })
     user: Users;
+
+    @Column({type : "boolean", default : false})
+    trolleydrop: boolean;
 
     @OneToMany(() => Delivery, (delivery) => delivery.shipment)
     deliveries: Delivery[];
@@ -76,4 +82,5 @@ export class Shipment {
 
     @OneToMany(() => Favorite, (favorite) => favorite.shipment)
     favorites: Favorite[];
+
 }
