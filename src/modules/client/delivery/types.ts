@@ -1,3 +1,5 @@
+import { Shipment } from "src/common/entities/shipment.entity";
+
 export interface DeliveryOnGoing {
  
     id: string;
@@ -230,4 +232,9 @@ export interface DeliveryDetails {
     volume: number;
     picture: string[];
   }[];
+}
+
+
+export interface ShipmentWithCoveredSteps extends Omit<Shipment, 'covered_steps'> {
+  covered_steps?: number[];
 }

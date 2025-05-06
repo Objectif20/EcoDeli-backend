@@ -31,7 +31,7 @@ import { BookPartialDTO } from "./dto/book-partial.dto";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from 'mongoose';
 import { Message } from "src/common/schemas/message.schema";
-import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryDetails, DeliveryDetailsOffice, DeliveryHistoryAsClient, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson, ShipmentHistoryRequest, ShipmentListItem, SubscriptionForClient } from "./types";
+import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryDetails, DeliveryDetailsOffice, DeliveryHistoryAsClient, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson, ShipmentHistoryRequest, ShipmentListItem, ShipmentWithCoveredSteps, SubscriptionForClient } from "./types";
 import { Subscription } from "src/common/entities/subscription.entity";
 import axios from "axios";
 import { Merchant } from "src/common/entities/merchant.entity";
@@ -335,7 +335,7 @@ export class DeliveryService {
         return shipmentWithoutUser;
     }
 
-    async getShipments(filters: GetShipmentsDTO): Promise<Shipment[]> {
+    async getShipments(filters: GetShipmentsDTO): Promise<ShipmentWithCoveredSteps[]> {
         const queryBuilder = this.shipmentRepository.createQueryBuilder("shipment")
             .leftJoinAndSelect("shipment.deliveries", "deliveries")
             .leftJoinAndSelect("shipment.stores", "stores")
@@ -401,6 +401,11 @@ export class DeliveryService {
     
         const shipments = await queryBuilder.getMany();
     
+        const canceledDeliveries = await this.deliveryRepository.find({
+            where: { status: 'canceled' },
+            relations: ['shipment', 'shipment.stores', 'shipment.stores.exchangePoint']
+        });
+    
         const updatedShipments = await Promise.all(shipments.map(async (shipment) => {
             const deliveries = shipment.deliveries.sort((a, b) => a.shipment_step - b.shipment_step);
             const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
@@ -410,8 +415,48 @@ export class DeliveryService {
             let arrivalCity = shipment.arrival_city;
             let arrivalLocation = shipment.arrival_location;
     
-            if (deliveries.length > 0) {
-                const lastDelivery = deliveries[deliveries.length - 1];
+            const coveredSteps = new Set(deliveries.filter(d => d.status !== 'canceled').map(d => d.shipment_step));
+    
+            const shipmentCanceledDeliveries = canceledDeliveries.filter(d => d.shipment.shipment_id === shipment.shipment_id);
+            const mergedDeliveries: Delivery[] = [];
+    
+            shipmentCanceledDeliveries.forEach(canceledDelivery => {
+                const step = canceledDelivery.shipment_step;
+    
+                if (coveredSteps.has(step)) {
+                    return;
+                }
+    
+                let nextDelivery = canceledDeliveries.find(d => d.shipment_step === step + 1 && d.shipment.shipment_id === shipment.shipment_id);
+    
+                if (!nextDelivery || nextDelivery.status !== 'canceled') {
+                    mergedDeliveries.push(canceledDelivery);
+                    coveredSteps.add(step);
+                } else {
+                    let startStep = step;
+                    let endStep = step;
+    
+                    while (nextDelivery && nextDelivery.status === 'canceled' && !coveredSteps.has(nextDelivery.shipment_step)) {
+                        endStep = nextDelivery.shipment_step;
+                        coveredSteps.add(endStep);
+                        const nextNextDelivery = canceledDeliveries.find(d => d.shipment_step === endStep + 1 && d.shipment.shipment_id === shipment.shipment_id);
+                        if (!nextNextDelivery || nextNextDelivery.status !== 'canceled') break;
+                        nextDelivery = nextNextDelivery;
+                    }
+    
+                    const mergedDelivery = {
+                        ...canceledDelivery,
+                        shipment_step: startStep,
+                        arrival_city: storesByStep.find(s => s.step === endStep)?.exchangePoint?.city ?? shipment.arrival_city,
+                        arrival_location: storesByStep.find(s => s.step === endStep)?.exchangePoint?.coordinates ?? shipment.arrival_location,
+                    };
+    
+                    mergedDeliveries.push(mergedDelivery);
+                }
+            });
+    
+            if (deliveries.length > 0 || mergedDeliveries.length > 0) {
+                const lastDelivery = deliveries.length > 0 ? deliveries[deliveries.length - 1] : mergedDeliveries[mergedDeliveries.length - 1];
                 if (lastDelivery.shipment_step !== 1000) {
                     const lastStore = storesByStep.find(s => s.step === lastDelivery.shipment_step);
                     departureCity = lastStore?.exchangePoint?.city ?? shipment.departure_city;
@@ -428,7 +473,6 @@ export class DeliveryService {
                 }
             }
     
-            // Générer l'URL de l'image du shipment
             const shipmentImageUrl = shipment.image ? await this.minioService.generateImageUrl("client-images", shipment.image) : null;
     
             return {
@@ -437,7 +481,8 @@ export class DeliveryService {
                 departure_location: departureLocation,
                 arrival_city: arrivalCity,
                 arrival_location: arrivalLocation,
-                image: shipmentImageUrl, // Ajouter l'URL de l'image ici
+                image: shipmentImageUrl,
+                covered_steps: Array.from(coveredSteps),
             };
         }));
     
@@ -1961,8 +2006,6 @@ export class DeliveryService {
 
 
         // Logique plus tard de prévenir les gens
-
-
 
 
         return { message: "Delivery canceled successfully." };
