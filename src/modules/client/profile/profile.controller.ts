@@ -215,4 +215,17 @@ export class ClientProfileController {
     return await this.profileService.newPassword(body.user_id);
   }
 
+  @Post("registerDevice")
+  @UseGuards(ClientJwtGuard)
+  async registerDevice(@Body() body: { user_id: string; oneSignalId: string }) {
+    const { user_id, oneSignalId } = body;
+    return this.profileService.registerNewDevice(user_id, oneSignalId);
+  }
+
+  @Post("createNotification")
+  async createNotification(@Body() body: { user_id: string; title: string; content: string }) {
+    const { user_id, title, content } = body;
+    return this.profileService.createNotification(user_id, title, content);
+  }
+
 }

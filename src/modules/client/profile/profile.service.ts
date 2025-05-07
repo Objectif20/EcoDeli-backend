@@ -18,6 +18,7 @@ import { StripeService } from "src/common/services/stripe/stripe.service";
 import { Availability } from "src/common/entities/availibities.entity";
 import { AvailabilityDto } from "./dto/availitity.dto";
 import * as nodemailer from 'nodemailer';
+import { OneSignalService } from "src/common/services/notification/oneSignal.service";
 
 
   @Injectable()
@@ -46,6 +47,7 @@ import * as nodemailer from 'nodemailer';
       private readonly minioService: MinioService,
       private readonly stripeService: StripeService,
       @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
+      private readonly onesignalService: OneSignalService,
       
     ) {}
   
@@ -416,8 +418,6 @@ import * as nodemailer from 'nodemailer';
         url_complete: urlComplete,
       };
     }
-
-
     async newPassword(user_id: string): Promise<{ message: string }> {
         const user = await this.userRepository.findOne({ where: { user_id } });
         if (!user) throw new UnauthorizedException('User not found');
@@ -561,8 +561,6 @@ import * as nodemailer from 'nodemailer';
       return this.availabilityRepository.save(newAvailabilities);
     }
 
-
-
     async getMyProfileDocuments() {
 
       return   {
@@ -607,6 +605,30 @@ import * as nodemailer from 'nodemailer';
       }
 
 
+    }
+
+
+    async registerNewDevice(userId: string, playerId: string): Promise<void> {
+      const user = await this.userRepository.findOne({ where: { user_id: userId } });
+      if (!user) {
+        throw new Error('User not found');
+      }
+    
+      const existingDevice = await this.onesignalService.getPlayerIdsForUser(userId);
+      if (existingDevice.includes(playerId)) {
+        return;
+      }
+    
+      await this.onesignalService.registerDevice(userId, playerId);
+    }
+
+    async createNotification(userId: string, title: string, content: string): Promise<void> {
+      const subscriptionIds = await this.onesignalService.getPlayerIdsForUser(userId);
+      if (subscriptionIds.length === 0) {
+        throw new Error('No devices registered for this user');
+      }
+    
+      await this.onesignalService.sendNotification(subscriptionIds, title, content);
     }
 
     
