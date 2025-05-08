@@ -18,7 +18,12 @@ import { StripeService } from "src/common/services/stripe/stripe.service";
 import { Availability } from "src/common/entities/availibities.entity";
 import { AvailabilityDto } from "./dto/availitity.dto";
 import * as nodemailer from 'nodemailer';
-
+import { OneSignalService } from "src/common/services/notification/oneSignal.service";
+import { BillingsData, UserSubscriptionData } from "./type";
+import { Transfer } from "src/common/entities/transfers.entity";
+import { TransferProvider } from "src/common/entities/transfers_provider.entity";
+import { Subscription } from "src/common/entities/subscription.entity";
+import { SubscriptionTransaction } from "src/common/entities/subscription_transaction.entity";
 
   @Injectable()
   export class ProfileService {
@@ -43,9 +48,21 @@ import * as nodemailer from 'nodemailer';
       private readonly reportRepository: Repository<Report>,
       @InjectRepository(Availability)
       private readonly availabilityRepository: Repository<Availability>,
+      @InjectRepository(Transfer)
+      private readonly transferRepository: Repository<Transfer>,
+      @InjectRepository(TransferProvider)
+      private readonly transferProviderRepository: Repository<TransferProvider>,
+      @InjectRepository(Subscription)
+      private readonly subscriptionRepository: Repository<Subscription>,
+      @InjectRepository(SubscriptionTransaction)
+      private readonly subscriptionTransactionRepository: Repository<SubscriptionTransaction>,
+
+
+
       private readonly minioService: MinioService,
       private readonly stripeService: StripeService,
       @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
+      private readonly onesignalService: OneSignalService,
       
     ) {}
   
@@ -347,7 +364,7 @@ import * as nodemailer from 'nodemailer';
       return null;
     }
     
-    async getOrCreateStripeAccountId(userId: string, accountToken: string): Promise<string> {
+    async createStripeAccount(userId: string): Promise<{ stripeAccountId: string, accountLinkUrl: string }> {
       const user = await this.userRepository.findOne({
         where: { user_id: userId },
         relations: ['providers', 'deliveryPerson', 'clients'],
@@ -356,7 +373,7 @@ import * as nodemailer from 'nodemailer';
       if (!user) throw new Error('User not found');
     
       const existingId = await this.getStripeAccountId(userId);
-      if (existingId) return existingId;
+      if (existingId) return { stripeAccountId: existingId, accountLinkUrl: '' };
     
       const isProvider = (user.providers ?? []).length > 0;
       const isDelivery = user.deliveryPerson != null;
@@ -364,60 +381,399 @@ import * as nodemailer from 'nodemailer';
       if (!isProvider && !isDelivery) {
         throw new Error("L'utilisateur n’est ni provider ni livreur.");
       }
-        
+    
+      const account = await this.stripeService.createExpressAccount();
+      const accountLinkUrl = await this.stripeService.createAccountLink(account.id);
+    
       if (isProvider) {
         const provider = user.providers[0];
-        const stripeAccount = await this.stripeService.createConnectedAccountWithToken(accountToken);
-        const accountLinkUrl = await this.stripeService.createAccountLink(stripeAccount.id);
-        console.log('URL pour compléter le profil:', accountLinkUrl);
-
-        provider.stripe_transfer_id = stripeAccount.id;
+        provider.stripe_transfer_id = account.id;
         await this.providerRepository.save(provider);
-        return stripeAccount.id;
       }
     
       if (isDelivery) {
         const delivery = user.deliveryPerson;
-        const client = user.clients[0];
-        if (!client) throw new Error("Le livreur n’a pas de profil client associé.");
-        const stripeAccount = await this.stripeService.createConnectedAccountWithToken(accountToken);
-        const accountLinkUrl = await this.stripeService.createAccountLink(stripeAccount.id);
-        console.log('URL pour compléter le profil:', accountLinkUrl);
-
-        delivery.stripe_transfer_id = stripeAccount.id;
+        delivery.stripe_transfer_id = account.id;
         await this.deliveryPersonRepository.save(delivery);
-        return stripeAccount.id;
       }
     
-      throw new Error("Impossible de créer un compte Stripe.");
+      return { stripeAccountId: account.id, accountLinkUrl };
     }
     
-    async isStripeAccountValid(user_id: string): Promise<{
-      valid: boolean,
-      enabled: boolean,
-      needs_id_card: boolean,
-      url_complete?: string
+    async isStripeExpressAccountValid(user_id: string): Promise<{
+      valid: boolean;
+      enabled: boolean;
+      needs_id_card: boolean;
+      url_complete?: string;
     }> {
       const stripeAccountId = await this.getStripeAccountId(user_id);
       if (!stripeAccountId) {
         return { valid: false, enabled: false, needs_id_card: false };
       }
     
-      const { isValid, isEnabled, needsIdCard } = await this.stripeService.getStripeAccountStatus(stripeAccountId);
+      const status = await this.stripeService.getStripeExpressAccountStatus(stripeAccountId);
     
-      const urlComplete = !isEnabled
+      const url_complete = !status.isEnabled
         ? await this.stripeService.createAccountLink(stripeAccountId)
         : undefined;
     
       return {
-        valid: isValid,
-        enabled: isEnabled,
-        needs_id_card: needsIdCard,
-        url_complete: urlComplete,
+        valid: status.isValid,
+        enabled: status.isEnabled,
+        needs_id_card: status.needsIdCard,
+        url_complete,
       };
     }
 
+    async updateExpressAccount(stripeAccountId: string): Promise<string> {
+      const accountLinkUrl = await this.stripeService.updateExpressAccount(stripeAccountId);
+      return accountLinkUrl;
+    }
 
+
+    async getMyBillingsData(user_id: string): Promise<BillingsData> {
+      const user = await this.userRepository.findOne({ 
+        where: { user_id },
+        relations: ['deliveryPerson', 'providers', 'clients']      
+      });
+    
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+    
+      const isProvider = (user.providers ?? []).length > 0;
+      const isDelivery = user.deliveryPerson != null;
+    
+      if (!isProvider && !isDelivery) {
+        throw new Error("L'utilisateur n’est ni provider ni livreur.");
+      }
+    
+      let amount = 0;
+      let billings: {
+        id: string;
+        date: string;
+        type: 'auto' | 'not-auto';
+        amount: number;
+        invoiceLink: string;
+      }[] = [];
+    
+      if (isProvider) {
+        const provider = user.providers[0];
+        amount = provider.balance;
+    
+        const transfers = await this.transferProviderRepository.find({
+          where: { provider: { provider_id: provider.provider_id } },
+          order: { date: 'DESC' },
+        });
+    
+        billings = transfers.map((transfer) => {
+          if (!transfer.stripe_id) {
+            throw new Error('Transfer ID is undefined');
+          }
+          return {
+            id: transfer.stripe_id,
+            date: transfer.date.toISOString().split('T')[0],
+            type: transfer.type as 'auto' | 'not-auto',
+            amount: transfer.amount,
+            invoiceLink: transfer.url || `https://example.com/invoice/${transfer.stripe_id}`,
+          };
+        });
+      }
+    
+      if (isDelivery) {
+        const deliveryPerson = user.deliveryPerson;
+        amount = deliveryPerson.balance;
+    
+        const transfers = await this.transferRepository.find({
+          where: { delivery_person: { delivery_person_id: deliveryPerson.delivery_person_id } },
+          order: { date: 'DESC' },
+        });
+    
+        billings = transfers.map((transfer) => {
+          if (!transfer.stripe_id) {
+            throw new Error('Transfer ID is undefined');
+          }
+          return {
+            id: transfer.stripe_id,
+            date: transfer.date.toISOString().split('T')[0],
+            type: transfer.type as 'auto' | 'not-auto',
+            amount: transfer.amount,
+            invoiceLink: transfer.url || `https://example.com/invoice/${transfer.stripe_id}`,
+          };
+        });
+      }
+    
+      return {
+        billings,
+        amount,
+      };
+    }
+
+    async createPayment(user_id: string, auto: boolean) {
+      const user = await this.userRepository.findOne({ 
+        where: { user_id },
+        relations: ['deliveryPerson', 'providers', 'clients']
+      });
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+    
+      const isProvider = (user.providers ?? []).length > 0;
+      const isDelivery = user.deliveryPerson != null;
+    
+      if (!isProvider && !isDelivery) {
+        throw new Error("L'utilisateur n’est ni provider ni livreur.");
+      }
+    
+      let amount = 0;
+      if (isProvider) {
+        amount = user.providers[0].balance;
+      } else if (isDelivery) {
+        amount = user.deliveryPerson.balance;
+      }
+    
+      if (amount <= 0) {
+        throw new Error("Le montant est inférieur ou égal à zéro.");
+      }
+    
+      const stripeAccountId = await this.getStripeAccountId(user_id);
+      if (!stripeAccountId) {
+        throw new Error("L'utilisateur n'a pas de compte Stripe associé.");
+      }
+    
+      const amountInCents = Math.round(amount * 100);
+    
+      const transfer = await this.stripeService.transferToConnectedAccount(stripeAccountId, amountInCents);
+    
+      if (isProvider) {
+        const transferProvider = new TransferProvider();
+        transferProvider.date = new Date();
+        transferProvider.amount = amount;
+        transferProvider.provider = user.providers[0];
+        transferProvider.type = auto ? 'auto' : 'not-auto';
+        transferProvider.stripe_id = transfer.id;
+        transferProvider.url = 'temp';
+        await this.transferProviderRepository.save(transferProvider);
+      } else if (isDelivery) {
+        const transferDelivery = new Transfer();
+        transferDelivery.date = new Date();
+        transferDelivery.amount = amount;
+        transferDelivery.delivery_person = user.deliveryPerson;
+        transferDelivery.type = auto ? 'auto' : 'not-auto';
+        transferDelivery.stripe_id = transfer.id;
+        transferDelivery.url = 'temp';
+        await this.transferRepository.save(transferDelivery);
+      }
+
+      if (isProvider) {
+        user.providers[0].balance = 0;
+        await this.providerRepository.save(user.providers[0]);
+      } else if (isDelivery) {
+        user.deliveryPerson.balance = 0;
+        await this.deliveryPersonRepository.save(user.deliveryPerson);
+      }
+    }
+
+    async getMySubscriptionData(user_id: string): Promise<UserSubscriptionData> {
+      const user = await this.userRepository.findOne({
+        where: { user_id },
+        relations: ['clients', 'merchant']
+      });
+    
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+    
+      const subscriptions = await this.subscriptionRepository.find({
+        where: { user: { user_id } },
+        relations: ['plan'],
+      });
+    
+      const subscriptionIds = subscriptions.map(sub => sub.subscription_id);
+    
+      if (subscriptionIds.length === 0) {
+        return {
+          history: [],
+          customer_stripe_id: false,
+          plan: {
+            plan_id: 0,
+            name: '',
+            price: '0',
+            priority_shipping_percentage: '0',
+            priority_months_offered: 0,
+            max_insurance_coverage: '0',
+            extra_insurance_price: '0',
+            shipping_discount: '0',
+            permanent_discount: '0',
+            permanent_discount_percentage: '0',
+            small_package_permanent_discount: '0',
+            first_shipping_free_threshold: '0',
+            is_pro: false,
+            first_shipping_free: false
+          },
+        };
+      }
+    
+      const transactions = await this.subscriptionTransactionRepository.find({
+        where: { subscription: { subscription_id: In(subscriptionIds) } },
+        relations: ['subscription', 'subscription.plan'],
+        order: { year: 'DESC', month: 'DESC' },
+      });
+    
+      const subscriptionHistory = transactions.map(tx => ({
+        id: tx.subscription.subscription_id,
+        month: `${tx.year}-${String(tx.month).padStart(2, '0')}`,
+        status: tx.subscription.status,
+        name: tx.subscription.plan.name,
+        invoiceLink: tx.invoice_url,
+        price: tx.price_at_transaction.toString(),
+      }));
+    
+      let customer_stripe_id = false;
+    
+      if (user.clients.length > 0) {
+        customer_stripe_id = !!user.clients[0].stripe_customer_id;
+      } else if (user.merchant) {
+        customer_stripe_id = !!user.merchant.stripe_customer_id;
+      }
+    
+      const activeSubscription = subscriptions.find(
+        (sub) => sub.status === 'active' || sub.status === 'ok'
+      );
+    
+      const activePlan = activeSubscription?.plan
+        ? {
+            ...activeSubscription.plan,
+            price: activeSubscription.plan.price?.toString() || '0',
+            priority_shipping_percentage: activeSubscription.plan.priority_shipping_percentage.toString(),
+            max_insurance_coverage: activeSubscription.plan.max_insurance_coverage.toString(),
+            extra_insurance_price: activeSubscription.plan.extra_insurance_price.toString(),
+            shipping_discount: activeSubscription.plan.shipping_discount.toString(),
+            permanent_discount: activeSubscription.plan.permanent_discount.toString(),
+            permanent_discount_percentage: activeSubscription.plan.permanent_discount_percentage.toString(),
+            small_package_permanent_discount: activeSubscription.plan.small_package_permanent_discount.toString(),
+            first_shipping_free_threshold: activeSubscription.plan.first_shipping_free_threshold.toString(),
+          }
+        : null;
+    
+      return {
+        history: subscriptionHistory.map((item) => ({
+          ...item,
+          status: (['ok', 'wait', 'cancelled'] as const).includes(item.status as any) ? (item.status as 'ok' | 'wait' | 'cancelled') : 'cancelled',
+        })),
+        customer_stripe_id: customer_stripe_id,
+        plan: activePlan || {
+          plan_id: 0,
+          name: '',
+          price: '0',
+          priority_shipping_percentage: '0',
+          priority_months_offered: 0,
+          max_insurance_coverage: '0',
+          extra_insurance_price: '0',
+          shipping_discount: '0',
+          permanent_discount: '0',
+          permanent_discount_percentage: '0',
+          small_package_permanent_discount: '0',
+          first_shipping_free_threshold: '0',
+          is_pro: false,
+          first_shipping_free: false,
+        },
+      };
+    }
+
+    async updateMySubscription(user_id: string, planId: number, paymentMethodId: string): Promise<{ message: string }> {
+      const user = await this.userRepository.findOne({
+        where: { user_id },
+        relations: ['clients', 'merchant', 'subscriptions']
+      });
+    
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+    
+      const plan = await this.planRepository.findOne({ where: { plan_id: planId } });
+    
+      if (!plan) {
+        throw new NotFoundException('Plan not found');
+      }
+    
+      const isClient = user.clients.length > 0;
+      const isMerchant = !!user.merchant;
+      let stripeCustomerId: string | null = null;
+    
+      if (isClient) {
+        stripeCustomerId = user.clients[0].stripe_customer_id;
+      } else if (isMerchant) {
+        stripeCustomerId = user.merchant.stripe_customer_id;
+      }
+    
+      if (!stripeCustomerId && paymentMethodId) {
+        let customer;
+        if (isClient) {
+          customer = await this.stripeService.createCustomer(user.email, `Client: ${user.clients[0].first_name} ${user.clients[0].last_name}`);
+        } else if (isMerchant) {
+          customer = await this.stripeService.createCustomer(user.email, `Merchant: ${user.merchant.company_name}`);
+        }
+    
+        if (!customer) {
+          throw new Error("Failed to create Stripe customer");
+        }
+    
+        await this.stripeService.attachPaymentMethod(customer.id, paymentMethodId);
+        stripeCustomerId = customer.id;
+    
+        if (isClient) {
+          user.clients[0].stripe_customer_id = stripeCustomerId;
+          await this.clientRepository.save(user.clients[0]);
+        } else if (isMerchant) {
+          user.merchant.stripe_customer_id = stripeCustomerId;
+          await this.merchantRepository.save(user.merchant);
+        }
+      }
+    
+      if (!stripeCustomerId) {
+        throw new Error("Stripe customer ID is missing.");
+      }
+    
+      const activeSubscription = await this.subscriptionRepository.findOne({
+        where: {
+          user: { user_id },
+          status: 'active',
+        },
+        order: { end_date: 'DESC' }
+      });
+    
+      const now = new Date();
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0);
+      const newStartDate = new Date(endOfMonth);
+      const newEndDate = new Date(endOfMonth);
+      newEndDate.setMonth(newEndDate.getMonth() + 1);
+    
+      if (activeSubscription) {
+        activeSubscription.cancellation_date = endOfMonth;
+        activeSubscription.status = 'cancelled';
+        await this.subscriptionRepository.save(activeSubscription);
+    
+        await this.stripeService.cancelSubscriptionAtPeriodEnd(activeSubscription.stripe_subscription_id);
+      }
+    
+      const stripeSubscription = await this.stripeService.createSubscription(stripeCustomerId, plan.stripe_price_id, newStartDate);
+    
+      const newSubscription = this.subscriptionRepository.create({
+        user,
+        plan,
+        stripe_customer_id: stripeCustomerId,
+        stripe_subscription_id: stripeSubscription.id,
+        status: 'active',
+        start_date: newStartDate,
+        end_date: newEndDate,
+      });
+    
+      await this.subscriptionRepository.save(newSubscription);
+    
+      return { message: 'Subscription updated successfully' };
+    }
+    
     async newPassword(user_id: string): Promise<{ message: string }> {
         const user = await this.userRepository.findOne({ where: { user_id } });
         if (!user) throw new UnauthorizedException('User not found');
@@ -561,8 +917,6 @@ import * as nodemailer from 'nodemailer';
       return this.availabilityRepository.save(newAvailabilities);
     }
 
-
-
     async getMyProfileDocuments() {
 
       return   {
@@ -607,6 +961,29 @@ import * as nodemailer from 'nodemailer';
       }
 
 
+    }
+
+    async registerNewDevice(userId: string, playerId: string): Promise<void> {
+      const user = await this.userRepository.findOne({ where: { user_id: userId } });
+      if (!user) {
+        throw new Error('User not found');
+      }
+    
+      const existingDevice = await this.onesignalService.getPlayerIdsForUser(userId);
+      if (existingDevice.includes(playerId)) {
+        return;
+      }
+    
+      await this.onesignalService.registerDevice(userId, playerId);
+    }
+
+    async createNotification(userId: string, title: string, content: string): Promise<void> {
+      const subscriptionIds = await this.onesignalService.getPlayerIdsForUser(userId);
+      if (subscriptionIds.length === 0) {
+        throw new Error('No devices registered for this user');
+      }
+    
+      await this.onesignalService.sendNotification(subscriptionIds, title, content);
     }
 
     

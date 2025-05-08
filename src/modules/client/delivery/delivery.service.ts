@@ -31,7 +31,7 @@ import { BookPartialDTO } from "./dto/book-partial.dto";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from 'mongoose';
 import { Message } from "src/common/schemas/message.schema";
-import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryDetailsOffice, DeliveryHistoryAsClient, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson, ShipmentHistoryRequest, ShipmentListItem, SubscriptionForClient } from "./types";
+import { CurrentDeliveryAsClient, DeliveriesLocation, DeliveryDetails, DeliveryDetailsOffice, DeliveryHistoryAsClient, DeliveryOnGoing, HistoryDelivery, ReviewAsClient, ReviewAsDeliveryPerson, ShipmentHistoryRequest, ShipmentListItem, ShipmentWithCoveredSteps, SubscriptionForClient } from "./types";
 import { Subscription } from "src/common/entities/subscription.entity";
 import axios from "axios";
 import { Merchant } from "src/common/entities/merchant.entity";
@@ -335,7 +335,7 @@ export class DeliveryService {
         return shipmentWithoutUser;
     }
 
-    async getShipments(filters: GetShipmentsDTO): Promise<Shipment[]> {
+    async getShipments(filters: GetShipmentsDTO): Promise<ShipmentWithCoveredSteps[]> {
         const queryBuilder = this.shipmentRepository.createQueryBuilder("shipment")
             .leftJoinAndSelect("shipment.deliveries", "deliveries")
             .leftJoinAndSelect("shipment.stores", "stores")
@@ -401,6 +401,11 @@ export class DeliveryService {
     
         const shipments = await queryBuilder.getMany();
     
+        const canceledDeliveries = await this.deliveryRepository.find({
+            where: { status: 'canceled' },
+            relations: ['shipment', 'shipment.stores', 'shipment.stores.exchangePoint']
+        });
+    
         const updatedShipments = await Promise.all(shipments.map(async (shipment) => {
             const deliveries = shipment.deliveries.sort((a, b) => a.shipment_step - b.shipment_step);
             const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
@@ -410,8 +415,48 @@ export class DeliveryService {
             let arrivalCity = shipment.arrival_city;
             let arrivalLocation = shipment.arrival_location;
     
-            if (deliveries.length > 0) {
-                const lastDelivery = deliveries[deliveries.length - 1];
+            const coveredSteps = new Set(deliveries.filter(d => d.status !== 'canceled').map(d => d.shipment_step));
+    
+            const shipmentCanceledDeliveries = canceledDeliveries.filter(d => d.shipment.shipment_id === shipment.shipment_id);
+            const mergedDeliveries: Delivery[] = [];
+    
+            shipmentCanceledDeliveries.forEach(canceledDelivery => {
+                const step = canceledDelivery.shipment_step;
+    
+                if (coveredSteps.has(step)) {
+                    return;
+                }
+    
+                let nextDelivery = canceledDeliveries.find(d => d.shipment_step === step + 1 && d.shipment.shipment_id === shipment.shipment_id);
+    
+                if (!nextDelivery || nextDelivery.status !== 'canceled') {
+                    mergedDeliveries.push(canceledDelivery);
+                    coveredSteps.add(step);
+                } else {
+                    let startStep = step;
+                    let endStep = step;
+    
+                    while (nextDelivery && nextDelivery.status === 'canceled' && !coveredSteps.has(nextDelivery.shipment_step)) {
+                        endStep = nextDelivery.shipment_step;
+                        coveredSteps.add(endStep);
+                        const nextNextDelivery = canceledDeliveries.find(d => d.shipment_step === endStep + 1 && d.shipment.shipment_id === shipment.shipment_id);
+                        if (!nextNextDelivery || nextNextDelivery.status !== 'canceled') break;
+                        nextDelivery = nextNextDelivery;
+                    }
+    
+                    const mergedDelivery = {
+                        ...canceledDelivery,
+                        shipment_step: startStep,
+                        arrival_city: storesByStep.find(s => s.step === endStep)?.exchangePoint?.city ?? shipment.arrival_city,
+                        arrival_location: storesByStep.find(s => s.step === endStep)?.exchangePoint?.coordinates ?? shipment.arrival_location,
+                    };
+    
+                    mergedDeliveries.push(mergedDelivery);
+                }
+            });
+    
+            if (deliveries.length > 0 || mergedDeliveries.length > 0) {
+                const lastDelivery = deliveries.length > 0 ? deliveries[deliveries.length - 1] : mergedDeliveries[mergedDeliveries.length - 1];
                 if (lastDelivery.shipment_step !== 1000) {
                     const lastStore = storesByStep.find(s => s.step === lastDelivery.shipment_step);
                     departureCity = lastStore?.exchangePoint?.city ?? shipment.departure_city;
@@ -428,7 +473,6 @@ export class DeliveryService {
                 }
             }
     
-            // Générer l'URL de l'image du shipment
             const shipmentImageUrl = shipment.image ? await this.minioService.generateImageUrl("client-images", shipment.image) : null;
     
             return {
@@ -437,7 +481,8 @@ export class DeliveryService {
                 departure_location: departureLocation,
                 arrival_city: arrivalCity,
                 arrival_location: arrivalLocation,
-                image: shipmentImageUrl, // Ajouter l'URL de l'image ici
+                image: shipmentImageUrl,
+                covered_steps: Array.from(coveredSteps),
             };
         }));
     
@@ -1334,7 +1379,7 @@ export class DeliveryService {
 
     async getCurrentDeliveriesAsClient(user_id: string): Promise<CurrentDeliveryAsClient[]> {
         const user = await this.userRepository.findOne({
-            where: { user_id: user_id },
+            where: { user_id },
             relations: ['clients'],
         });
     
@@ -1358,24 +1403,32 @@ export class DeliveryService {
                 relations: ['delivery_person', 'delivery_person.user', 'delivery_person.user.clients'],
             });
     
-            return deliveries.map(delivery => {
-                const deliveryPersonClient = delivery.delivery_person?.user.clients[0];
+            return Promise.all(deliveries.map(async (delivery) => {
+                const deliveryPersonUser = delivery.delivery_person?.user;
+                const deliveryPersonClient = deliveryPersonUser?.clients[0];
+    
+                const profilePicture = deliveryPersonUser?.profile_picture
+                    ? await this.minioService.generateImageUrl("client-images", deliveryPersonUser.profile_picture)
+                    : '';
+
+                const deliveryPicture = shipment.image ? await this.minioService.generateImageUrl("client-images", shipment.image) : '';
+    
                 return {
                     id: delivery.delivery_id,
                     arrival_city: shipment.arrival_city ?? '',
                     departure_city: shipment.departure_city ?? '',
                     date_departure: shipment.deadline_date?.toISOString().split('T')[0] || '',
                     date_arrival: shipment.deadline_date?.toISOString().split('T')[0] || '',
-                    photo: delivery.delivery_person?.user.profile_picture || '',
-                    deliveryman: delivery.delivery_person ? {
-                        name: `${deliveryPersonClient?.first_name} ${deliveryPersonClient?.last_name}`,
-                        photo: delivery.delivery_person.user.profile_picture,
+                    photo: deliveryPicture,
+                    deliveryman: deliveryPersonClient ? {
+                        name: `${deliveryPersonClient.first_name} ${deliveryPersonClient.last_name}`,
+                        photo: profilePicture,
                     } : {
                         name: 'Unknown',
                         photo: '',
                     },
                 };
-            });
+            }));
         });
     
         const deliveries = (await Promise.all(deliveriesPromises)).flat();
@@ -1618,8 +1671,6 @@ export class DeliveryService {
             where: { user: { user_id: userId }, status: Not('validated') },
             relations: ['parcels', 'deliveries'],
         });
-        console.log("userId", userId);
-        console.log("shipments", shipments);
     
         const shipmentListItems: ShipmentListItem[] = await Promise.all(
             shipments.map(async (shipment) => {
@@ -1655,7 +1706,6 @@ export class DeliveryService {
                 }
             })
         ).then(items => items.filter(item => item !== null)) as ShipmentListItem[];
-        console.log("shipmentListItems", shipmentListItems);
         return shipmentListItems;
     }
 
@@ -1780,7 +1830,7 @@ export class DeliveryService {
         ).then(results => results.flat());
       
         return { data: deliveryHistory, totalRows: total };
-      }
+    }
     
     async addComment(comment: string, userId: string, deliveryId: string, rate : number): Promise<{ message: string }> {
         const delivery = await this.deliveryRepository.findOne({
@@ -1816,30 +1866,131 @@ export class DeliveryService {
 
         return {message: "Comment added successfully"};
     }
+
+    async getDeliveryDetails(user_id: string, delivery_id: string): Promise<DeliveryDetails> {
+        const delivery = await this.deliveryRepository.findOne({
+            where: { delivery_id },
+            relations: [
+                'delivery_person',
+                'delivery_person.user',
+                'shipment',
+                'shipment.user',
+                'shipment.stores',
+                'shipment.stores.exchangePoint',
+                'shipment.parcels',
+                'shipment.parcels.images',
+            ],
+        });
     
-
-// PAS ENCORE UTILISE
-
-
-
-
-
-
-
+        if (!delivery) {
+            throw new Error('Delivery not found.');
+        }
+    
+        const shipment = delivery.shipment;
+        if (!shipment || !shipment.user) {
+            throw new Error('Shipment or associated user not found.');
+        }
+    
+        const isOwner = shipment.user.user_id === user_id;
+        const isDeliveryPerson = delivery.delivery_person?.user?.user_id === user_id;
+    
+        if (!isOwner && !isDeliveryPerson) {
+            throw new Error('Unauthorized access to delivery details.');
+        }
+    
+        const storesByStep = (shipment.stores || []).sort((a, b) => a.step - b.step);
+    
+        let departureCity: string | undefined;
+        let departureCoords: [number, number] | undefined;
+        let arrivalCity: string | undefined;
+        let arrivalCoords: [number, number] | undefined;
+    
+        const step = delivery.shipment_step;
+    
+        if (step === 0) {
+            departureCity = shipment.departure_city || "";
+            departureCoords = shipment.departure_location?.coordinates?.slice().reverse() as [number, number];
+        
+            arrivalCity = storesByStep[0]?.exchangePoint?.city ?? shipment.arrival_city;
+            arrivalCoords = storesByStep[0]?.exchangePoint?.coordinates.coordinates?.slice().reverse()
+                ?? shipment.arrival_location?.coordinates?.slice().reverse();
+        } else if (step === 1000) {
+            const lastStore = storesByStep.find(s => s.step === step - 1);
+            departureCity = lastStore?.exchangePoint?.city ?? shipment.departure_city ?? undefined;
+            departureCoords = lastStore?.exchangePoint?.coordinates.coordinates?.slice().reverse()
+                ?? shipment.departure_location?.coordinates?.slice().reverse();
+        
+            arrivalCity = shipment.arrival_city ?? undefined;
+            arrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse();
+        } else {
+            const prevStore = storesByStep.find(s => s.step === step - 1);
+            const currStore = storesByStep.find(s => s.step === step);
+        
+            if (!prevStore) {
+                departureCity = shipment.departure_city ?? undefined;
+                departureCoords = shipment.departure_location?.coordinates?.slice().reverse() as [number, number];
+            } else {
+                departureCity = prevStore.exchangePoint?.city;
+                departureCoords = prevStore.exchangePoint?.coordinates.coordinates?.slice().reverse() as [number, number];
+            }
+        
+            arrivalCity = currStore?.exchangePoint?.city;
+            arrivalCoords = currStore?.exchangePoint?.coordinates.coordinates?.slice().reverse() as [number, number];
+        }
+    
+        const deliveryDetails: DeliveryDetails = {
+            departure: {
+                city: departureCity || '',
+                coordinates: departureCoords ?? [0, 0],
+            },
+            arrival: {
+                city: arrivalCity || '',
+                coordinates: arrivalCoords ?? [0, 0],
+            },
+            departure_date: delivery.send_date?.toISOString().split('T')[0] || '',
+            arrival_date: delivery.delivery_date?.toISOString().split('T')[0] || '',
+            status: (['pending', 'taken', 'finished', 'validated'].includes(delivery.status)
+                ? delivery.status
+                : 'pending') as 'pending' | 'taken' | 'finished' | 'validated',
+            total_price: Number(delivery.delivery_price ?? delivery.amount),
+            cart_dropped: shipment.trolleydrop,
+            packages: await Promise.all(
+                (shipment.parcels || []).map(async (parcel: any) => ({
+                    id: parcel.parcel_id,
+                    name: parcel.name,
+                    fragility: parcel.fragility,
+                    estimated_price: Number(parcel.estimate_price),
+                    weight: Number(parcel.weight),
+                    volume: Number(parcel.volume),
+                    picture: await Promise.all(
+                        (parcel.images || []).map((img: any) =>
+                            this.minioService.generateImageUrl("client-images", img.image_url)
+                        )
+                    ),
+                }))
+            ),
+        };
+    
+        return deliveryDetails;
+    }
     
     async cancelDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
         const delivery = await this.deliveryRepository.findOne({
             where: { delivery_id: deliveryId },
-            relations: ["delivery_person", "shipment"],
-
+            relations: ["delivery_person", "shipment", "delivery_person.user", "shipment.user"],
         });
 
         if (!delivery) {
             throw new Error("Delivery not found.");
         }
 
+
         if (delivery.delivery_person.user.user_id !== user_id) {
             throw new Error("User is not authorized to cancel this delivery.");
+        }
+
+        if (delivery.status === 'taken') {
+            throw new Error("Cannot cancel a taken delivery.");
         }
 
         if (delivery.status === 'finished') {
@@ -1852,8 +2003,25 @@ export class DeliveryService {
 
         delivery.status = 'canceled';
         await this.deliveryRepository.save(delivery);
+
+
+        // Logique plus tard de prévenir les gens
+
+
         return { message: "Delivery canceled successfully." };
     }
+    
+
+// PAS ENCORE UTILISE
+
+
+
+
+
+
+
+    
+
 
     async getShipmentFavorites(user_id: string, page: number, limit: number): Promise<Shipment[]> {
         const user = await this.userRepository.findOne({
@@ -1922,9 +2090,6 @@ export class DeliveryService {
     
         return { message: "Favorite removed successfully." };
     }
-
-
-
 
 
     async getDeliveryStatus(deliveryId: string): Promise<{ status: string }> {

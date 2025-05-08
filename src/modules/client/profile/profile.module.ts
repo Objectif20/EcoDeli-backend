@@ -16,12 +16,16 @@ import { ProviderDocuments } from "src/common/entities/providers_documents.entit
 import { Blocked } from "src/common/entities/blocked.entity";
 import { Report } from "src/common/entities/report.entity";
 import { Availability } from "src/common/entities/availibities.entity";
+import { OneSignalDevice } from "src/common/entities/onesignal-device.entity";
+import { Transfer } from "src/common/entities/transfers.entity";
+import { TransferProvider } from "src/common/entities/transfers_provider.entity";
+import { SubscriptionTransaction } from "src/common/entities/subscription_transaction.entity";
 
 
 @Module({
 
     imports: [
-        TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Subscription, Plan, ProviderDocuments, Blocked, Report, Availability]),
+        TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Subscription, Plan, ProviderDocuments, Blocked, Report, Availability, OneSignalDevice, Transfer, TransferProvider, SubscriptionTransaction, Subscription]),
         JwtModule.register({}),
         SharedModule,
     ],

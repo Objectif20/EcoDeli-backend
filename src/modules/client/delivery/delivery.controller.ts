@@ -136,6 +136,7 @@ export class DeliveryController {
     }
 
     @Delete("delivery/:id/cancel")
+    @UseGuards(ClientJwtGuard)
     async cancelDelivery(
         @Param("id") deliveryId : string,
         @Body("user_id") user_id : string,
@@ -218,6 +219,15 @@ export class DeliveryController {
         @Body("content") content : string,
     ) {
         return this.deliveryService.replyComment(content, user_id, comment_id);
+    }
+
+    @Get("delivery/:id")
+    @UseGuards(ClientJwtGuard)
+    async getDeliveryById(
+        @Param("id") delivery_id : string,
+        @Body("user_id") user_id : string,
+    ) {
+        return this.deliveryService.getDeliveryDetails(user_id, delivery_id);
     }
 
     @Post("delivery/:id/comments")

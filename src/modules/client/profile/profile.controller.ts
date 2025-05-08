@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpException, HttpStatus, Ip, NotFoundException, Param, Patch, Post, Put, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags} from '@nestjs/swagger';
 import { ProfileService } from './profile.service';
-import { User } from './type';
+import { BillingsData, User } from './type';
 import { ClientJwtGuard } from 'src/common/guards/user-jwt.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UpdateMyBasicProfileDto } from './dto/update-basic-profile.dto';
@@ -74,41 +74,40 @@ export class ClientProfileController {
     return this.profileService.createReport(dto);
   }
 
-  @Get('stripe-account')
-  @UseGuards(ClientJwtGuard)
-  @ApiOperation({ summary: 'Get Stripe Account', operationId: 'getStripeAccount' })
-  @ApiResponse({ status: 200, description: 'Stripe account retrieved successfully' })
-  @ApiResponse({ status: 404, description: 'Stripe account not found' })
-  async getStripeAccount(@Body() body : {user_id : string}): Promise<{ stripeAccountId: string }> {
-    const userId = body.user_id;
-
-    const stripeAccountId = await this.profileService.getStripeAccountId(userId);
-
-    if (!stripeAccountId) {
-      console.log('Aucun compte Stripe trouvé pour cet utilisateur.');
-      throw new NotFoundException('Aucun compte Stripe trouvé pour cet utilisateur.');
-    }
-
-    return { stripeAccountId };
-  }
-
   @Post('create-account')
   @UseGuards(ClientJwtGuard)
   @ApiOperation({ summary: 'Create Stripe Account', operationId: 'createStripeAccount' })
   @ApiResponse({ status: 200, description: 'Stripe account created successfully' })
   @ApiResponse({ status: 400, description: 'Bad request' })
   async createStripeAccount(
-    @Body() body: { user_id: string; accountToken: string }
+    @Body() body: { user_id: string }
   ) {
     try {
-      const stripeAccountId = await this.profileService.getOrCreateStripeAccountId(
+      const response = await this.profileService.createStripeAccount(
         body.user_id, 
-        body.accountToken
       );
   
-      return { stripeAccountId };
+      return response;
     } catch (error) {
       throw new BadRequestException('Erreur lors de la création du compte Stripe', error.message);
+    }
+  }
+
+  @Post('update-account')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Update Stripe Account', operationId: 'updateStripeAccount' })
+  @ApiResponse({ status: 200, description: 'Stripe account updated successfully' })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  async updateStripeAccount(@Body() body: { user_id: string }) {
+    try {
+      const stripeAccountId = await this.profileService.getStripeAccountId(body.user_id);
+      if (!stripeAccountId) {
+        throw new BadRequestException('Stripe Account ID is null or undefined');
+      }
+      const accountLinkUrl = await this.profileService.updateExpressAccount(stripeAccountId);
+      return { accountLinkUrl };
+    } catch (error) {
+      throw new BadRequestException('Erreur lors de la mise à jour du compte Stripe', error.message);
     }
   }
 
@@ -137,7 +136,28 @@ export class ClientProfileController {
     url_complete?: string;
   }> {
     const userId = body.user_id;
-    return this.profileService.isStripeAccountValid(userId);
+    return this.profileService.isStripeExpressAccountValid(userId);
+  }
+
+  @Get('billings')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Get My Billings', operationId: 'getMyBillings' })
+  @ApiResponse({ status: 200, description: 'Client billings retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Billings not found' })
+  async getMyBillings(@Body() body: { user_id: string }) : Promise<BillingsData> {
+    const userId = body.user_id;
+    const billings = await this.profileService.getMyBillingsData(userId);
+    return billings;
+  }
+
+  @Post('create-payment')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Take a Billing', operationId: 'takeBilling' })
+  @ApiResponse({ status: 200, description: 'Billing taken successfully' })
+  @ApiResponse({ status: 404, description: 'Billing not found' })
+  async createPayment(@Body() body: { user_id: string }) {
+    const userId = body.user_id;
+    return this.profileService.createPayment(userId, false);
   }
 
   @Get('provider/documents')
@@ -147,6 +167,28 @@ export class ClientProfileController {
   async getMyDocuments(@Body() body: { user_id: string }) {
     return this.profileService.getMyDocuments(body.user_id);
   }
+
+  @Get("my-subscription")
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Get My Subscription', operationId: 'getMySubscription' })
+  @ApiResponse({ status: 200, description: 'Client subscription retrieved successfully' })
+  async getMySubscription(@Body() body: { user_id: string }) {
+    return this.profileService.getMySubscriptionData(body.user_id);
+  }
+
+  @Patch('subscription')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Update My Subscription', operationId: 'updateMySubscription' })
+  @ApiResponse({ status: 200, description: 'Client subscription updated successfully' })
+  @ApiResponse({ status: 404, description: 'Subscription not found' })
+  async updateMySubscription(@Body() body: { user_id: string; planId: number, paymentMethodId: string }) {
+    const userId = body.user_id;
+    const subscriptionId = body.planId;
+    const paymentMethodId = body.paymentMethodId;
+    const subscription = await this.profileService.updateMySubscription(userId, subscriptionId, paymentMethodId);
+    return subscription;
+  }
+
 
   @Post('provider/documents/add')
   @UseGuards(ClientJwtGuard)
@@ -177,7 +219,6 @@ export class ClientProfileController {
       throw new HttpException(error.message, HttpStatus.NOT_FOUND);
     }
   }
-
 
   @Put('availability')
   @UseGuards(ClientJwtGuard)
@@ -213,6 +254,19 @@ export class ClientProfileController {
   @ApiResponse({ status: 200, description: 'Password reset successfully' })
   async newPassword(@Body() body: { user_id: string }) {
     return await this.profileService.newPassword(body.user_id);
+  }
+
+  @Post("registerDevice")
+  @UseGuards(ClientJwtGuard)
+  async registerDevice(@Body() body: { user_id: string; oneSignalId: string }) {
+    const { user_id, oneSignalId } = body;
+    return this.profileService.registerNewDevice(user_id, oneSignalId);
+  }
+
+  @Post("createNotification")
+  async createNotification(@Body() body: { user_id: string; title: string; content: string }) {
+    const { user_id, title, content } = body;
+    return this.profileService.createNotification(user_id, title, content);
   }
 
 }
