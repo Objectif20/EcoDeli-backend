@@ -349,7 +349,7 @@ import { OneSignalService } from "src/common/services/notification/oneSignal.ser
       return null;
     }
     
-    async getOrCreateStripeAccountId(userId: string, accountToken: string): Promise<string> {
+    async createStripeAccount(userId: string): Promise<{ stripeAccountId: string, accountLinkUrl: string }> {
       const user = await this.userRepository.findOne({
         where: { user_id: userId },
         relations: ['providers', 'deliveryPerson', 'clients'],
@@ -358,7 +358,7 @@ import { OneSignalService } from "src/common/services/notification/oneSignal.ser
       if (!user) throw new Error('User not found');
     
       const existingId = await this.getStripeAccountId(userId);
-      if (existingId) return existingId;
+      if (existingId) return { stripeAccountId: existingId, accountLinkUrl: '' };
     
       const isProvider = (user.providers ?? []).length > 0;
       const isDelivery = user.deliveryPerson != null;
@@ -366,58 +366,56 @@ import { OneSignalService } from "src/common/services/notification/oneSignal.ser
       if (!isProvider && !isDelivery) {
         throw new Error("L'utilisateur n’est ni provider ni livreur.");
       }
-        
+    
+      const account = await this.stripeService.createExpressAccount();
+      const accountLinkUrl = await this.stripeService.createAccountLink(account.id);
+    
       if (isProvider) {
         const provider = user.providers[0];
-        const stripeAccount = await this.stripeService.createConnectedAccountWithToken(accountToken);
-        const accountLinkUrl = await this.stripeService.createAccountLink(stripeAccount.id);
-        console.log('URL pour compléter le profil:', accountLinkUrl);
-
-        provider.stripe_transfer_id = stripeAccount.id;
+        provider.stripe_transfer_id = account.id;
         await this.providerRepository.save(provider);
-        return stripeAccount.id;
       }
     
       if (isDelivery) {
         const delivery = user.deliveryPerson;
-        const client = user.clients[0];
-        if (!client) throw new Error("Le livreur n’a pas de profil client associé.");
-        const stripeAccount = await this.stripeService.createConnectedAccountWithToken(accountToken);
-        const accountLinkUrl = await this.stripeService.createAccountLink(stripeAccount.id);
-        console.log('URL pour compléter le profil:', accountLinkUrl);
-
-        delivery.stripe_transfer_id = stripeAccount.id;
+        delivery.stripe_transfer_id = account.id;
         await this.deliveryPersonRepository.save(delivery);
-        return stripeAccount.id;
       }
     
-      throw new Error("Impossible de créer un compte Stripe.");
+      return { stripeAccountId: account.id, accountLinkUrl };
     }
     
-    async isStripeAccountValid(user_id: string): Promise<{
-      valid: boolean,
-      enabled: boolean,
-      needs_id_card: boolean,
-      url_complete?: string
+    async isStripeExpressAccountValid(user_id: string): Promise<{
+      valid: boolean;
+      enabled: boolean;
+      needs_id_card: boolean;
+      url_complete?: string;
     }> {
       const stripeAccountId = await this.getStripeAccountId(user_id);
       if (!stripeAccountId) {
         return { valid: false, enabled: false, needs_id_card: false };
       }
     
-      const { isValid, isEnabled, needsIdCard } = await this.stripeService.getStripeAccountStatus(stripeAccountId);
+      const status = await this.stripeService.getStripeExpressAccountStatus(stripeAccountId);
     
-      const urlComplete = !isEnabled
+      const url_complete = !status.isEnabled
         ? await this.stripeService.createAccountLink(stripeAccountId)
         : undefined;
     
       return {
-        valid: isValid,
-        enabled: isEnabled,
-        needs_id_card: needsIdCard,
-        url_complete: urlComplete,
+        valid: status.isValid,
+        enabled: status.isEnabled,
+        needs_id_card: status.needsIdCard,
+        url_complete,
       };
     }
+
+    async updateExpressAccount(stripeAccountId: string): Promise<string> {
+      const accountLinkUrl = await this.stripeService.updateExpressAccount(stripeAccountId);
+      return accountLinkUrl;
+    }
+
+
     async newPassword(user_id: string): Promise<{ message: string }> {
         const user = await this.userRepository.findOne({ where: { user_id } });
         if (!user) throw new UnauthorizedException('User not found');

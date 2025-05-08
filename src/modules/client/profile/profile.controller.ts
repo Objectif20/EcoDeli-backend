@@ -74,41 +74,40 @@ export class ClientProfileController {
     return this.profileService.createReport(dto);
   }
 
-  @Get('stripe-account')
-  @UseGuards(ClientJwtGuard)
-  @ApiOperation({ summary: 'Get Stripe Account', operationId: 'getStripeAccount' })
-  @ApiResponse({ status: 200, description: 'Stripe account retrieved successfully' })
-  @ApiResponse({ status: 404, description: 'Stripe account not found' })
-  async getStripeAccount(@Body() body : {user_id : string}): Promise<{ stripeAccountId: string }> {
-    const userId = body.user_id;
-
-    const stripeAccountId = await this.profileService.getStripeAccountId(userId);
-
-    if (!stripeAccountId) {
-      console.log('Aucun compte Stripe trouvé pour cet utilisateur.');
-      throw new NotFoundException('Aucun compte Stripe trouvé pour cet utilisateur.');
-    }
-
-    return { stripeAccountId };
-  }
-
   @Post('create-account')
   @UseGuards(ClientJwtGuard)
   @ApiOperation({ summary: 'Create Stripe Account', operationId: 'createStripeAccount' })
   @ApiResponse({ status: 200, description: 'Stripe account created successfully' })
   @ApiResponse({ status: 400, description: 'Bad request' })
   async createStripeAccount(
-    @Body() body: { user_id: string; accountToken: string }
+    @Body() body: { user_id: string }
   ) {
     try {
-      const stripeAccountId = await this.profileService.getOrCreateStripeAccountId(
+      const response = await this.profileService.createStripeAccount(
         body.user_id, 
-        body.accountToken
       );
   
-      return { stripeAccountId };
+      return response;
     } catch (error) {
       throw new BadRequestException('Erreur lors de la création du compte Stripe', error.message);
+    }
+  }
+
+  @Post('update-account')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Update Stripe Account', operationId: 'updateStripeAccount' })
+  @ApiResponse({ status: 200, description: 'Stripe account updated successfully' })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  async updateStripeAccount(@Body() body: { user_id: string }) {
+    try {
+      const stripeAccountId = await this.profileService.getStripeAccountId(body.user_id);
+      if (!stripeAccountId) {
+        throw new BadRequestException('Stripe Account ID is null or undefined');
+      }
+      const accountLinkUrl = await this.profileService.updateExpressAccount(stripeAccountId);
+      return { accountLinkUrl };
+    } catch (error) {
+      throw new BadRequestException('Erreur lors de la mise à jour du compte Stripe', error.message);
     }
   }
 
@@ -137,7 +136,7 @@ export class ClientProfileController {
     url_complete?: string;
   }> {
     const userId = body.user_id;
-    return this.profileService.isStripeAccountValid(userId);
+    return this.profileService.isStripeExpressAccountValid(userId);
   }
 
   @Get('provider/documents')
