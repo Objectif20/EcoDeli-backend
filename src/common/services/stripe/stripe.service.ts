@@ -46,14 +46,36 @@ export class StripeService {
     }
   }
 
-  async createSubscription(customerId: string, priceId: string): Promise<Stripe.Subscription> {
+  async createSubscription(
+    customerId: string,
+    priceId: string,
+    startDate?: Date
+  ): Promise<Stripe.Subscription> {
     try {
-      return await this.stripeClient.subscriptions.create({
+      const subscriptionParams: Stripe.SubscriptionCreateParams = {
         customer: customerId,
         items: [{ price: priceId }],
-      });
+      };
+  
+      if (startDate && startDate > new Date()) {
+        const unixTimestamp = Math.floor(startDate.getTime() / 1000);
+        subscriptionParams.trial_end = unixTimestamp;
+        subscriptionParams.backdate_start_date = undefined;
+      }
+  
+      return await this.stripeClient.subscriptions.create(subscriptionParams);
     } catch (error) {
       throw new BadRequestException('Erreur lors de la création de l\'abonnement Stripe', error);
+    }
+  }
+
+  async cancelSubscriptionAtPeriodEnd(subscriptionId: string): Promise<Stripe.Subscription> {
+    try {
+      return await this.stripeClient.subscriptions.update(subscriptionId, {
+        cancel_at_period_end: true,
+      });
+    } catch (error) {
+      throw new BadRequestException('Erreur lors de l\'annulation de l\'abonnement Stripe', error);
     }
   }
 

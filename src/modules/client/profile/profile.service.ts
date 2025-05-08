@@ -680,9 +680,100 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
         },
       };
     }
+
+    async updateMySubscription(user_id: string, planId: number, paymentMethodId: string): Promise<{ message: string }> {
+      const user = await this.userRepository.findOne({
+        where: { user_id },
+        relations: ['clients', 'merchant', 'subscriptions']
+      });
     
-
-
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+    
+      const plan = await this.planRepository.findOne({ where: { plan_id: planId } });
+    
+      if (!plan) {
+        throw new NotFoundException('Plan not found');
+      }
+    
+      const isClient = user.clients.length > 0;
+      const isMerchant = !!user.merchant;
+      let stripeCustomerId: string | null = null;
+    
+      if (isClient) {
+        stripeCustomerId = user.clients[0].stripe_customer_id;
+      } else if (isMerchant) {
+        stripeCustomerId = user.merchant.stripe_customer_id;
+      }
+    
+      if (!stripeCustomerId && paymentMethodId) {
+        let customer;
+        if (isClient) {
+          customer = await this.stripeService.createCustomer(user.email, `Client: ${user.clients[0].first_name} ${user.clients[0].last_name}`);
+        } else if (isMerchant) {
+          customer = await this.stripeService.createCustomer(user.email, `Merchant: ${user.merchant.company_name}`);
+        }
+    
+        if (!customer) {
+          throw new Error("Failed to create Stripe customer");
+        }
+    
+        await this.stripeService.attachPaymentMethod(customer.id, paymentMethodId);
+        stripeCustomerId = customer.id;
+    
+        if (isClient) {
+          user.clients[0].stripe_customer_id = stripeCustomerId;
+          await this.clientRepository.save(user.clients[0]);
+        } else if (isMerchant) {
+          user.merchant.stripe_customer_id = stripeCustomerId;
+          await this.merchantRepository.save(user.merchant);
+        }
+      }
+    
+      if (!stripeCustomerId) {
+        throw new Error("Stripe customer ID is missing.");
+      }
+    
+      const activeSubscription = await this.subscriptionRepository.findOne({
+        where: {
+          user: { user_id },
+          status: 'active',
+        },
+        order: { end_date: 'DESC' }
+      });
+    
+      const now = new Date();
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0);
+      const newStartDate = new Date(endOfMonth);
+      const newEndDate = new Date(endOfMonth);
+      newEndDate.setMonth(newEndDate.getMonth() + 1);
+    
+      if (activeSubscription) {
+        activeSubscription.cancellation_date = endOfMonth;
+        activeSubscription.status = 'cancelled';
+        await this.subscriptionRepository.save(activeSubscription);
+    
+        await this.stripeService.cancelSubscriptionAtPeriodEnd(activeSubscription.stripe_subscription_id);
+      }
+    
+      const stripeSubscription = await this.stripeService.createSubscription(stripeCustomerId, plan.stripe_price_id, newStartDate);
+    
+      const newSubscription = this.subscriptionRepository.create({
+        user,
+        plan,
+        stripe_customer_id: stripeCustomerId,
+        stripe_subscription_id: stripeSubscription.id,
+        status: 'active',
+        start_date: newStartDate,
+        end_date: newEndDate,
+      });
+    
+      await this.subscriptionRepository.save(newSubscription);
+    
+      return { message: 'Subscription updated successfully' };
+    }
+    
     async newPassword(user_id: string): Promise<{ message: string }> {
         const user = await this.userRepository.findOne({ where: { user_id } });
         if (!user) throw new UnauthorizedException('User not found');
@@ -871,7 +962,6 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
 
 
     }
-
 
     async registerNewDevice(userId: string, playerId: string): Promise<void> {
       const user = await this.userRepository.findOne({ where: { user_id: userId } });
