@@ -19,10 +19,11 @@ import { Availability } from "src/common/entities/availibities.entity";
 import { AvailabilityDto } from "./dto/availitity.dto";
 import * as nodemailer from 'nodemailer';
 import { OneSignalService } from "src/common/services/notification/oneSignal.service";
-import { BillingsData } from "./type";
+import { BillingsData, UserSubscriptionData } from "./type";
 import { Transfer } from "src/common/entities/transfers.entity";
 import { TransferProvider } from "src/common/entities/transfers_provider.entity";
-
+import { Subscription } from "src/common/entities/subscription.entity";
+import { SubscriptionTransaction } from "src/common/entities/subscription_transaction.entity";
 
   @Injectable()
   export class ProfileService {
@@ -51,6 +52,13 @@ import { TransferProvider } from "src/common/entities/transfers_provider.entity"
       private readonly transferRepository: Repository<Transfer>,
       @InjectRepository(TransferProvider)
       private readonly transferProviderRepository: Repository<TransferProvider>,
+      @InjectRepository(Subscription)
+      private readonly subscriptionRepository: Repository<Subscription>,
+      @InjectRepository(SubscriptionTransaction)
+      private readonly subscriptionTransactionRepository: Repository<SubscriptionTransaction>,
+
+
+
       private readonly minioService: MinioService,
       private readonly stripeService: StripeService,
       @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
@@ -565,6 +573,113 @@ import { TransferProvider } from "src/common/entities/transfers_provider.entity"
         await this.deliveryPersonRepository.save(user.deliveryPerson);
       }
     }
+
+    async getMySubscriptionData(user_id: string): Promise<UserSubscriptionData> {
+      const user = await this.userRepository.findOne({
+        where: { user_id },
+        relations: ['clients', 'merchant']
+      });
+    
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+    
+      const subscriptions = await this.subscriptionRepository.find({
+        where: { user: { user_id } },
+        relations: ['plan'],
+      });
+    
+      const subscriptionIds = subscriptions.map(sub => sub.subscription_id);
+    
+      if (subscriptionIds.length === 0) {
+        return {
+          history: [],
+          plan: {
+            plan_id: 0,
+            name: '',
+            price: '0',
+            priority_shipping_percentage: '0',
+            priority_months_offered: 0,
+            max_insurance_coverage: '0',
+            extra_insurance_price: '0',
+            shipping_discount: '0',
+            permanent_discount: '0',
+            permanent_discount_percentage: '0',
+            small_package_permanent_discount: '0',
+            first_shipping_free_threshold: '0',
+            is_pro: false,
+            first_shipping_free: false
+          },
+        };
+      }
+    
+      const transactions = await this.subscriptionTransactionRepository.find({
+        where: { subscription: { subscription_id: In(subscriptionIds) } },
+        relations: ['subscription', 'subscription.plan'],
+        order: { year: 'DESC', month: 'DESC' },
+      });
+    
+      const subscriptionHistory = transactions.map(tx => ({
+        id: tx.subscription.subscription_id,
+        month: `${tx.year}-${String(tx.month).padStart(2, '0')}`,
+        status: tx.subscription.status,
+        name: tx.subscription.plan.name,
+        invoiceLink: tx.invoice_url,
+        price: tx.price_at_transaction.toString(),
+      }));
+    
+      let customer_stripe_id = false;
+    
+      if (user.clients.length > 0) {
+        customer_stripe_id = !!user.clients[0].stripe_customer_id;
+      } else if (user.merchant) {
+        customer_stripe_id = !!user.merchant.stripe_customer_id;
+      }
+    
+      const activeSubscription = subscriptions.find(
+        (sub) => sub.status === 'active' || sub.status === 'ok'
+      );
+    
+      const activePlan = activeSubscription?.plan
+        ? {
+            ...activeSubscription.plan,
+            price: activeSubscription.plan.price?.toString() || '0',
+            priority_shipping_percentage: activeSubscription.plan.priority_shipping_percentage.toString(),
+            max_insurance_coverage: activeSubscription.plan.max_insurance_coverage.toString(),
+            extra_insurance_price: activeSubscription.plan.extra_insurance_price.toString(),
+            shipping_discount: activeSubscription.plan.shipping_discount.toString(),
+            permanent_discount: activeSubscription.plan.permanent_discount.toString(),
+            permanent_discount_percentage: activeSubscription.plan.permanent_discount_percentage.toString(),
+            small_package_permanent_discount: activeSubscription.plan.small_package_permanent_discount.toString(),
+            first_shipping_free_threshold: activeSubscription.plan.first_shipping_free_threshold.toString(),
+          }
+        : null;
+    
+      return {
+        history: subscriptionHistory.map((item) => ({
+          ...item,
+          status: (['ok', 'wait', 'cancelled'] as const).includes(item.status as any) ? (item.status as 'ok' | 'wait' | 'cancelled') : 'cancelled',
+          customer_stripe_id: customer_stripe_id,
+        })),
+        plan: activePlan || {
+          plan_id: 0,
+          name: '',
+          price: '0',
+          priority_shipping_percentage: '0',
+          priority_months_offered: 0,
+          max_insurance_coverage: '0',
+          extra_insurance_price: '0',
+          shipping_discount: '0',
+          permanent_discount: '0',
+          permanent_discount_percentage: '0',
+          small_package_permanent_discount: '0',
+          first_shipping_free_threshold: '0',
+          is_pro: false,
+          first_shipping_free: false,
+        },
+      };
+    }
+    
 
 
     async newPassword(user_id: string): Promise<{ message: string }> {

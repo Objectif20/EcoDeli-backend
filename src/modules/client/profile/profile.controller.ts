@@ -168,6 +168,15 @@ export class ClientProfileController {
     return this.profileService.getMyDocuments(body.user_id);
   }
 
+  @Get("my-subscription")
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Get My Subscription', operationId: 'getMySubscription' })
+  @ApiResponse({ status: 200, description: 'Client subscription retrieved successfully' })
+  async getMySubscription(@Body() body: { user_id: string }) {
+    return this.profileService.getMySubscriptionData(body.user_id);
+  }
+
+
   @Post('provider/documents/add')
   @UseGuards(ClientJwtGuard)
   @UseInterceptors(FileInterceptor('file'))
@@ -197,7 +206,6 @@ export class ClientProfileController {
       throw new HttpException(error.message, HttpStatus.NOT_FOUND);
     }
   }
-
 
   @Put('availability')
   @UseGuards(ClientJwtGuard)
