@@ -13,3 +13,14 @@ export interface User {
     planName?: string;
     validateProfile?: boolean | false;
   }
+
+
+  export interface BillingsData {
+    billings :  {
+        id: string
+        date: string
+        type: "auto" | "not-auto"
+        invoiceLink: string
+    }[],
+    amount : number
+  }

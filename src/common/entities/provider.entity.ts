@@ -67,6 +67,9 @@ export class Providers {
     @Column({ length: 255 })
     first_name: string;
 
+    @Column({ type: 'decimal', precision: 10, scale: 2, default: 0.00 })
+    balance: number;
+
     @OneToMany(() => Availability, availability => availability.provider)
     availabilities: Availability[];
 }

@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpException, HttpStatus, Ip, NotFoundException, Param, Patch, Post, Put, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags} from '@nestjs/swagger';
 import { ProfileService } from './profile.service';
-import { User } from './type';
+import { BillingsData, User } from './type';
 import { ClientJwtGuard } from 'src/common/guards/user-jwt.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UpdateMyBasicProfileDto } from './dto/update-basic-profile.dto';
@@ -138,6 +138,30 @@ export class ClientProfileController {
     const userId = body.user_id;
     return this.profileService.isStripeExpressAccountValid(userId);
   }
+
+  @Get('billings')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Get My Billings', operationId: 'getMyBillings' })
+  @ApiResponse({ status: 200, description: 'Client billings retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Billings not found' })
+  async getMyBillings(@Body() body: { user_id: string }) : Promise<BillingsData> {
+    const userId = body.user_id;
+    const billings = await this.profileService.getMyBillingsData(userId);
+    return billings;
+  }
+
+  @Post('take-money')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Take a Billing', operationId: 'takeBilling' })
+  @ApiResponse({ status: 200, description: 'Billing taken successfully' })
+  @ApiResponse({ status: 404, description: 'Billing not found' })
+  async takeBilling(@Body() body: { user_id: string }) {
+    const userId = body.user_id;
+    return 
+  }
+
+
+
 
   @Get('provider/documents')
   @UseGuards(ClientJwtGuard)

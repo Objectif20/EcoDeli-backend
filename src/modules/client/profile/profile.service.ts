@@ -19,6 +19,7 @@ import { Availability } from "src/common/entities/availibities.entity";
 import { AvailabilityDto } from "./dto/availitity.dto";
 import * as nodemailer from 'nodemailer';
 import { OneSignalService } from "src/common/services/notification/oneSignal.service";
+import { BillingsData } from "./type";
 
 
   @Injectable()
@@ -414,6 +415,54 @@ import { OneSignalService } from "src/common/services/notification/oneSignal.ser
       const accountLinkUrl = await this.stripeService.updateExpressAccount(stripeAccountId);
       return accountLinkUrl;
     }
+
+
+    async getMyBillingsData(user_id: string): Promise<BillingsData> {
+      const user = await this.userRepository.findOne({ 
+        where: { user_id },
+        relations : ['deliveryPerson', 'providers', 'clients']      
+      });
+    
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+    
+      const isProvider = (user.providers ?? []).length > 0;
+      const isDelivery = user.deliveryPerson != null;
+    
+      if (!isProvider && !isDelivery) {
+        throw new Error("L'utilisateur n’est ni provider ni livreur.");
+      }
+    
+      let amount = 0;
+    
+      if (isProvider) {
+        amount = user.providers[0].balance;
+      } else if (isDelivery) {
+        amount = user.deliveryPerson.balance;
+      }
+    
+      const billings = [
+        {
+          id: 'b1',
+          date: '2025-05-01',
+          type: "auto" as "auto",
+          invoiceLink: 'https://example.com/invoice/b1'
+        },
+        {
+          id: 'b2',
+          date: '2025-04-25',
+          type: "not-auto" as "not-auto",
+          invoiceLink: 'https://example.com/invoice/b2'
+        }
+      ];
+    
+      return {
+        billings,
+        amount,
+      };
+    }
+    
 
 
     async newPassword(user_id: string): Promise<{ message: string }> {
