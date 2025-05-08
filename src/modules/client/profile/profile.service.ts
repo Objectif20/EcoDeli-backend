@@ -426,7 +426,7 @@ import { TransferProvider } from "src/common/entities/transfers_provider.entity"
     async getMyBillingsData(user_id: string): Promise<BillingsData> {
       const user = await this.userRepository.findOne({ 
         where: { user_id },
-        relations : ['deliveryPerson', 'providers', 'clients']      
+        relations: ['deliveryPerson', 'providers', 'clients']      
       });
     
       if (!user) {
@@ -441,29 +441,59 @@ import { TransferProvider } from "src/common/entities/transfers_provider.entity"
       }
     
       let amount = 0;
+      let billings: {
+        id: string;
+        date: string;
+        type: 'auto' | 'not-auto';
+        amount: number;
+        invoiceLink: string;
+      }[] = [];
     
       if (isProvider) {
-        amount = user.providers[0].balance;
-      } else if (isDelivery) {
-        amount = user.deliveryPerson.balance;
+        const provider = user.providers[0];
+        amount = provider.balance;
+    
+        const transfers = await this.transferProviderRepository.find({
+          where: { provider: { provider_id: provider.provider_id } },
+          order: { date: 'DESC' },
+        });
+    
+        billings = transfers.map((transfer) => {
+          if (!transfer.stripe_id) {
+            throw new Error('Transfer ID is undefined');
+          }
+          return {
+            id: transfer.stripe_id,
+            date: transfer.date.toISOString().split('T')[0],
+            type: transfer.type as 'auto' | 'not-auto',
+            amount: transfer.amount,
+            invoiceLink: transfer.url || `https://example.com/invoice/${transfer.stripe_id}`,
+          };
+        });
       }
     
-      const billings = [
-        {
-          id: 'b1',
-          date: '2025-05-01',
-          type: "auto" as "auto",
-          amount : 100,
-          invoiceLink: 'https://example.com/invoice/b1'
-        },
-        {
-          id: 'b2',
-          date: '2025-04-25',
-          type: "not-auto" as "not-auto",
-          amount : 200,
-          invoiceLink: 'https://example.com/invoice/b2'
-        }
-      ];
+      if (isDelivery) {
+        const deliveryPerson = user.deliveryPerson;
+        amount = deliveryPerson.balance;
+    
+        const transfers = await this.transferRepository.find({
+          where: { delivery_person: { delivery_person_id: deliveryPerson.delivery_person_id } },
+          order: { date: 'DESC' },
+        });
+    
+        billings = transfers.map((transfer) => {
+          if (!transfer.stripe_id) {
+            throw new Error('Transfer ID is undefined');
+          }
+          return {
+            id: transfer.stripe_id,
+            date: transfer.date.toISOString().split('T')[0],
+            type: transfer.type as 'auto' | 'not-auto',
+            amount: transfer.amount,
+            invoiceLink: transfer.url || `https://example.com/invoice/${transfer.stripe_id}`,
+          };
+        });
+      }
     
       return {
         billings,
@@ -472,7 +502,10 @@ import { TransferProvider } from "src/common/entities/transfers_provider.entity"
     }
 
     async createPayment(user_id: string, auto: boolean) {
-      const user = await this.userRepository.findOne({ where: { user_id } });
+      const user = await this.userRepository.findOne({ 
+        where: { user_id },
+        relations: ['deliveryPerson', 'providers', 'clients']
+      });
       if (!user) {
         throw new NotFoundException('User not found');
       }

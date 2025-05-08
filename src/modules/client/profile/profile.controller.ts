@@ -157,7 +157,7 @@ export class ClientProfileController {
   @ApiResponse({ status: 404, description: 'Billing not found' })
   async createPayment(@Body() body: { user_id: string }) {
     const userId = body.user_id;
-    return 
+    return this.profileService.createPayment(userId, false);
   }
 
   @Get('provider/documents')
