@@ -33,8 +33,8 @@ export interface UserSubscriptionData {
     status: "ok" | "wait" | "cancelled"
     name : string
     invoiceLink: string
-    customer_stripe_id: boolean
   }[]
+  customer_stripe_id: boolean
     plan : {
       plan_id: number;
       name: string;

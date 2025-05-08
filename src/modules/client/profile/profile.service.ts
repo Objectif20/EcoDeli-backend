@@ -594,6 +594,7 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
       if (subscriptionIds.length === 0) {
         return {
           history: [],
+          customer_stripe_id: false,
           plan: {
             plan_id: 0,
             name: '',
@@ -659,8 +660,8 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
         history: subscriptionHistory.map((item) => ({
           ...item,
           status: (['ok', 'wait', 'cancelled'] as const).includes(item.status as any) ? (item.status as 'ok' | 'wait' | 'cancelled') : 'cancelled',
-          customer_stripe_id: customer_stripe_id,
         })),
+        customer_stripe_id: customer_stripe_id,
         plan: activePlan || {
           plan_id: 0,
           name: '',
