@@ -51,6 +51,7 @@ import { Trip } from './trips.entity';
 import { Blocked } from './blocked.entity';
 import { Availability } from './availibities.entity';
 import { OneSignalDevice } from './onesignal-device.entity';
+import { TransferProvider } from './transfers_provider.entity';
 
 export const entities = [
   Admin,
@@ -105,5 +106,6 @@ export const entities = [
   ProviderCommission,
   Blocked,
   Availability,
-  OneSignalDevice
+  OneSignalDevice,
+  TransferProvider
 ];

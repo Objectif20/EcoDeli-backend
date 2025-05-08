@@ -19,7 +19,8 @@ export interface User {
     billings :  {
         id: string
         date: string
-        type: "auto" | "not-auto"
+        type: "auto" | "not-auto",
+        amount: number
         invoiceLink: string
     }[],
     amount : number

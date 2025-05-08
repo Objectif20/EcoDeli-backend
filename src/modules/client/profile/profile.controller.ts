@@ -150,18 +150,15 @@ export class ClientProfileController {
     return billings;
   }
 
-  @Post('take-money')
+  @Post('create-payment')
   @UseGuards(ClientJwtGuard)
   @ApiOperation({ summary: 'Take a Billing', operationId: 'takeBilling' })
   @ApiResponse({ status: 200, description: 'Billing taken successfully' })
   @ApiResponse({ status: 404, description: 'Billing not found' })
-  async takeBilling(@Body() body: { user_id: string }) {
+  async createPayment(@Body() body: { user_id: string }) {
     const userId = body.user_id;
     return 
   }
-
-
-
 
   @Get('provider/documents')
   @UseGuards(ClientJwtGuard)

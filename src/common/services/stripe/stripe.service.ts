@@ -208,4 +208,20 @@ export class StripeService {
       return { isValid: false, isEnabled: false, needsIdCard: false };
     }
   }
+
+  async transferToConnectedAccount(stripeAccountId: string, amountInCents: number): Promise<Stripe.Transfer> {
+    try {
+      const transfer = await this.stripeClient.transfers.create({
+        amount: amountInCents,
+        currency: 'eur',
+        destination: stripeAccountId,
+      });
+  
+      console.log('Transfert effectué avec succès :', transfer);
+      return transfer;
+    } catch (error) {
+      console.error('Erreur lors du transfert vers le compte connecté Stripe:', error);
+      throw new BadRequestException('Erreur lors du transfert vers le compte connecté Stripe', error);
+    }
+  }
 }

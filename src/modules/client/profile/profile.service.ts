@@ -20,6 +20,8 @@ import { AvailabilityDto } from "./dto/availitity.dto";
 import * as nodemailer from 'nodemailer';
 import { OneSignalService } from "src/common/services/notification/oneSignal.service";
 import { BillingsData } from "./type";
+import { Transfer } from "src/common/entities/transfers.entity";
+import { TransferProvider } from "src/common/entities/transfers_provider.entity";
 
 
   @Injectable()
@@ -45,6 +47,10 @@ import { BillingsData } from "./type";
       private readonly reportRepository: Repository<Report>,
       @InjectRepository(Availability)
       private readonly availabilityRepository: Repository<Availability>,
+      @InjectRepository(Transfer)
+      private readonly transferRepository: Repository<Transfer>,
+      @InjectRepository(TransferProvider)
+      private readonly transferProviderRepository: Repository<TransferProvider>,
       private readonly minioService: MinioService,
       private readonly stripeService: StripeService,
       @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
@@ -447,12 +453,14 @@ import { BillingsData } from "./type";
           id: 'b1',
           date: '2025-05-01',
           type: "auto" as "auto",
+          amount : 100,
           invoiceLink: 'https://example.com/invoice/b1'
         },
         {
           id: 'b2',
           date: '2025-04-25',
           type: "not-auto" as "not-auto",
+          amount : 200,
           invoiceLink: 'https://example.com/invoice/b2'
         }
       ];
@@ -462,7 +470,68 @@ import { BillingsData } from "./type";
         amount,
       };
     }
+
+    async createPayment(user_id: string, auto: boolean) {
+      const user = await this.userRepository.findOne({ where: { user_id } });
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
     
+      const isProvider = (user.providers ?? []).length > 0;
+      const isDelivery = user.deliveryPerson != null;
+    
+      if (!isProvider && !isDelivery) {
+        throw new Error("L'utilisateur n’est ni provider ni livreur.");
+      }
+    
+      let amount = 0;
+      if (isProvider) {
+        amount = user.providers[0].balance;
+      } else if (isDelivery) {
+        amount = user.deliveryPerson.balance;
+      }
+    
+      if (amount <= 0) {
+        throw new Error("Le montant est inférieur ou égal à zéro.");
+      }
+    
+      const stripeAccountId = await this.getStripeAccountId(user_id);
+      if (!stripeAccountId) {
+        throw new Error("L'utilisateur n'a pas de compte Stripe associé.");
+      }
+    
+      const amountInCents = Math.round(amount * 100);
+    
+      const transfer = await this.stripeService.transferToConnectedAccount(stripeAccountId, amountInCents);
+    
+      if (isProvider) {
+        const transferProvider = new TransferProvider();
+        transferProvider.date = new Date();
+        transferProvider.amount = amount;
+        transferProvider.provider = user.providers[0];
+        transferProvider.type = auto ? 'auto' : 'not-auto';
+        transferProvider.stripe_id = transfer.id;
+        transferProvider.url = 'temp';
+        await this.transferProviderRepository.save(transferProvider);
+      } else if (isDelivery) {
+        const transferDelivery = new Transfer();
+        transferDelivery.date = new Date();
+        transferDelivery.amount = amount;
+        transferDelivery.delivery_person = user.deliveryPerson;
+        transferDelivery.type = auto ? 'auto' : 'not-auto';
+        transferDelivery.stripe_id = transfer.id;
+        transferDelivery.url = 'temp';
+        await this.transferRepository.save(transferDelivery);
+      }
+
+      if (isProvider) {
+        user.providers[0].balance = 0;
+        await this.providerRepository.save(user.providers[0]);
+      } else if (isDelivery) {
+        user.deliveryPerson.balance = 0;
+        await this.deliveryPersonRepository.save(user.deliveryPerson);
+      }
+    }
 
 
     async newPassword(user_id: string): Promise<{ message: string }> {

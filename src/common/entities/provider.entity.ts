@@ -5,6 +5,7 @@ import { Services } from "./service.entity";
 import { ProviderContracts } from "./providers_contracts.entity";
 import { ProviderDocuments } from "./providers_documents.entity";
 import { Availability } from "./availibities.entity";
+import { TransferProvider } from "./transfers_provider.entity";
 
 @Entity({ name: 'providers' })
 export class Providers {
@@ -72,4 +73,7 @@ export class Providers {
 
     @OneToMany(() => Availability, availability => availability.provider)
     availabilities: Availability[];
+
+    @OneToMany(() => TransferProvider, (transfer) => transfer.provider)
+    transfers: TransferProvider[];
 }

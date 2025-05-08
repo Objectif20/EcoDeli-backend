@@ -17,11 +17,15 @@ import { ProviderDocuments } from 'src/common/entities/providers_documents.entit
 import { Blocked } from 'src/common/entities/blocked.entity';
 import { Report } from 'src/common/entities/report.entity';
 import { Availability } from 'src/common/entities/availibities.entity';
+import { OneSignalConfigService } from 'src/config/onesignal.config';
+import { OneSignalDevice } from 'src/common/entities/onesignal-device.entity';
+import { Transfer } from 'src/common/entities/transfers.entity';
+import { TransferProvider } from 'src/common/entities/transfers_provider.entity';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Message.name, schema: MessageSchema }]),
-    TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Subscription, Plan, ProviderDocuments, Blocked, Report, Availability]),
+    TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Subscription, Plan, ProviderDocuments, Blocked, Report, Availability, OneSignalDevice, Transfer, TransferProvider]),
     
         SharedModule,
         JwtModule.register({})
