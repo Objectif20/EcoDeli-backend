@@ -11,6 +11,7 @@ import { LanguagesModule } from './languages/languages.module';
 import { MerchantModule } from './merchant/merchant.module';
 import { SubscriptionModule } from './subscriptions/subscription.module';
 import { ReportModule } from './reports/report.module';
+import { GeneralModule } from './general/general.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ReportModule } from './reports/report.module';
     MailModule,
     LanguagesModule,
     ReportModule,
+    GeneralModule
   ],
   providers: [],
 })
