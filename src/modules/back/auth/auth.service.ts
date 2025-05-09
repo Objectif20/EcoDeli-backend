@@ -60,6 +60,8 @@ export class AuthService {
     try {
       const refreshSecret = this.configService.getJwtRefreshSecret();
       const decoded = this.jwtService.verify(refreshToken, { secret: refreshSecret });
+
+      if(!decoded.admin_id) throw new UnauthorizedException('Invalid refresh token');
   
       const admin = await this.adminRepository.findOne({ where: { admin_id: decoded.admin_id } });
       if (!admin) throw new UnauthorizedException('User not found');
