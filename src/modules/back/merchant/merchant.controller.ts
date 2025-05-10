@@ -4,6 +4,7 @@ import { MerchantService } from './merchant.service';
 import { AdminJwtGuard } from 'src/common/guards/admin-jwt.guard';
 import { AdminRoleGuard } from 'src/common/guards/admin-role.guard';
 import { AdminRole } from 'src/common/decorator/admin-role.decorator';
+import { MerchantDetails } from './type';
 
 @ApiTags('Merchant Management')
 @Controller('admin/merchants')
@@ -34,7 +35,7 @@ export class MerchantController {
     })
     @ApiParam({ name: 'id', description: 'The ID of the merchant' })
     @ApiResponse({ status: 200, description: 'Merchant retrieved successfully' })
-    async getMerchantById(@Param('id') id: string) {
+    async getMerchantById(@Param('id') id: string) : Promise<MerchantDetails> {
         return this.merchantService.getMerchantById(id);
     }
 
