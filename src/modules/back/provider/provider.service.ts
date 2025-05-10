@@ -146,6 +146,7 @@ export class ProvidersService {
             keyword: keyword.keywordList.keyword,
           })),
           images: imagesWithUrls,
+          validated: service.serviceList.validated,
         };
       })
     );
@@ -169,7 +170,7 @@ export class ProvidersService {
           name: provider.admin.first_name + ' ' + provider.admin.last_name,
           photo: provider.admin.photo || null,
         } : null,
-        profile_picture: userProfilePictureUrl, // Add the profile picture URL here
+        profile_picture: userProfilePictureUrl,
       },
       documents: documentsWithUrls,
       services: servicesWithImages,
@@ -211,7 +212,7 @@ export class ProvidersService {
   }
 
   async validateService(id_provider : string,serviceId: string, validateServiceDto: ValidateServiceDto): Promise<{message: string}> {
-    const { validated, admin_id, price_admin } = validateServiceDto;
+    const { admin_id, price_admin } = validateServiceDto;
 
     const provider = await this.providersRepository.findOne({ where: { provider_id: id_provider } });
     if (!provider) {
@@ -228,7 +229,7 @@ export class ProvidersService {
       throw new NotFoundException('Admin not found');
     }
 
-    service.validated = validated;
+    service.validated = true;
     service.admin = admin;
     if (price_admin && price_admin > 0) {
     service.price = price_admin;
