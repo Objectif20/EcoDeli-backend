@@ -26,4 +26,4 @@ export class UpdateVehicleCategoryDto {
     @IsOptional()
     @IsNumber()
     max_dimension?: number;
-  }
+}
