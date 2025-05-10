@@ -7,6 +7,7 @@ import { AdminJwtGuard } from 'src/common/guards/admin-jwt.guard';
 import { AdminRole } from 'src/common/decorator/admin-role.decorator';
 import { AdminRoleGuard } from 'src/common/guards/admin-role.guard';
 import { DeliveryPersonResponse } from './dto/delivery_person.dto';
+import { AllDeliveryPerson, DeliverymanDetails } from './type';
 
 @ApiTags('Delivery Person Management')
 @Controller('admin/deliveryPerson')
@@ -62,11 +63,10 @@ export class DeliveryPersonController {
     @ApiQuery({ name: 'limit', required: false, description: 'Number of items per page' })
     @ApiResponse({ status: 200, description: 'List of delivery persons retrieved successfully' })
     async getAllDeliveryPersons(
-        @Query('status') status: string,
         @Query('page') page: number = 1,
         @Query('limit') limit: number = 10,
-    ): Promise<{ data: DeliveryPersonResponse[], meta: { total: number, page: number, limit: number }, totalRows: number }> {
-        return this.deliveryPersonService.getAllDeliveryPersons(status, page, limit);
+    ): Promise<{ data: AllDeliveryPerson[], meta: { total: number, page: number, limit: number }, totalRows: number }> {
+        return this.deliveryPersonService.getAllDeliveryPersons(page, limit);
     }
 
     @Get(':id')
@@ -74,7 +74,7 @@ export class DeliveryPersonController {
     @ApiOperation({ summary: 'Get Delivery Person by ID' })
     @ApiParam({ name: 'id', description: 'The ID of the delivery person' })
     @ApiResponse({ status: 200, description: 'Delivery person retrieved successfully' })
-    async getDeliveryPersonById(@Param('id') id: string): Promise<DeliveryPersonResponse> {
+    async getDeliveryPersonById(@Param('id') id: string): Promise<DeliverymanDetails> {
         return this.deliveryPersonService.getDeliveryPersonById(id);
     }
 
