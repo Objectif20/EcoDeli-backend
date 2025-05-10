@@ -26,10 +26,10 @@ export class DeliveryPersonService {
         private readonly minioService: MinioService,
     ) { }
 
-    async updateDeliveryPersonStatus(id: string, status: 'Accepted' | 'Rejected'): Promise<DeliveryPerson | null> {
+    async updateDeliveryPersonStatus(id: string): Promise<DeliveryPerson | null> {
         const result = await this.deliveryPersonRepository.update(
-            { delivery_person_id: id, status: 'On Going' },
-            { status }
+            { delivery_person_id: id },
+            { validated: true },
         );
 
         if (result.affected === 0) {
@@ -42,7 +42,7 @@ export class DeliveryPersonService {
         });
     }
 
-    async validateVehicleOfDeliveryPerson(deliveryPersonId: string, vehicleId: string, validated: boolean, adminId: string): Promise<Vehicle | null> {
+    async validateVehicleOfDeliveryPerson(deliveryPersonId: string, vehicleId: string, adminId: string): Promise<Vehicle | null> {
         const vehicle = await this.vehicleRepository.findOne({
             where: { vehicle_id: vehicleId, deliveryPerson: { delivery_person_id: deliveryPersonId } },
             relations: ['deliveryPerson'],
@@ -68,7 +68,7 @@ export class DeliveryPersonService {
             throw new NotFoundException('Admin not found');
         }
 
-        await this.vehicleRepository.update(vehicleId, { validated, validatedByAdmin: admin });
+        await this.vehicleRepository.update(vehicleId, { validated: true, validatedByAdmin: admin });
 
         return this.vehicleRepository.findOne({
             where: { vehicle_id: vehicleId },
@@ -109,10 +109,6 @@ export class DeliveryPersonService {
             },
             totalRows: total,
         };
-
-
-
-
     }
 
     async getDeliveryPersonById(id: string): Promise<DeliverymanDetails> {

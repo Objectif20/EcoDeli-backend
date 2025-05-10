@@ -14,7 +14,7 @@ import { AllDeliveryPerson, DeliverymanDetails } from './type';
 export class DeliveryPersonController {
     constructor(private readonly deliveryPersonService: DeliveryPersonService) { }
 
-    @Post(':id')
+    @Post(':id/validate')
     @AdminRole('DELIVERY')
     @UseGuards(AdminJwtGuard, AdminRoleGuard)
     @ApiOperation({ summary: 'Update Delivery Person Status' })
@@ -23,16 +23,11 @@ export class DeliveryPersonController {
     @ApiResponse({ status: 400, description: 'Invalid status provided' })
     async updateDeliveryPersonStatus(
         @Param('id') id: string,
-        @Body('status') status: 'Accepted' | 'Rejected'
     ): Promise<DeliveryPerson | null> {
-        if (!['Accepted', 'Rejected'].includes(status)) {
-            throw new BadRequestException('Invalid status. Only "Accepted" or "Rejected" are allowed.');
-        }
-
-        return this.deliveryPersonService.updateDeliveryPersonStatus(id, status);
+        return this.deliveryPersonService.updateDeliveryPersonStatus(id);
     }
 
-    @Post(':deliveryPersonId/vehicle/:vehicleId')
+    @Post(':deliveryPersonId/vehicle/:vehicleId/validate')
     @AdminRole('DELIVERY')
     @UseGuards(AdminJwtGuard, AdminRoleGuard)
     @ApiOperation({ summary: 'Validate Vehicle of Delivery Person' })
@@ -43,16 +38,13 @@ export class DeliveryPersonController {
     async validateVehicleOfDeliveryPerson(
         @Param('deliveryPersonId') deliveryPersonId: string,
         @Param('vehicleId') vehicleId: string,
-        @Body('validated') validated: boolean,
         @Request() req,
     ): Promise<Vehicle | null> {
-        if (typeof validated !== 'boolean') {
-            throw new BadRequestException('Invalid value for validated. Must be true or false.');
-        }
+
 
         const adminId = req.body.admin_id;
 
-        return this.deliveryPersonService.validateVehicleOfDeliveryPerson(deliveryPersonId, vehicleId, validated, adminId);
+        return this.deliveryPersonService.validateVehicleOfDeliveryPerson(deliveryPersonId, vehicleId,adminId);
     }
 
     @Get()
