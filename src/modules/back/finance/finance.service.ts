@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
-import { Transaction, TransactionType } from "./type";
-
+import { Transaction, TransactionCategory, TransactionType } from "./type";
+import * as fs from "fs";
+import * as path from "path";
 
 export const allTransactions: Transaction[] = [
     {
@@ -145,4 +146,75 @@ export class FinanceService {
             totalRows: transactions.length
         });
     }
+
+    generateCsv(params: {
+        startMonth?: string;
+        startYear?: string;
+        endMonth?: string;
+        endYear?: string;
+        categories?: TransactionCategory[];
+    }): string {
+        let transactions = [...allTransactions];
+
+        if (params.startYear || params.startMonth) {
+            transactions = transactions.filter(t => {
+                const date = new Date(t.date);
+                const year = date.getFullYear().toString();
+                const month = (date.getMonth() + 1).toString();
+
+                const startYearMatch = params.startYear ? year === params.startYear : true;
+                const startMonthMatch = params.startMonth ? month === params.startMonth : true;
+
+                return startYearMatch && startMonthMatch;
+            });
+        }
+
+        if (params.endYear || params.endMonth) {
+            transactions = transactions.filter(t => {
+                const date = new Date(t.date);
+                const year = date.getFullYear().toString();
+                const month = (date.getMonth() + 1).toString();
+
+                const endYearMatch = params.endYear ? year === params.endYear : true;
+                const endMonthMatch = params.endMonth ? month === params.endMonth : true;
+
+                return endYearMatch && endMonthMatch;
+            });
+        }
+
+        if (params.categories && params.categories.length > 0) {
+            transactions = transactions.filter(t => params.categories?.includes(t.category));
+        }
+
+        const csvContent = [
+            ['id', 'name', 'type', 'category', 'date', 'invoiceUrl'].join(','),
+            ...transactions.map(t =>
+                [t.id, t.name, t.type, t.category, t.date, t.invoiceUrl].join(',')
+            )
+        ].join('\n');
+
+        const filePath = path.join(__dirname, '..', 'transactions.csv');
+        fs.writeFileSync(filePath, csvContent);
+
+        return filePath;
+    }
+
+    getCsvFile(res: any, params: {
+        startMonth?: string;
+        startYear?: string;
+        endMonth?: string;
+        endYear?: string;
+        categories?: TransactionCategory[];
+    }): void {
+        const filePath = this.generateCsv(params);
+        if (fs.existsSync(filePath)) {
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', 'attachment; filename=transactions.csv');
+            fs.createReadStream(filePath).pipe(res);
+        } else {
+            res.status(404).send('File not found');
+        }
+    }
+
+
 }

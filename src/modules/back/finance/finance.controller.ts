@@ -1,6 +1,6 @@
-import { Controller, Get, Query } from "@nestjs/common";
+import { Controller, Get, Query, Res } from "@nestjs/common";
 import { FinanceService } from "./finance.service";
-import { Transaction, TransactionType } from "./type";
+import { Transaction, TransactionCategory, TransactionType } from "./type";
 
 @Controller('client/finance')
 export class FinanceController {
@@ -17,4 +17,17 @@ export class FinanceController {
     ): Promise<{data : Transaction[], totalRows: number}> {
         return this.financeService.getTransactions({ name, type, year, month, pageIndex, pageSize });
     }
+
+    @Get('transactions/csv')
+    async getTransactionsCsv(
+        @Res() res: Response,
+        @Query('startMonth') startMonth?: string,
+        @Query('startYear') startYear?: string,
+        @Query('endMonth') endMonth?: string,
+        @Query('endYear') endYear?: string,
+        @Query('categories') categories?: TransactionCategory[]
+    ) {
+        this.financeService.getCsvFile(res, { startMonth, startYear, endMonth, endYear, categories });
+    }
+
 }
