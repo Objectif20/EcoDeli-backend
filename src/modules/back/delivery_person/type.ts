@@ -1,6 +1,6 @@
 export interface AllDeliveryPerson {
     id : string;
-    profile_picture : string;
+    profile_picture : string | null;
     first_name : string;
     last_name : string;
     status : boolean;

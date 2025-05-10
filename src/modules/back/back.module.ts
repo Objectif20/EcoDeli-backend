@@ -12,6 +12,7 @@ import { MerchantModule } from './merchant/merchant.module';
 import { SubscriptionModule } from './subscriptions/subscription.module';
 import { ReportModule } from './reports/report.module';
 import { GeneralModule } from './general/general.module';
+import { ClientModule } from './client/client.module';
 
 @Module({
   imports: [
@@ -27,7 +28,8 @@ import { GeneralModule } from './general/general.module';
     MailModule,
     LanguagesModule,
     ReportModule,
-    GeneralModule
+    GeneralModule,
+    ClientModule
   ],
   providers: [],
 })
