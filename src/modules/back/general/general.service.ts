@@ -1,7 +1,17 @@
-import { Contracts } from "./type";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Contracts, VehicleCategory } from "./type";
+import { Category } from "src/common/entities/category.entity";
+import { Repository } from "typeorm";
+import { CreateVehicleCategoryDto, UpdateVehicleCategoryDto } from "./dto/vehicles.dto";
+import { NotFoundException } from "@nestjs/common";
 
 
 export class GeneralService {
+
+  constructor(
+    @InjectRepository(Category)
+    private readonly categoryRepository: Repository<Category>
+  ) { }
 
     async getContracts(type: string, page: number = 1, q : string = '') : Promise<{data : Contracts[], total: number}> {
         
@@ -98,5 +108,45 @@ export class GeneralService {
         }
 
     }
+
+    async getVehicleCategories(): Promise<{ data: VehicleCategory[]; total: number }> {
+      const categories = await this.categoryRepository.find();
+      const vehicleCategories: VehicleCategory[] = categories.map(category => ({
+        id: category.category_id !== null && category.category_id !== undefined ? String(category.category_id) : null,
+        name: category.name,
+        max_weight: category.max_weight || 0,
+        max_dimension: typeof category.max_dimension === 'string' ? parseFloat(category.max_dimension) || 0 : category.max_dimension || 0,
+      }));
+      return {
+        data: vehicleCategories,
+        total: vehicleCategories.length,
+      };
+    }
+
+    async createCategory(dto: CreateVehicleCategoryDto): Promise<Category> {
+      const category = this.categoryRepository.create({
+        ...dto,
+        max_dimension: dto.max_dimension ?? '0',
+      });
+      return await this.categoryRepository.save(category);
+    }
+  
+    async updateCategory(id: string, dto: UpdateVehicleCategoryDto): Promise<Category> {
+      const category = await this.categoryRepository.findOne({
+        where: { category_id: Number(id) },
+      });
+  
+      if (!category) {
+        throw new NotFoundException(`Category with ID ${id} not found.`);
+      }
+  
+      Object.assign(category, {
+        ...dto,
+        max_dimension: dto.max_dimension ?? category.max_dimension,
+      });
+  
+      return await this.categoryRepository.save(category);
+    }
+    
 
 }

@@ -4,9 +4,12 @@ import { SharedModule } from 'src/common/shared/shared.module';
 import { JwtService } from 'src/config/jwt.service';
 import { GeneralService } from './general.service';
 import { GeneralController } from './general.controller';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Category } from 'src/common/entities/category.entity';
 
 @Module({
     imports: [
+        TypeOrmModule.forFeature([Category]),
         JwtModule.register({}),
         SharedModule
     ],
