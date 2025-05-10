@@ -13,6 +13,7 @@ import { SubscriptionModule } from './subscriptions/subscription.module';
 import { ReportModule } from './reports/report.module';
 import { GeneralModule } from './general/general.module';
 import { ClientModule } from './client/client.module';
+import { FinanceModule } from './finance/finance.module';
 
 @Module({
   imports: [
@@ -29,7 +30,8 @@ import { ClientModule } from './client/client.module';
     LanguagesModule,
     ReportModule,
     GeneralModule,
-    ClientModule
+    ClientModule,
+    FinanceModule,
   ],
   providers: [],
 })
