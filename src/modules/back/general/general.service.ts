@@ -3,11 +3,12 @@ import { Contracts } from "./type";
 
 export class GeneralService {
 
-    async getContracts(type: string, page: number = 1) : Promise<Contracts[]> {
+    async getContracts(type: string, page: number = 1, q : string = '') : Promise<{data : Contracts[], total: number}> {
         
-        console.log(type, page);
+        console.log(type, page, q);
 
-        return [
+        return {
+          data : [
             {
               id: "deliveryman-1",
               nom: "Dupont",
@@ -92,7 +93,9 @@ export class GeneralService {
               contratUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
               dateContrat: "2023-12-19",
             },
-          ]
+          ], 
+          total : 12
+        }
 
     }
 

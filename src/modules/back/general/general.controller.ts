@@ -8,13 +8,13 @@ import { Contracts } from './type';
 export class GeneralController {
   constructor(private readonly generalService: GeneralService) {}
 
-  @Get('contract')
-  @UseGuards(AdminJwtGuard)
+  @Get('contracts')
     async getContract(
         @Query('type') type: string,
-        page: number = 1,
-    ) : Promise<Contracts[]> {
-        return this.generalService.getContracts(type, page);
+        @Query('page') page: number = 1,
+        @Query('q') q: string = '',
+    ) : Promise<{data : Contracts[], total: number}> {
+        return this.generalService.getContracts(type, page, q);
     }
 
   
