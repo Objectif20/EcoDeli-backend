@@ -10,8 +10,8 @@ export class CreateVehicleCategoryDto {
   max_weight?: number;
 
   @IsOptional()
-  @IsString()
-  max_dimension?: string;
+  @IsNumber()
+  max_dimension?: number;
 }
 
 export class UpdateVehicleCategoryDto {
@@ -24,6 +24,6 @@ export class UpdateVehicleCategoryDto {
     max_weight?: number;
   
     @IsOptional()
-    @IsString()
-    max_dimension?: string;
+    @IsNumber()
+    max_dimension?: number;
   }

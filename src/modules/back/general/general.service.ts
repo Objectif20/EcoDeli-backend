@@ -126,12 +126,13 @@ export class GeneralService {
     async createCategory(dto: CreateVehicleCategoryDto): Promise<Category> {
       const category = this.categoryRepository.create({
         ...dto,
-        max_dimension: dto.max_dimension ?? '0',
+        max_dimension: dto.max_dimension?.toString() ?? '0',
       });
       return await this.categoryRepository.save(category);
     }
   
     async updateCategory(id: string, dto: UpdateVehicleCategoryDto): Promise<Category> {
+      console.log(id, dto);
       const category = await this.categoryRepository.findOne({
         where: { category_id: Number(id) },
       });
@@ -142,7 +143,7 @@ export class GeneralService {
   
       Object.assign(category, {
         ...dto,
-        max_dimension: dto.max_dimension ?? category.max_dimension,
+        max_dimension: dto.max_dimension?.toString() ?? category.max_dimension,
       });
   
       return await this.categoryRepository.save(category);

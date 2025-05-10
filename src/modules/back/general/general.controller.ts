@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { GeneralService } from './general.service';
 import { AdminJwtGuard } from 'src/common/guards/admin-jwt.guard';
 import { Contracts, VehicleCategory } from './type';
@@ -19,14 +19,14 @@ export class GeneralController {
         return this.generalService.getContracts(type, page, q);
     }
 
-    @Get('vehicle-categories')
+    @Get('vehicles-categories')
     @UseGuards(AdminJwtGuard)
     async getVehicleCategories()
     : Promise<{data : VehicleCategory[], total: number}> {
         return this.generalService.getVehicleCategories();
     }
 
-    @Post('vehicle-categories')
+    @Post('vehicles-categories')
     @UseGuards(AdminJwtGuard)
     async createVehicleCategory(
         @Body() createVehicleCategoryDto: CreateVehicleCategoryDto
@@ -34,11 +34,11 @@ export class GeneralController {
         return this.generalService.createCategory(createVehicleCategoryDto);
     }
 
-    @Put('vehicle-categories/:id')
+    @Put('vehicles-categories/:id')
     @UseGuards(AdminJwtGuard)
     async updateVehicleCategory(
         @Body() updateVehicleCategoryDto: CreateVehicleCategoryDto,
-        @Query('id') id: string
+        @Param('id') id: string
     ): Promise<Category> {
         return this.generalService.updateCategory(id, updateVehicleCategoryDto);
     }
