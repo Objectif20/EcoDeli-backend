@@ -91,6 +91,8 @@ import { CommonSettingsDto } from "./dto/common-settings.dto";
       let first_name = 'N/A';
       let last_name = 'N/A';
       let validateProfile = false;
+      let customer_stripe_id = false;
+
     
       if (provider) {
         first_name = provider.first_name;
@@ -99,10 +101,12 @@ import { CommonSettingsDto } from "./dto/common-settings.dto";
       } else if (merchant) {
         first_name = merchant.first_name;
         last_name = merchant.last_name;
+        // customer_stripe_id = merchant.stripe_customer_id ? true : false;
         validateProfile = true;
       } else if (client) {
         first_name = client.first_name;
         last_name = client.last_name;
+        // customer_stripe_id = client.stripe_customer_id ? true : false;
         if (deliverymanExists > 0) {
           const deliveryman = await this.deliveryPersonRepository.findOne({ where: { user: { user_id } } });
           if (deliveryman) {
@@ -153,6 +157,7 @@ import { CommonSettingsDto } from "./dto/common-settings.dto";
         upgradablePlan,
         validateProfile,
         planName,
+        customer_stripe_id,
       };
     
       return userData;
@@ -1099,6 +1104,14 @@ import { CommonSettingsDto } from "./dto/common-settings.dto";
       }
   
       return this.getCommonData(userId);
+    }
+
+
+    async updateStripeBankData(userId : string, paymentMethodId : string) {
+
+      console.log("paymentMethodId", paymentMethodId)
+      console.log("userId", userId)
+  
     }
 
     

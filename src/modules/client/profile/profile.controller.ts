@@ -190,6 +190,17 @@ export class ClientProfileController {
     return subscription;
   }
 
+  @Patch('bank-data')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Update Bank Data', operationId: 'updateBankData' })
+  @ApiResponse({ status: 200, description: 'Bank data updated successfully' })
+  @ApiResponse({ status: 404, description: 'Bank data not found' })
+  async updateBankData(@Body() body: { user_id: string; bank_data: any }) {
+    const userId = body.user_id;
+    const bankData = body.bank_data;
+    return this.profileService.updateStripeBankData(userId, bankData);
+  }
+
 
   @Post('provider/documents/add')
   @UseGuards(ClientJwtGuard)
