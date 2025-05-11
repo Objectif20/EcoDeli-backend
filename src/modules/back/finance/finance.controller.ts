@@ -1,6 +1,6 @@
 import { Controller, Get, Query, Res, UseGuards } from "@nestjs/common";
 import { FinanceService } from "./finance.service";
-import { Transaction, TransactionCategory, TransactionType } from "./type";
+import { DashboardStats, StripeStats, Transaction, TransactionCategory, TransactionType } from "./type";
 import { AdminJwtGuard } from "src/common/guards/admin-jwt.guard";
 
 @Controller('client/finance')
@@ -37,8 +37,14 @@ export class FinanceController {
     @UseGuards(AdminJwtGuard)
     async getStripeStats(
         @Query('period') period?: string,
-    ) {
+    ): Promise<StripeStats> {
         return this.financeService.getStripeStats(period)
+    }
+
+    @Get('dashboard')
+    @UseGuards(AdminJwtGuard)
+    async getDashboardStats(): Promise<DashboardStats> {
+        return this.financeService.getDashboardStats()
     }
 
 }

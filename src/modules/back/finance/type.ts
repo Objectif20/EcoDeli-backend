@@ -56,3 +56,32 @@ export interface TransactionStripe {
   method: string;
   number: number;
 }
+
+export interface DashboardStats {
+  plan: PlanChartData[];
+  parcels: ParcelsChartData[];
+  area: AreaChartData[];
+  subscription: SubscriptionChartData[];
+}
+
+export interface AreaChartData {
+  date: string;
+  provider: number;
+  delivery: number;
+}
+
+export interface SubscriptionChartData {
+  month: string;
+  subscription: number;
+}
+
+export interface PlanChartData {
+  plan: string;
+  number: number;
+  fill: string;
+}
+
+export interface ParcelsChartData {
+  taille: string;
+  nombre: number;
+}
