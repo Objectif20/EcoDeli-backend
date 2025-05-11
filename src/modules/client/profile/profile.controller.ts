@@ -181,7 +181,7 @@ export class ClientProfileController {
   @ApiOperation({ summary: 'Update My Subscription', operationId: 'updateMySubscription' })
   @ApiResponse({ status: 200, description: 'Client subscription updated successfully' })
   @ApiResponse({ status: 404, description: 'Subscription not found' })
-  async updateMySubscription(@Body() body: { user_id: string; planId: number, paymentMethodId: string }) {
+  async updateMySubscription(@Body() body: { user_id: string; planId: number, paymentMethodId?: string }) {
     const userId = body.user_id;
     const subscriptionId = body.planId;
     const paymentMethodId = body.paymentMethodId;

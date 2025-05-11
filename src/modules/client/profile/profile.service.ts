@@ -122,6 +122,7 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
     
       if (!provider && latestSubscription?.plan) {
         const currentPrice = latestSubscription.plan.price;
+        console.log('currentPrice', currentPrice);
         const higherPlans = currentPrice !== undefined
           ? await this.planRepository.count({
               where: { price: MoreThan(currentPrice) },
@@ -188,6 +189,7 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
         newsletter: user.newsletter,
       };
     }
+    
     
     async updateMyBasicProfile(
       user_id: string,
@@ -681,7 +683,11 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
       };
     }
 
-    async updateMySubscription(user_id: string, planId: number, paymentMethodId: string): Promise<{ message: string }> {
+    async updateMySubscription(
+      user_id: string,
+      planId: number,
+      paymentMethodId?: string
+    ): Promise<{ message: string }> {
       const user = await this.userRepository.findOne({
         where: { user_id },
         relations: ['clients', 'merchant', 'subscriptions']
@@ -701,38 +707,48 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
       const isMerchant = !!user.merchant;
       let stripeCustomerId: string | null = null;
     
-      if (isClient) {
-        stripeCustomerId = user.clients[0].stripe_customer_id;
-      } else if (isMerchant) {
-        stripeCustomerId = user.merchant.stripe_customer_id;
-      }
+      const isFreePlan = (plan.price ?? 0) === 0;
     
-      if (!stripeCustomerId && paymentMethodId) {
-        let customer;
+      if (!isFreePlan) {
         if (isClient) {
-          customer = await this.stripeService.createCustomer(user.email, `Client: ${user.clients[0].first_name} ${user.clients[0].last_name}`);
+          stripeCustomerId = user.clients[0].stripe_customer_id;
         } else if (isMerchant) {
-          customer = await this.stripeService.createCustomer(user.email, `Merchant: ${user.merchant.company_name}`);
+          stripeCustomerId = user.merchant.stripe_customer_id;
         }
     
-        if (!customer) {
-          throw new Error("Failed to create Stripe customer");
+        if (!stripeCustomerId && paymentMethodId) {
+          let customer;
+          if (isClient) {
+            customer = await this.stripeService.createCustomer(
+              user.email,
+              `Client: ${user.clients[0].first_name} ${user.clients[0].last_name}`
+            );
+          } else if (isMerchant) {
+            customer = await this.stripeService.createCustomer(
+              user.email,
+              `Merchant: ${user.merchant.company_name}`
+            );
+          }
+    
+          if (!customer) {
+            throw new Error("Failed to create Stripe customer");
+          }
+    
+          await this.stripeService.attachPaymentMethod(customer.id, paymentMethodId);
+          stripeCustomerId = customer.id;
+    
+          if (isClient) {
+            user.clients[0].stripe_customer_id = stripeCustomerId;
+            await this.clientRepository.save(user.clients[0]);
+          } else if (isMerchant) {
+            user.merchant.stripe_customer_id = stripeCustomerId;
+            await this.merchantRepository.save(user.merchant);
+          }
         }
     
-        await this.stripeService.attachPaymentMethod(customer.id, paymentMethodId);
-        stripeCustomerId = customer.id;
-    
-        if (isClient) {
-          user.clients[0].stripe_customer_id = stripeCustomerId;
-          await this.clientRepository.save(user.clients[0]);
-        } else if (isMerchant) {
-          user.merchant.stripe_customer_id = stripeCustomerId;
-          await this.merchantRepository.save(user.merchant);
+        if (!stripeCustomerId) {
+          throw new Error("Stripe customer ID is missing and no payment method was provided to create one.");
         }
-      }
-    
-      if (!stripeCustomerId) {
-        throw new Error("Stripe customer ID is missing.");
       }
     
       const activeSubscription = await this.subscriptionRepository.findOne({
@@ -754,16 +770,40 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
         activeSubscription.status = 'cancelled';
         await this.subscriptionRepository.save(activeSubscription);
     
-        await this.stripeService.cancelSubscriptionAtPeriodEnd(activeSubscription.stripe_subscription_id);
+        if (activeSubscription.stripe_subscription_id) {
+          try {
+            await this.stripeService.cancelSubscriptionAtPeriodEnd(activeSubscription.stripe_subscription_id);
+          } catch (error) {
+            throw new Error(`Erreur lors de l'annulation de l'abonnement Stripe: ${error.message}`);
+          }
+        }
       }
     
-      const stripeSubscription = await this.stripeService.createSubscription(stripeCustomerId, plan.stripe_price_id, newStartDate);
+      let stripeSubscriptionId: string | null = null;
+
+      if (!plan.stripe_price_id) {
+        if (plan.price === undefined) {
+          throw new Error('Plan price is undefined');
+        }
+        const newPrice = await this.stripeService.createPriceForPlan(plan.name, plan.price);
+        plan.stripe_price_id = newPrice.id;
+        await this.planRepository.save(plan);
+      }
+    
+      if (!isFreePlan && stripeCustomerId) {
+        const stripeSubscription = await this.stripeService.createSubscription(
+          stripeCustomerId,
+          plan.stripe_price_id,
+          newStartDate
+        );
+        stripeSubscriptionId = stripeSubscription.id;
+      }
     
       const newSubscription = this.subscriptionRepository.create({
         user,
         plan,
-        stripe_customer_id: stripeCustomerId,
-        stripe_subscription_id: stripeSubscription.id,
+        stripe_customer_id: stripeCustomerId || undefined,
+        stripe_subscription_id: stripeSubscriptionId || undefined,
         status: 'active',
         start_date: newStartDate,
         end_date: newEndDate,

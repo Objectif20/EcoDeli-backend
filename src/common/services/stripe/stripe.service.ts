@@ -16,6 +16,7 @@ export class StripeService {
         description,
       });
     } catch (error) {
+      console.error('Erreur lors de la création du client Stripe:', error);
       throw new BadRequestException('Erreur lors de la création du client Stripe', error);
     }
   }
@@ -42,6 +43,7 @@ export class StripeService {
         },
       });
     } catch (error) {
+      console.error('Erreur lors de l\'attachement du PaymentMethod au client Stripe:', error);
       throw new BadRequestException('Erreur lors de l\'attachement du paymentMethod au client Stripe', error);
     }
   }
@@ -65,6 +67,7 @@ export class StripeService {
   
       return await this.stripeClient.subscriptions.create(subscriptionParams);
     } catch (error) {
+      console.error('Erreur lors de la création de l\'abonnement Stripe:', error);
       throw new BadRequestException('Erreur lors de la création de l\'abonnement Stripe', error);
     }
   }
@@ -75,6 +78,7 @@ export class StripeService {
         cancel_at_period_end: true,
       });
     } catch (error) {
+      console.error('Erreur lors de l\'annulation de l\'abonnement Stripe:', error);
       throw new BadRequestException('Erreur lors de l\'annulation de l\'abonnement Stripe', error);
     }
   }
@@ -253,5 +257,24 @@ export class StripeService {
         created: Math.floor(Date.now() / 1000),
       } as Stripe.Transfer;
     }
+  }
+
+  async createPriceForPlan(planName : string, planPrice : number): Promise<Stripe.Price> {
+    if (!planName || !planPrice) {
+      throw new Error('Le plan doit avoir un nom et un prix pour créer un Price Stripe.');
+    }
+  
+    const product = await this.stripeClient.products.create({
+      name: planName,
+    });
+  
+    const price = await this.stripeClient.prices.create({
+      unit_amount: planPrice * 100, 
+      currency: 'eur',               
+      recurring: { interval: 'month' },
+      product: product.id,
+    });
+  
+    return price;
   }
 }
