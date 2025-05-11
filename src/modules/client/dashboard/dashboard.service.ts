@@ -20,8 +20,8 @@ export class DashboardService {
                 from: "Paris",
                 to: "Lyon",
                 status: "delivered",
-                pickupDate: new Date().toString(),
-                estimatedDeliveryDate: new Date().toString(),
+                pickupDate: "12 mai 2025",
+                estimatedDeliveryDate: "12 mai 2025",
                 coordinates: {
                     origin: [48.8566, 2.3522],
                     destination: [45.7640, 4.8357],
@@ -105,9 +105,9 @@ export class DashboardService {
     async getPackages(user_id : string) : Promise<packages[]> {
         console.log("getPackages", user_id);
         return [
-            { size: "small", packages: 10 },
-            { size: "medium", packages: 20 },
-            { size: "large", packages: 30 },
+            { size: "S", packages: 10 },
+            { size: "M", packages: 20 },
+            { size: "L", packages: 30 },
         ];
     }
 
@@ -282,7 +282,7 @@ export class DashboardService {
         return {
             origin :  "Paris",
             destination:"Marseille",
-            date : new Date(2025, 1, 12, 14, 30),
+            date : new Date(),
             status : "take",
             trackingNumber : "FR7589214563",
             carrier : "Chronopost",
@@ -291,4 +291,12 @@ export class DashboardService {
         }
     }
 
+    async getCompletedDeliveries(user_id : string) : Promise<CompletedService> {
+
+      console.log("getCompletedDeliveries", user_id);
+      return {
+          count: 10,
+          period: "Mars",
+      }
+    }
 }
