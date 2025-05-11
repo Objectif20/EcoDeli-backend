@@ -1,12 +1,14 @@
-import { Controller, Get, Query, Res } from "@nestjs/common";
+import { Controller, Get, Query, Res, UseGuards } from "@nestjs/common";
 import { FinanceService } from "./finance.service";
 import { Transaction, TransactionCategory, TransactionType } from "./type";
+import { AdminJwtGuard } from "src/common/guards/admin-jwt.guard";
 
 @Controller('client/finance')
 export class FinanceController {
     constructor(private readonly financeService: FinanceService) {}
 
     @Get('transactions')
+    @UseGuards(AdminJwtGuard)
     async getTransactions(
         @Query('name') name?: string,
         @Query('type') type?: TransactionType,
@@ -19,6 +21,7 @@ export class FinanceController {
     }
 
     @Get('transactions/csv')
+    @UseGuards(AdminJwtGuard)
     async getTransactionsCsv(
         @Res() res: Response,
         @Query('startMonth') startMonth?: string,
@@ -28,6 +31,14 @@ export class FinanceController {
         @Query('categories') categories?: TransactionCategory[]
     ) {
         this.financeService.getCsvFile(res, { startMonth, startYear, endMonth, endYear, categories });
+    }
+
+    @Get('stripe')
+    @UseGuards(AdminJwtGuard)
+    async getStripeStats(
+        @Query('period') period?: string,
+    ) {
+        return this.financeService.getStripeStats(period)
     }
 
 }
