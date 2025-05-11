@@ -19,11 +19,12 @@ import { Availability } from "src/common/entities/availibities.entity";
 import { AvailabilityDto } from "./dto/availitity.dto";
 import * as nodemailer from 'nodemailer';
 import { OneSignalService } from "src/common/services/notification/oneSignal.service";
-import { BillingsData, UserSubscriptionData } from "./type";
+import { BillingsData, CommonSettingsForm, UserSubscriptionData } from "./type";
 import { Transfer } from "src/common/entities/transfers.entity";
 import { TransferProvider } from "src/common/entities/transfers_provider.entity";
 import { Subscription } from "src/common/entities/subscription.entity";
 import { SubscriptionTransaction } from "src/common/entities/subscription_transaction.entity";
+import { CommonSettingsDto } from "./dto/common-settings.dto";
 
   @Injectable()
   export class ProfileService {
@@ -1024,6 +1025,80 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
       }
     
       await this.onesignalService.sendNotification(subscriptionIds, title, content);
+    }
+
+    async getCommonData(userId: string): Promise<CommonSettingsForm> {
+      const user = await this.userRepository.findOne({ where: { user_id: userId } });
+      if (!user) {
+        throw new Error('User not found');
+      }
+    
+      const merchant = await this.merchantRepository.findOne({ where: { user: { user_id: userId } } });
+      const provider = await this.providerRepository.findOne({ where: { user: { user_id: userId } } });
+      const deliveryPerson = await this.deliveryPersonRepository.findOne({ where: { user: { user_id: userId } } });
+    
+      if (merchant) {
+        return {
+          company_name: merchant.company_name,
+          siret: merchant.siret,
+          address: merchant.address,
+          postal_code: merchant.postal_code || '',
+          city: merchant.city,
+          country: merchant.country,
+          phone: merchant.phone,
+        };
+      } else if (provider) {
+        return {
+          company_name: provider.company_name,
+          siret: provider.siret,
+          address: provider.address,
+          service_type: provider.service_type,
+          postal_code: provider.postal_code || '',
+          city: provider.city,
+          country: provider.country,
+          phone: provider.phone,
+        };
+      } else if (deliveryPerson) {
+        return {
+          address: deliveryPerson.address,
+          postal_code: deliveryPerson.postal_code || '',
+          city: deliveryPerson.city,
+          country: deliveryPerson.country,
+          phone_number: deliveryPerson.phone_number,
+          professional_email: deliveryPerson.professional_email,
+        };
+      } else {
+        // Retour par défaut si aucun des cas ci-dessus n'est vrai
+        return {
+          address: '',
+          postal_code: '',
+          city: '',
+          country: '',
+        };
+      }
+    }
+
+    async updateCommonData(userId: string, commonSettingsDto: CommonSettingsDto) {
+      const user = await this.userRepository.findOne({ where: { user_id: userId } });
+      if (!user) {
+        throw new Error('User not found');
+      }
+  
+      const merchant = await this.merchantRepository.findOne({ where: { user: { user_id: userId } } });
+      const provider = await this.providerRepository.findOne({ where: { user: { user_id: userId } } });
+      const deliveryPerson = await this.deliveryPersonRepository.findOne({ where: { user: { user_id: userId } } });
+  
+      if (merchant) {
+        await this.merchantRepository.update({ user: { user_id: userId } }, commonSettingsDto);
+      } else if (provider) {
+        await this.providerRepository.update({ user: { user_id: userId } }, commonSettingsDto);
+      } else if (deliveryPerson) {
+        await this.deliveryPersonRepository.update({ user: { user_id: userId } }, commonSettingsDto);
+      } else {
+        throw new Error('No profile found to update');
+      }
+  
+      return this.getCommonData(userId);
     }
 
     

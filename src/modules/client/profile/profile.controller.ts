@@ -8,6 +8,7 @@ import { UpdateMyBasicProfileDto } from './dto/update-basic-profile.dto';
 import { CreateReportDto } from './dto/create-report.dto';
 import { Availability } from 'src/common/entities/availibities.entity';
 import { AvailabilityDto } from './dto/availitity.dto';
+import { CommonSettingsDto } from './dto/common-settings.dto';
 
 
 
@@ -267,6 +268,22 @@ export class ClientProfileController {
   async createNotification(@Body() body: { user_id: string; title: string; content: string }) {
     const { user_id, title, content } = body;
     return this.profileService.createNotification(user_id, title, content);
+  }
+
+  @Get("professionnal")
+  @UseGuards(ClientJwtGuard)
+  async getProfessionnal(@Body() body: { user_id: string }) {
+    const userId = body.user_id;
+    return this.profileService.getCommonData(userId);
+  }
+
+  @Patch('professionnal')
+  @UseGuards(ClientJwtGuard)
+  async updateProfile(
+    @Body('user_id') userId: string,
+    @Body() commonSettingsDto: CommonSettingsDto,
+  ) {
+    return this.profileService.updateCommonData(userId, commonSettingsDto);
   }
 
 }
