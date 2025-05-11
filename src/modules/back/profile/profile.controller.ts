@@ -23,7 +23,7 @@ export class AdminProfileController {
     operationId: 'getAllAdminProfiles',
   })
   @ApiResponse({ status: 200, description: 'List of admin profiles retrieved successfully' })
-  async getAllProfile(): Promise<Partial<Admin>[]> {
+  async getAllProfile(): Promise<Partial<AdminProfile>[]> {
     return await this.profileService.getAllProfile();
   }
 
