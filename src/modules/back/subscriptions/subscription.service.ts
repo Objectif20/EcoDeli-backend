@@ -50,34 +50,40 @@ export class SubscriptionService {
         return plan;
     }
 
-
-    async updateSubscription(id: number, updateSubscriptionDto: any) {
+    async updatePlan(id: number, updatePlanDto: any) {
         const plan = await this.planRepository.findOne({ where: { plan_id: id } });
-        console.log(updateSubscriptionDto);
+      
         if (!plan) {
-            throw new NotFoundException(`Plan with ID ${id} not found`);
+          throw new NotFoundException(`Plan with ID ${id} not found`);
         }
-
-        const { admin_id, ...updateData } = updateSubscriptionDto;
-
+      
+        const { admin_id, subject, content, ...updateData } = updatePlanDto;
+      
         await this.planRepository.update(id, updateData);
-
+      
         const subscribers = await this.subscriptionRepository.find({
-            where: { plan: { plan_id: id } },
-            relations: ['user'],
+          where: { plan: { plan_id: id } },
+          relations: ['user'],
         });
-
+      
         const subscriberEmails = subscribers.map(sub => sub.user.email);
-
-        // --- CONSOLE LOG TEMPORAIRE - ENVOIE DES MAILS A FAIRE
-        console.log(`Sending emails to subscribers of plan ${id}:`, {
-            subject: updateSubscriptionDto.subject,
-            content: updateSubscriptionDto.content,
-            emails: subscriberEmails,
+      
+        // --- À remplacer par un vrai envoi de mail
+        console.log(`Sending update notification to subscribers of plan ${id}:`, {
+          subject,
+          content,
+          emails: subscriberEmails,
         });
-
+      
         return this.planRepository.findOne({ where: { plan_id: id } });
     }
+
+    async createPlan(createPlanDto: any) {
+        const { admin_id, ...planData } = createPlanDto;
+      
+        const newPlan = this.planRepository.create(planData);
+        return await this.planRepository.save(newPlan);
+      }
 
 
     async getSubscribersList(page: number = 1, limit: number = 10, planId?: number) {

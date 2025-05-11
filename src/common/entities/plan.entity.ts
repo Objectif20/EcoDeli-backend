@@ -9,10 +9,10 @@ export class Plan {
     @Column({ length: 255 })
     name: string;
 
-    @Column({ type: 'decimal', precision: 4, scale: 2, nullable: true })
+    @Column({ type: 'decimal', precision: 6, scale: 2, nullable: true })
     price?: number;
 
-    @Column({ type: 'decimal', precision: 5, scale: 2, default: 0.00 })
+    @Column({ type: 'decimal', precision: 6, scale: 2, default: 0.00 })
     priority_shipping_percentage: number;
 
     @Column({ type: 'int', default: 0 })

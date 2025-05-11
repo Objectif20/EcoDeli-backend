@@ -16,7 +16,6 @@ import { CreateProfileDto } from "./dto/create-profile.dto";
 @Injectable()
 export class AdminProfileService {
     
-
     constructor(
         @InjectRepository(Admin) private readonly adminRepository: Repository<Admin>,
         @InjectRepository(Role) private readonly roleRepository: Repository<Role>,
@@ -26,11 +25,47 @@ export class AdminProfileService {
     )    
     {}
 
-    async getAllProfile(): Promise<Partial<Admin>[]> {
-        const admins = await this.adminRepository.find({
-            select: ['admin_id', 'last_name', 'first_name', 'email', 'active', 'photo'],
-        });
+    async getAllProfile(): Promise<Partial<AdminProfile>[]> {
+        const adminRows = await this.adminRepository
+            .createQueryBuilder('admin')
+            .leftJoin('roles', 'role', 'role.admin_id = admin.admin_id')
+            .leftJoin('roles_list', 'roleList', 'role.role_id = roleList.role_id')
+            .select([
+                'admin.admin_id AS admin_id',
+                'admin.last_name AS last_name',
+                'admin.first_name AS first_name',
+                'admin.email AS email',
+                'admin.active AS active',
+                'admin.photo AS photo',
+                'roleList.role_name AS role_name',
+            ])
+            .getRawMany();
     
+        // Regrouper les données par admin_id
+        const adminMap = new Map<string, any>();
+    
+        for (const row of adminRows) {
+            const adminId = row.admin_id;
+    
+            if (!adminMap.has(adminId)) {
+                adminMap.set(adminId, {
+                    admin_id: row.admin_id,
+                    last_name: row.last_name,
+                    first_name: row.first_name,
+                    email: row.email,
+                    active: row.active,
+                    photo: row.photo,
+                    roles: [],
+                });
+            }
+    
+            const admin = adminMap.get(adminId);
+            if (row.role_name && !admin.roles.includes(row.role_name)) {
+                admin.roles.push(row.role_name);
+            }
+        }
+    
+        const admins = Array.from(adminMap.values());
         for (const admin of admins) {
             if (admin.photo) {
                 const bucketName = 'admin-images';
@@ -47,7 +82,7 @@ export class AdminProfileService {
             .createQueryBuilder('admin')
             .leftJoin('roles', 'role', 'role.admin_id = admin.admin_id')
             .leftJoin('roles_list', 'roleList', 'role.role_id = roleList.role_id')
-            .leftJoin('languages', 'language', 'language.language_id = admin.language_id') // Join avec la table languages
+            .leftJoin('languages', 'language', 'language.language_id = admin.language_id')
             .where('admin.admin_id = :admin_id', { admin_id })
             .select([
                 'admin.admin_id AS admin_id',
@@ -111,8 +146,6 @@ export class AdminProfileService {
         return admin;
     }
     
-
-
     async updateProfile(admin_id: string, admin: Partial<Admin>, file?: Express.Multer.File): Promise<Partial<Admin>> {
         const existingAdmin = await this.adminRepository.findOne({
             where: { admin_id },

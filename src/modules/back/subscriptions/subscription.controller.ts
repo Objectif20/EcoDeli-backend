@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards, Param, Patch, Body, Query } from '@nestjs/common';
+import { Controller, Get, UseGuards, Param, Patch, Body, Query, Post } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { SubscriptionService } from './subscription.service';
 import { AdminJwtGuard } from 'src/common/guards/admin-jwt.guard';
@@ -39,6 +39,20 @@ export class SubscriptionController {
         return this.subscriptionService.getSubscribersList(page, limit, planId);
     }
 
+    @Post()
+    @AdminRole('FINANCE')
+    @UseGuards(AdminJwtGuard, AdminRoleGuard)
+    @ApiOperation({
+        summary: 'Create Subscription',
+        operationId: 'createSubscription',
+    })
+    @ApiResponse({ status: 201, description: 'Subscription created successfully' })
+    async createSubscription(
+        @Body() createSubscriptionDto: any,
+    ) {
+        return this.subscriptionService.createPlan(createSubscriptionDto);
+    }
+
     @Get(':id')
     @UseGuards(AdminJwtGuard)
     @ApiOperation({
@@ -64,6 +78,7 @@ export class SubscriptionController {
         @Param('id') id: number,
         @Body() updateSubscriptionDto: any,
     ) {
-        return this.subscriptionService.updateSubscription(id, updateSubscriptionDto);
+        return this.subscriptionService.updatePlan(id, updateSubscriptionDto);
     }
+
 }

@@ -8,6 +8,7 @@ import { UpdateMyBasicProfileDto } from './dto/update-basic-profile.dto';
 import { CreateReportDto } from './dto/create-report.dto';
 import { Availability } from 'src/common/entities/availibities.entity';
 import { AvailabilityDto } from './dto/availitity.dto';
+import { CommonSettingsDto } from './dto/common-settings.dto';
 
 
 
@@ -181,12 +182,23 @@ export class ClientProfileController {
   @ApiOperation({ summary: 'Update My Subscription', operationId: 'updateMySubscription' })
   @ApiResponse({ status: 200, description: 'Client subscription updated successfully' })
   @ApiResponse({ status: 404, description: 'Subscription not found' })
-  async updateMySubscription(@Body() body: { user_id: string; planId: number, paymentMethodId: string }) {
+  async updateMySubscription(@Body() body: { user_id: string; planId: number, paymentMethodId?: string }) {
     const userId = body.user_id;
     const subscriptionId = body.planId;
     const paymentMethodId = body.paymentMethodId;
     const subscription = await this.profileService.updateMySubscription(userId, subscriptionId, paymentMethodId);
     return subscription;
+  }
+
+  @Patch('bank-data')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({ summary: 'Update Bank Data', operationId: 'updateBankData' })
+  @ApiResponse({ status: 200, description: 'Bank data updated successfully' })
+  @ApiResponse({ status: 404, description: 'Bank data not found' })
+  async updateBankData(@Body() body: { user_id: string; bank_data: any }) {
+    const userId = body.user_id;
+    const bankData = body.bank_data;
+    return this.profileService.updateStripeBankData(userId, bankData);
   }
 
 
@@ -267,6 +279,22 @@ export class ClientProfileController {
   async createNotification(@Body() body: { user_id: string; title: string; content: string }) {
     const { user_id, title, content } = body;
     return this.profileService.createNotification(user_id, title, content);
+  }
+
+  @Get("professionnal")
+  @UseGuards(ClientJwtGuard)
+  async getProfessionnal(@Body() body: { user_id: string }) {
+    const userId = body.user_id;
+    return this.profileService.getCommonData(userId);
+  }
+
+  @Patch('professionnal')
+  @UseGuards(ClientJwtGuard)
+  async updateProfile(
+    @Body('user_id') userId: string,
+    @Body() commonSettingsDto: CommonSettingsDto,
+  ) {
+    return this.profileService.updateCommonData(userId, commonSettingsDto);
   }
 
 }

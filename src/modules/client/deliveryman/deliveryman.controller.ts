@@ -62,10 +62,11 @@ async addVehicle(
   @Get('my-vehicles')
   @UseGuards(ClientJwtGuard)
   async getMyVehicules(
-    @Query('user_id') userId: string,  
+    @Body('user_id') userId: string,  
     @Query('page') page: number = 1,   
     @Query('limit') limit: number = 10
   ) {
+    console.log('User ID:', userId);
     return this.deliveryManService.getMyVehicles(userId, page, limit);
   }
 

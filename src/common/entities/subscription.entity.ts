@@ -8,10 +8,10 @@ export class Subscription {
     @PrimaryGeneratedColumn('uuid')
     subscription_id: string;
 
-    @Column({ length: 255 })
+    @Column({ length: 255 , nullable: true })
     stripe_customer_id: string;
 
-    @Column({ length: 255 })
+    @Column({ length: 255, nullable: true })
     stripe_subscription_id: string;
 
     @Column({ length: 50, nullable: true })

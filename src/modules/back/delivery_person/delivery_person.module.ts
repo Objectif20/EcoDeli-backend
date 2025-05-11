@@ -8,10 +8,11 @@ import { JwtModule } from '@nestjs/jwt';
 import { SharedModule } from 'src/common/shared/shared.module';
 import { Admin } from 'src/common/entities/admin.entity';
 import { JwtService } from 'src/config/jwt.service';
+import { Trip } from 'src/common/entities/trips.entity';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([DeliveryPerson, Vehicle, Admin]),
+        TypeOrmModule.forFeature([DeliveryPerson, Vehicle, Admin, Trip]),
         JwtModule.register({}),
         SharedModule
     ],

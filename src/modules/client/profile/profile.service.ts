@@ -19,11 +19,12 @@ import { Availability } from "src/common/entities/availibities.entity";
 import { AvailabilityDto } from "./dto/availitity.dto";
 import * as nodemailer from 'nodemailer';
 import { OneSignalService } from "src/common/services/notification/oneSignal.service";
-import { BillingsData, UserSubscriptionData } from "./type";
+import { BillingsData, CommonSettingsForm, UserSubscriptionData } from "./type";
 import { Transfer } from "src/common/entities/transfers.entity";
 import { TransferProvider } from "src/common/entities/transfers_provider.entity";
 import { Subscription } from "src/common/entities/subscription.entity";
 import { SubscriptionTransaction } from "src/common/entities/subscription_transaction.entity";
+import { CommonSettingsDto } from "./dto/common-settings.dto";
 
   @Injectable()
   export class ProfileService {
@@ -90,6 +91,8 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
       let first_name = 'N/A';
       let last_name = 'N/A';
       let validateProfile = false;
+      let customer_stripe_id = false;
+
     
       if (provider) {
         first_name = provider.first_name;
@@ -98,10 +101,12 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
       } else if (merchant) {
         first_name = merchant.first_name;
         last_name = merchant.last_name;
+        // customer_stripe_id = merchant.stripe_customer_id ? true : false;
         validateProfile = true;
       } else if (client) {
         first_name = client.first_name;
         last_name = client.last_name;
+        // customer_stripe_id = client.stripe_customer_id ? true : false;
         if (deliverymanExists > 0) {
           const deliveryman = await this.deliveryPersonRepository.findOne({ where: { user: { user_id } } });
           if (deliveryman) {
@@ -122,6 +127,7 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
     
       if (!provider && latestSubscription?.plan) {
         const currentPrice = latestSubscription.plan.price;
+        console.log('currentPrice', currentPrice);
         const higherPlans = currentPrice !== undefined
           ? await this.planRepository.count({
               where: { price: MoreThan(currentPrice) },
@@ -151,6 +157,7 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
         upgradablePlan,
         validateProfile,
         planName,
+        customer_stripe_id,
       };
     
       return userData;
@@ -188,6 +195,7 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
         newsletter: user.newsletter,
       };
     }
+    
     
     async updateMyBasicProfile(
       user_id: string,
@@ -681,7 +689,11 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
       };
     }
 
-    async updateMySubscription(user_id: string, planId: number, paymentMethodId: string): Promise<{ message: string }> {
+    async updateMySubscription(
+      user_id: string,
+      planId: number,
+      paymentMethodId?: string
+    ): Promise<{ message: string }> {
       const user = await this.userRepository.findOne({
         where: { user_id },
         relations: ['clients', 'merchant', 'subscriptions']
@@ -701,38 +713,48 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
       const isMerchant = !!user.merchant;
       let stripeCustomerId: string | null = null;
     
-      if (isClient) {
-        stripeCustomerId = user.clients[0].stripe_customer_id;
-      } else if (isMerchant) {
-        stripeCustomerId = user.merchant.stripe_customer_id;
-      }
+      const isFreePlan = (plan.price ?? 0) === 0;
     
-      if (!stripeCustomerId && paymentMethodId) {
-        let customer;
+      if (!isFreePlan) {
         if (isClient) {
-          customer = await this.stripeService.createCustomer(user.email, `Client: ${user.clients[0].first_name} ${user.clients[0].last_name}`);
+          stripeCustomerId = user.clients[0].stripe_customer_id;
         } else if (isMerchant) {
-          customer = await this.stripeService.createCustomer(user.email, `Merchant: ${user.merchant.company_name}`);
+          stripeCustomerId = user.merchant.stripe_customer_id;
         }
     
-        if (!customer) {
-          throw new Error("Failed to create Stripe customer");
+        if (!stripeCustomerId && paymentMethodId) {
+          let customer;
+          if (isClient) {
+            customer = await this.stripeService.createCustomer(
+              user.email,
+              `Client: ${user.clients[0].first_name} ${user.clients[0].last_name}`
+            );
+          } else if (isMerchant) {
+            customer = await this.stripeService.createCustomer(
+              user.email,
+              `Merchant: ${user.merchant.company_name}`
+            );
+          }
+    
+          if (!customer) {
+            throw new Error("Failed to create Stripe customer");
+          }
+    
+          await this.stripeService.attachPaymentMethod(customer.id, paymentMethodId);
+          stripeCustomerId = customer.id;
+    
+          if (isClient) {
+            user.clients[0].stripe_customer_id = stripeCustomerId;
+            await this.clientRepository.save(user.clients[0]);
+          } else if (isMerchant) {
+            user.merchant.stripe_customer_id = stripeCustomerId;
+            await this.merchantRepository.save(user.merchant);
+          }
         }
     
-        await this.stripeService.attachPaymentMethod(customer.id, paymentMethodId);
-        stripeCustomerId = customer.id;
-    
-        if (isClient) {
-          user.clients[0].stripe_customer_id = stripeCustomerId;
-          await this.clientRepository.save(user.clients[0]);
-        } else if (isMerchant) {
-          user.merchant.stripe_customer_id = stripeCustomerId;
-          await this.merchantRepository.save(user.merchant);
+        if (!stripeCustomerId) {
+          throw new Error("Stripe customer ID is missing and no payment method was provided to create one.");
         }
-      }
-    
-      if (!stripeCustomerId) {
-        throw new Error("Stripe customer ID is missing.");
       }
     
       const activeSubscription = await this.subscriptionRepository.findOne({
@@ -754,16 +776,40 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
         activeSubscription.status = 'cancelled';
         await this.subscriptionRepository.save(activeSubscription);
     
-        await this.stripeService.cancelSubscriptionAtPeriodEnd(activeSubscription.stripe_subscription_id);
+        if (activeSubscription.stripe_subscription_id) {
+          try {
+            await this.stripeService.cancelSubscriptionAtPeriodEnd(activeSubscription.stripe_subscription_id);
+          } catch (error) {
+            throw new Error(`Erreur lors de l'annulation de l'abonnement Stripe: ${error.message}`);
+          }
+        }
       }
     
-      const stripeSubscription = await this.stripeService.createSubscription(stripeCustomerId, plan.stripe_price_id, newStartDate);
+      let stripeSubscriptionId: string | null = null;
+
+      if (!plan.stripe_price_id) {
+        if (plan.price === undefined) {
+          throw new Error('Plan price is undefined');
+        }
+        const newPrice = await this.stripeService.createPriceForPlan(plan.name, plan.price);
+        plan.stripe_price_id = newPrice.id;
+        await this.planRepository.save(plan);
+      }
+    
+      if (!isFreePlan && stripeCustomerId) {
+        const stripeSubscription = await this.stripeService.createSubscription(
+          stripeCustomerId,
+          plan.stripe_price_id,
+          newStartDate
+        );
+        stripeSubscriptionId = stripeSubscription.id;
+      }
     
       const newSubscription = this.subscriptionRepository.create({
         user,
         plan,
-        stripe_customer_id: stripeCustomerId,
-        stripe_subscription_id: stripeSubscription.id,
+        stripe_customer_id: stripeCustomerId || undefined,
+        stripe_subscription_id: stripeSubscriptionId || undefined,
         status: 'active',
         start_date: newStartDate,
         end_date: newEndDate,
@@ -984,6 +1030,88 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
       }
     
       await this.onesignalService.sendNotification(subscriptionIds, title, content);
+    }
+
+    async getCommonData(userId: string): Promise<CommonSettingsForm> {
+      const user = await this.userRepository.findOne({ where: { user_id: userId } });
+      if (!user) {
+        throw new Error('User not found');
+      }
+    
+      const merchant = await this.merchantRepository.findOne({ where: { user: { user_id: userId } } });
+      const provider = await this.providerRepository.findOne({ where: { user: { user_id: userId } } });
+      const deliveryPerson = await this.deliveryPersonRepository.findOne({ where: { user: { user_id: userId } } });
+    
+      if (merchant) {
+        return {
+          company_name: merchant.company_name,
+          siret: merchant.siret,
+          address: merchant.address,
+          postal_code: merchant.postal_code || '',
+          city: merchant.city,
+          country: merchant.country,
+          phone: merchant.phone,
+        };
+      } else if (provider) {
+        return {
+          company_name: provider.company_name,
+          siret: provider.siret,
+          address: provider.address,
+          service_type: provider.service_type,
+          postal_code: provider.postal_code || '',
+          city: provider.city,
+          country: provider.country,
+          phone: provider.phone,
+        };
+      } else if (deliveryPerson) {
+        return {
+          address: deliveryPerson.address,
+          postal_code: deliveryPerson.postal_code || '',
+          city: deliveryPerson.city,
+          country: deliveryPerson.country,
+          phone_number: deliveryPerson.phone_number,
+          professional_email: deliveryPerson.professional_email,
+        };
+      } else {
+        // Retour par défaut si aucun des cas ci-dessus n'est vrai
+        return {
+          address: '',
+          postal_code: '',
+          city: '',
+          country: '',
+        };
+      }
+    }
+
+    async updateCommonData(userId: string, commonSettingsDto: CommonSettingsDto) {
+      const user = await this.userRepository.findOne({ where: { user_id: userId } });
+      if (!user) {
+        throw new Error('User not found');
+      }
+  
+      const merchant = await this.merchantRepository.findOne({ where: { user: { user_id: userId } } });
+      const provider = await this.providerRepository.findOne({ where: { user: { user_id: userId } } });
+      const deliveryPerson = await this.deliveryPersonRepository.findOne({ where: { user: { user_id: userId } } });
+  
+      if (merchant) {
+        await this.merchantRepository.update({ user: { user_id: userId } }, commonSettingsDto);
+      } else if (provider) {
+        await this.providerRepository.update({ user: { user_id: userId } }, commonSettingsDto);
+      } else if (deliveryPerson) {
+        await this.deliveryPersonRepository.update({ user: { user_id: userId } }, commonSettingsDto);
+      } else {
+        throw new Error('No profile found to update');
+      }
+  
+      return this.getCommonData(userId);
+    }
+
+
+    async updateStripeBankData(userId : string, paymentMethodId : string) {
+
+      console.log("paymentMethodId", paymentMethodId)
+      console.log("userId", userId)
+  
     }
 
     

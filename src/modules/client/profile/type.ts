@@ -52,3 +52,17 @@ export interface UserSubscriptionData {
       is_pro: boolean;
   }
 }
+
+
+export interface CommonSettingsForm {
+  company_name?: string;
+  siret?: string;
+  address: string;
+  service_type?: string;
+  postal_code: string;
+  city: string;
+  country: string;
+  phone?: string;
+  professional_email?: string;
+  phone_number?: string;
+}

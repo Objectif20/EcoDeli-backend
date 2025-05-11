@@ -91,6 +91,39 @@ export class LanguagesService {
     };
   }
 
+  async getDefaultLanguage(id : string): Promise<any> {
+
+    const language = await this.languagesRepository.findOneBy({ language_id : id });
+    if (!language) {
+      throw new Error('Language not found');
+    }
+    try {
+      const defaultFileName = `${language.iso_code}.json`;
+      const fileBuffer = await this.minioService.downloadFileFromBucket('languages', defaultFileName);
+      const jsonContent = JSON.parse(fileBuffer.toString('utf-8'));
+      return jsonContent;
+    } catch (error) {
+      console.error('Erreur lors de la récupération de la langue par défaut (fr.json) :', error);
+      throw new Error('Impossible de récupérer ou de parser le fichier fr.json.');
+    }
+  }
+
+  async getFrenchLanguage(): Promise<any> {
+    const language = await this.languagesRepository.findOneBy({ iso_code: 'fr' });
+    if (!language) {
+      throw new Error('Language not found');
+    }
+    try {
+      const defaultFileName = `${language.iso_code}.json`;
+      const fileBuffer = await this.minioService.downloadFileFromBucket('languages', defaultFileName);
+      const jsonContent = JSON.parse(fileBuffer.toString('utf-8'));
+      return jsonContent;
+    } catch (error) {
+      console.error('Erreur lors de la récupération de la langue par défaut (fr.json) :', error);
+      throw new Error('Impossible de récupérer ou de parser le fichier fr.json.');
+    }
+  }
+
   private async uploadFile(file: Express.Multer.File, fileName: string): Promise<void> {
     const upload = await this.minioService.uploadFileToBucket('languages', fileName, file);
     if (!upload) {

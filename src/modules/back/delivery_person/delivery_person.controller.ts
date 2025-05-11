@@ -7,13 +7,14 @@ import { AdminJwtGuard } from 'src/common/guards/admin-jwt.guard';
 import { AdminRole } from 'src/common/decorator/admin-role.decorator';
 import { AdminRoleGuard } from 'src/common/guards/admin-role.guard';
 import { DeliveryPersonResponse } from './dto/delivery_person.dto';
+import { AllDeliveryPerson, DeliverymanDetails } from './type';
 
 @ApiTags('Delivery Person Management')
 @Controller('admin/deliveryPerson')
 export class DeliveryPersonController {
     constructor(private readonly deliveryPersonService: DeliveryPersonService) { }
 
-    @Post(':id')
+    @Post(':id/validate')
     @AdminRole('DELIVERY')
     @UseGuards(AdminJwtGuard, AdminRoleGuard)
     @ApiOperation({ summary: 'Update Delivery Person Status' })
@@ -22,16 +23,11 @@ export class DeliveryPersonController {
     @ApiResponse({ status: 400, description: 'Invalid status provided' })
     async updateDeliveryPersonStatus(
         @Param('id') id: string,
-        @Body('status') status: 'Accepted' | 'Rejected'
     ): Promise<DeliveryPerson | null> {
-        if (!['Accepted', 'Rejected'].includes(status)) {
-            throw new BadRequestException('Invalid status. Only "Accepted" or "Rejected" are allowed.');
-        }
-
-        return this.deliveryPersonService.updateDeliveryPersonStatus(id, status);
+        return this.deliveryPersonService.updateDeliveryPersonStatus(id);
     }
 
-    @Post(':deliveryPersonId/vehicle/:vehicleId')
+    @Post(':deliveryPersonId/vehicle/:vehicleId/validate')
     @AdminRole('DELIVERY')
     @UseGuards(AdminJwtGuard, AdminRoleGuard)
     @ApiOperation({ summary: 'Validate Vehicle of Delivery Person' })
@@ -42,16 +38,13 @@ export class DeliveryPersonController {
     async validateVehicleOfDeliveryPerson(
         @Param('deliveryPersonId') deliveryPersonId: string,
         @Param('vehicleId') vehicleId: string,
-        @Body('validated') validated: boolean,
         @Request() req,
     ): Promise<Vehicle | null> {
-        if (typeof validated !== 'boolean') {
-            throw new BadRequestException('Invalid value for validated. Must be true or false.');
-        }
+
 
         const adminId = req.body.admin_id;
 
-        return this.deliveryPersonService.validateVehicleOfDeliveryPerson(deliveryPersonId, vehicleId, validated, adminId);
+        return this.deliveryPersonService.validateVehicleOfDeliveryPerson(deliveryPersonId, vehicleId,adminId);
     }
 
     @Get()
@@ -62,11 +55,10 @@ export class DeliveryPersonController {
     @ApiQuery({ name: 'limit', required: false, description: 'Number of items per page' })
     @ApiResponse({ status: 200, description: 'List of delivery persons retrieved successfully' })
     async getAllDeliveryPersons(
-        @Query('status') status: string,
         @Query('page') page: number = 1,
         @Query('limit') limit: number = 10,
-    ): Promise<{ data: DeliveryPersonResponse[], meta: { total: number, page: number, limit: number }, totalRows: number }> {
-        return this.deliveryPersonService.getAllDeliveryPersons(status, page, limit);
+    ): Promise<{ data: AllDeliveryPerson[], meta: { total: number, page: number, limit: number }, totalRows: number }> {
+        return this.deliveryPersonService.getAllDeliveryPersons(page, limit);
     }
 
     @Get(':id')
@@ -74,7 +66,7 @@ export class DeliveryPersonController {
     @ApiOperation({ summary: 'Get Delivery Person by ID' })
     @ApiParam({ name: 'id', description: 'The ID of the delivery person' })
     @ApiResponse({ status: 200, description: 'Delivery person retrieved successfully' })
-    async getDeliveryPersonById(@Param('id') id: string): Promise<DeliveryPersonResponse> {
+    async getDeliveryPersonById(@Param('id') id: string): Promise<DeliverymanDetails> {
         return this.deliveryPersonService.getDeliveryPersonById(id);
     }
 

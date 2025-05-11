@@ -35,6 +35,29 @@ export class MinioService {
     }
   }
 
+  async downloadFileFromBucket(bucketName: string, filePath: string): Promise<Buffer> {
+    try {
+      const minioClient: Client = await this.minioConfigService.createMinioClient();
+      const stream = await minioClient.getObject(bucketName, filePath);
+  
+      return new Promise((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        stream.on('data', (chunk) => chunks.push(chunk));
+        stream.on('end', () => {
+          const fileBuffer = Buffer.concat(chunks);
+          resolve(fileBuffer);
+        });
+        stream.on('error', (err) => {
+          console.error('Erreur lors de la lecture du fichier depuis MinIO:', err);
+          reject(err);
+        });
+      });
+    } catch (error) {
+      console.error(`Erreur lors du téléchargement du fichier depuis MinIO:`, error);
+      throw error;
+    }
+  }
+
   async uploadEncryptedFileToBucket(bucketName: string, filePath: string, file: Express.Multer.File): Promise<boolean> {
     try {
       const minioClient: Client = await this.minioConfigService.createMinioClient();
