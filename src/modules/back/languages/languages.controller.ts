@@ -72,4 +72,29 @@ export class LanguagesController {
   ): Promise<{ data: (Languages & { fileUrl: string })[], meta: { total: number, page: number, lastPage: number } }> {
     return this.languagesService.getAllLanguages(page, limit);
   }
+
+  @Get("french")
+  @UseGuards(AdminJwtGuard)
+  @ApiOperation({
+    summary: 'Get the default language',
+    operationId: 'getDefaultLanguage',
+  })
+  @ApiResponse({ status: 200, description: 'Default language retrieved successfully' })
+  async getDefaultLanguage(): Promise<any> {
+    return this.languagesService.getFrenchLanguage();
+  }
+
+  @Get(':id')
+  @UseGuards(AdminJwtGuard)
+  @ApiOperation({
+    summary: 'Get a Language by ID',
+    operationId: 'getLanguageById',
+  })
+  @ApiParam({ name: 'id', description: 'The ID of the language' })
+  @ApiResponse({ status: 200, description: 'Language retrieved successfully' })
+  async getLanguageById(@Param('id') id: string): Promise<any> {
+    return this.languagesService.getDefaultLanguage(id);
+  }
+
+
 }
