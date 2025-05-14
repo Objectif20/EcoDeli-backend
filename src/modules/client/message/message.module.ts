@@ -22,11 +22,12 @@ import { OneSignalDevice } from 'src/common/entities/onesignal-device.entity';
 import { Transfer } from 'src/common/entities/transfers.entity';
 import { TransferProvider } from 'src/common/entities/transfers_provider.entity';
 import { SubscriptionTransaction } from 'src/common/entities/subscription_transaction.entity';
+import { Languages } from 'src/common/entities/languages.entity';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Message.name, schema: MessageSchema }]),
-    TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Subscription, Plan, ProviderDocuments, Blocked, Report, Availability, OneSignalDevice, Transfer, TransferProvider, SubscriptionTransaction]),
+    TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Subscription, Plan, ProviderDocuments, Languages, Blocked, Report, Availability, OneSignalDevice, Transfer, TransferProvider, SubscriptionTransaction]),
     
         SharedModule,
         JwtModule.register({})

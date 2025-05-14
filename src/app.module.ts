@@ -17,6 +17,7 @@ import { MinioService } from './common/services/file/minio.service';
 import { ScheduleModule } from '@nestjs/schedule';
 import { StripeModule } from './config/stripe.module';
 import { OneSignalModule } from './config/onesignal.module';
+import { DesktopModule } from './modules/desktop/desktop.module';
 
 
 @Global()
@@ -72,10 +73,12 @@ import { OneSignalModule } from './config/onesignal.module';
 
     /* Module du BackOffice */
     BackModule,
-    ClientModule,
 
     /*Module du FrontOffice */
     ClientModule,
+
+    /* Module de l'application de bureau */
+    DesktopModule,
 
     /* Module des guards */
     GuardsModule,

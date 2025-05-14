@@ -18,8 +18,6 @@ export class GlobalController {
 
   // API : GET /admin/global/test
   @Get('test')
-  @AdminRole('TICKET')
-  @UseGuards(AdminJwtGuard, AdminRoleGuard)
   @ApiOperation({
     summary: 'Get a test message',
     operationId: 'getTestMessage',

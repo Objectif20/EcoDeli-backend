@@ -25,6 +25,7 @@ import { TransferProvider } from "src/common/entities/transfers_provider.entity"
 import { Subscription } from "src/common/entities/subscription.entity";
 import { SubscriptionTransaction } from "src/common/entities/subscription_transaction.entity";
 import { CommonSettingsDto } from "./dto/common-settings.dto";
+import { Languages } from "src/common/entities/languages.entity";
 
   @Injectable()
   export class ProfileService {
@@ -38,7 +39,7 @@ import { CommonSettingsDto } from "./dto/common-settings.dto";
       @InjectRepository(DeliveryPerson)
       private readonly deliveryPersonRepository: Repository<DeliveryPerson>,
       @InjectRepository(Providers)
-        private readonly providerRepository: Repository<Providers>,
+      private readonly providerRepository: Repository<Providers>,
       @InjectRepository(Plan)
       private readonly planRepository: Repository<Plan>,
       @InjectRepository(ProviderDocuments)
@@ -57,14 +58,12 @@ import { CommonSettingsDto } from "./dto/common-settings.dto";
       private readonly subscriptionRepository: Repository<Subscription>,
       @InjectRepository(SubscriptionTransaction)
       private readonly subscriptionTransactionRepository: Repository<SubscriptionTransaction>,
-
-
-
+      @InjectRepository(Languages)
+      private readonly languageRepository: Repository<Languages>,
       private readonly minioService: MinioService,
       private readonly stripeService: StripeService,
       @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
       private readonly onesignalService: OneSignalService,
-      
     ) {}
   
     async getMyProfile(user_id: string): Promise<any> {
@@ -150,8 +149,9 @@ import { CommonSettingsDto } from "./dto/common-settings.dto";
         email: user.email,
         photo: photoUrl || null,
         active: !user.banned,
-        language: user.language?.language_name || 'fr',
-        iso_code: user.language?.iso_code || 'FR',
+        language: user.language?.language_name || 'test',
+        iso_code: user.language?.iso_code || 'test',
+        language_id: user.language?.language_id || 'test',
         profile,
         otp: user.two_factor_enabled,
         upgradablePlan,
@@ -1112,6 +1112,26 @@ import { CommonSettingsDto } from "./dto/common-settings.dto";
       console.log("paymentMethodId", paymentMethodId)
       console.log("userId", userId)
   
+    }
+
+    async updateLanguage(userId: string, language_id :string) : Promise<{ message: string }> {
+
+
+      const user = await this.userRepository.findOne({ where: { user_id: userId } });
+      if (!user) {
+        throw new Error('User not found');
+      }
+  
+      const language = await this.languageRepository.findOne({ where: { language_id } });
+      if (!language) {
+        throw new Error('Language not found');
+      }
+  
+      user.language = language;
+      await this.userRepository.save(user);
+  
+      return { message: 'Language updated successfully' };
+
     }
 
     

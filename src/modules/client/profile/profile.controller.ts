@@ -297,4 +297,12 @@ export class ClientProfileController {
     return this.profileService.updateCommonData(userId, commonSettingsDto);
   }
 
+  @Patch('language')
+  @UseGuards(ClientJwtGuard)
+  async updateLanguage(@Body() body: { user_id: string; language_id: string }) {
+    const userId = body.user_id;
+    const languageId = body.language_id;
+    return this.profileService.updateLanguage(userId, languageId);
+  }
+
 }
