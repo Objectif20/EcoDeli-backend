@@ -27,6 +27,28 @@ export class AdminProfileController {
     return await this.profileService.getAllProfile();
   }
 
+  @Patch('language')
+  @UseGuards(AdminJwtGuard)
+  @ApiOperation({
+    summary: 'Change Admin Language',
+    operationId: 'changeAdminLanguage',
+  })
+  @ApiBody({
+    description: 'Admin ID and Language ID',
+    type: Object,
+    examples: {
+      example1: {
+        value: { admin_id: 'admin_123', language_id: 'lang_456' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Admin language updated successfully' })
+  async changeLanguage(@Body() body: { admin_id: string; language_id: string }): Promise<{ message: string }> {
+    const { admin_id, language_id } = body;
+    await this.profileService.updateLanguage(admin_id, language_id);
+    return { message: 'Admin language updated successfully' };
+  }
+
   @Get('me')
   @UseGuards(AdminJwtGuard)
   @ApiOperation({
