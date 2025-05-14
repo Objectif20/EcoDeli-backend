@@ -1,4 +1,4 @@
-import { Controller, Patch, Body } from '@nestjs/common';
+import { Controller, Patch, Body, Param, Get } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags, ApiBody } from '@nestjs/swagger';
 import { LanguageService } from './langue.service';
 
@@ -25,5 +25,16 @@ export class LanguageController {
     async changeLanguage(@Body() body: { user_id: string, language_id: string }) {
         await this.languageService.changeLanguage(body.user_id, body.language_id);
         return { message: 'Langue mise à jour avec succès' };
+    }
+
+    @Get(':iso_code')
+    @ApiOperation({
+        summary: 'Get Default Language',
+        operationId: 'getDefaultLanguage',
+    })
+    @ApiResponse({ status: 200, description: 'Default language retrieved successfully' })
+    async getDefaultLanguage(@Param('iso_code') iso_code: string) {
+        const language = await this.languageService.getDefaultLanguage(iso_code);
+        return  language ;
     }
 }
