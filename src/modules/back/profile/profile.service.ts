@@ -10,6 +10,7 @@ import { UpdateRoleDto } from "./dto/update-role.dto";
 import { Role } from "src/common/entities/roles.entity";
 import { RoleList } from "src/common/entities/role_list.entity";
 import { CreateProfileDto } from "./dto/create-profile.dto";
+import { Languages } from "src/common/entities/languages.entity";
 
 
 
@@ -20,6 +21,8 @@ export class AdminProfileService {
         @InjectRepository(Admin) private readonly adminRepository: Repository<Admin>,
         @InjectRepository(Role) private readonly roleRepository: Repository<Role>,
         @InjectRepository(RoleList) private readonly roleListRepository: Repository<RoleList>,
+        @InjectRepository(Languages)
+        private readonly languageRepository: Repository<Languages>,
         @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
         private readonly minioService: MinioService,
     )    
@@ -95,6 +98,7 @@ export class AdminProfileService {
                 'admin.two_factor_enabled AS otp',
                 'language.language_name AS language',
                 'language.iso_code AS iso_code',
+                'language.language_id AS language_id',
                 'roleList.role_name AS role_name'
             ])
             .getRawMany();
@@ -124,6 +128,7 @@ export class AdminProfileService {
             roles,
             language: adminInfo.language,
             iso_code: adminInfo.iso_code,
+            language_id: adminInfo.language_id,
             otp: adminInfo.otp,
         };
     }
@@ -318,6 +323,27 @@ export class AdminProfileService {
         }
     
         return { message: 'Email sent' };
+      }
+
+      async updateLanguage(admin_id: string, language_id :string) : Promise<{ message: string }> {
+        console.log('admin_id', admin_id);
+        console.log('language_id', language_id);
+
+        const user = await this.adminRepository.findOne({ where: { admin_id: admin_id } });
+        if (!user) {
+          throw new Error('User not found');
+        }
+    
+        const language = await this.languageRepository.findOne({ where: { language_id } });
+        if (!language) {
+          throw new Error('Language not found');
+        }
+    
+        user.language = language;
+        await this.adminRepository.save(user);
+    
+        return { message: 'Language updated successfully' };
+  
       }
 
 
