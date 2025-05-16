@@ -18,6 +18,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { StripeModule } from './config/stripe.module';
 import { OneSignalModule } from './config/onesignal.module';
 import { DesktopModule } from './modules/desktop/desktop.module';
+import { MobileModule } from './modules/mobile/mobile.module';
 
 
 @Global()
@@ -79,6 +80,9 @@ import { DesktopModule } from './modules/desktop/desktop.module';
 
     /* Module de l'application de bureau */
     DesktopModule,
+
+    /* Module des applications mobiles */
+    MobileModule,
 
     /* Module des guards */
     GuardsModule,
