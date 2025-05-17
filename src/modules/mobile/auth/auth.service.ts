@@ -7,22 +7,28 @@ import * as speakeasy from 'speakeasy';
 import * as qrcode from 'qrcode';
 import { JwtService as NestJwtService } from '@nestjs/jwt';
 import { JwtService } from 'src/config/jwt.service';
+import { Client } from 'src/common/entities/client.entity';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectRepository(Users)
     private readonly userRepository: Repository<Users>,
+    @InjectRepository(Client)
+    private readonly clientRepository: Repository<Client>,
     private readonly jwtService: NestJwtService,
     private readonly configService: JwtService,
   ) {}
 
-  async login(email: string, password: string): Promise<{ access_token: string; refresh_token: string } | { two_factor_required: boolean }> {
+  async login(email: string, password: string): Promise<{ access_token: string; refresh_token: string } | { two_factor_required: boolean } | { valid: boolean }> {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new UnauthorizedException('User not found');
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) throw new UnauthorizedException('Incorrect password');
+
+    const client = await this.clientRepository.findOne({ where: { user: { user_id: user.user_id } } });
+    if (!client) return { valid : false};
 
     if (user.two_factor_enabled) {
       return { two_factor_required: true };
@@ -32,12 +38,15 @@ export class AuthService {
     return { access_token, refresh_token };
   }
 
-  async loginA2F(email: string, password: string, code: string): Promise<{ access_token: string; refresh_token: string }> {
+  async loginA2F(email: string, password: string, code: string): Promise<{ access_token: string; refresh_token: string } | { valid: boolean }> {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user || !user.two_factor_enabled) throw new UnauthorizedException('2FA not enabled');
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) throw new UnauthorizedException('Incorrect password');
+
+    const client = await this.clientRepository.findOne({ where: { user: { user_id: user.user_id } } });
+    if (!client) return { valid : false};
 
     const isValidOtp = speakeasy.totp.verify({
       secret: user.secret_totp,
