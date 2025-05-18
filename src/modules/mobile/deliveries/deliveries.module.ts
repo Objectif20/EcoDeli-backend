@@ -13,7 +13,6 @@ import { Delivery } from "src/common/entities/delivery.entity";
 
 
 @Module({
-
     imports: [
         TypeOrmModule.forFeature([Users, Shipment, Delivery]),
         JwtModule.register({}),
