@@ -1,4 +1,4 @@
-import {  Injectable } from "@nestjs/common";
+import {  Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Client } from "src/common/entities/client.entity";
 import { DeliveryPerson } from "src/common/entities/delivery_persons.entity";
@@ -8,7 +8,8 @@ import { Providers } from "src/common/entities/provider.entity";
 import { Users } from "src/common/entities/user.entity";
 import { MinioService } from "src/common/services/file/minio.service";
 import { MoreThan, Repository } from "typeorm";
-import { ProfileClient } from "./type";
+import { CalendarEvent, ProfileClient } from "./type";
+import { Report } from "src/common/entities/report.entity";
 
 
   @Injectable()
@@ -26,6 +27,8 @@ import { ProfileClient } from "./type";
       private readonly providerRepository: Repository<Providers>,
       @InjectRepository(Plan)
       private readonly planRepository: Repository<Plan>,
+      @InjectRepository(Report)
+      private readonly reportRepository: Repository<Report>,
       private readonly minioService: MinioService,
     ) {}
   
@@ -106,5 +109,70 @@ import { ProfileClient } from "./type";
     
       return userData;
     }   
+
+    async createReport(user_id : string, content : string): Promise<Report> {
+      const user = await this.userRepository.findOne({ where: { user_id: user_id } });
+      if (!user) {
+        throw new NotFoundException('Utilisateur introuvable');
+      }
+  
+      const report = this.reportRepository.create({
+        user,
+        report_message: content,
+        status: 'pending',
+        state: 'new',
+      });
+  
+      return this.reportRepository.save(report);
+    }
+
+    async getPlanning(user_id: string): Promise<CalendarEvent[]> {
+      const user = await this.userRepository.findOne({
+        where: { user_id },
+      });
+
+      if (!user) {
+        throw new NotFoundException('Utilisateur introuvable');
+      }
+
+      return [
+        {
+          id: '1',
+          title: 'Réunion d\'équipe',
+          description: 'Réunion hebdomadaire avec l\'équipe projet.',
+          start: new Date('2025-05-20T10:00:00'),
+          end: new Date('2025-05-20T11:00:00'),
+          allDay: false,
+          location: 'Salle de réunion 2B',
+        },
+        {
+          id: '2',
+          title: 'Déjeuner client',
+          description: 'Déjeuner avec le client pour discuter des nouvelles fonctionnalités.',
+          start: new Date('2025-05-20T12:30:00'),
+          end: new Date('2025-05-20T14:00:00'),
+          allDay: false,
+          location: 'Le Bistro Parisien',
+        },
+        {
+          id: '3',
+          title: 'Journée Télétravail',
+          start: new Date('2025-05-22T00:00:00'),
+          end: new Date('2025-05-22T23:59:59'),
+          allDay: true,
+          location: 'Domicile',
+        },
+        {
+          id: '4',
+          title: 'Sprint Planning',
+          description: 'Planification du sprint avec l\'équipe Agile.',
+          start: new Date('2025-05-23T09:00:00'),
+          end: new Date('2025-05-23T10:30:00'),
+          allDay: false,
+          location: 'Salle de conférence A',
+        }
+      ];
+    }
+
 
   }

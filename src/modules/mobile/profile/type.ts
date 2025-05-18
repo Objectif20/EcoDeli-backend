@@ -11,3 +11,13 @@ export interface ProfileClient {
         validateProfile : boolean,
         planName : string | null,
 }
+
+export interface CalendarEvent {
+    id: string;
+    title: string;
+    description?: string;
+    start: Date;
+    end: Date;
+    allDay?: boolean;
+    location?: string;
+  }
