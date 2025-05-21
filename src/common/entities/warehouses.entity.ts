@@ -25,4 +25,11 @@ export class Warehouse {
 
     @OneToMany(() => ExchangePoint, exchangePoint => exchangePoint.warehouse)
     exchangePoints: ExchangePoint[];
+
+
+    @Column({ type: 'varchar', length: 255 })
+    address: string;
+
+    @Column({ type: 'varchar', length: 15 })
+    postal_code: string;
 }
