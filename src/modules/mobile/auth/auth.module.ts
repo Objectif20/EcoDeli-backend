@@ -5,10 +5,11 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtService } from 'src/config/jwt.service';
 import { Users } from 'src/common/entities/user.entity';
+import { Client } from 'src/common/entities/client.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Users]),
+    TypeOrmModule.forFeature([Users, Client]),
     JwtModule.register({}),
   ],
   providers: [AuthService, JwtService], 

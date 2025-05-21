@@ -92,6 +92,36 @@ class ShipmentDTO {
     @IsString()
     delivery_mail: string;
 
+    @IsString()
+    arrival_handling: string;
+
+    @IsString()
+    handling_floor_arrival: string;
+
+    @IsString()
+    elevator_arrival: string;
+
+    @IsString()
+    departure_handling: string;
+
+    @IsString()
+    handling_floor_departure: string;
+
+    @IsString()
+    arrival_postal_code: string;
+
+    @IsString()
+    arrival_address: string;
+
+    @IsString()
+    departure_postal_code: string;
+
+    @IsString()
+    departure_address: string;
+
+    @IsString()
+    elevator_departure: string;
+
     @IsArray()
     @ValidateNested({ each: true })
     @Type(() => ParcelDTO)

@@ -30,4 +30,10 @@ export class ExchangePoint {
 
     @OneToMany(() => Store, store => store.exchangePoint)
     stores: Store[];
+
+    @Column({ type: 'varchar', length: 255 })
+    address: string;
+
+    @Column({ type: 'varchar', length: 15 })
+    postal_code: string;
 }

@@ -40,7 +40,18 @@ import { v4 as uuidv4 } from 'uuid';
       this.sendUserMessages(userId);
       await this.sendContacts(userId, client);
     }
-  
+
+    @SubscribeMessage("get_contacts")
+    async handleGetContacts(@ConnectedSocket() client: Socket) {
+      const userId = client.data.userId;
+      await this.sendContacts(userId, client);
+    }
+
+    @SubscribeMessage("refresh_contacts")
+    async handleRefreshContacts(@ConnectedSocket() client: Socket) {
+      const userId = client.data.userId;
+      await this.sendContacts(userId, client);
+    }
     @SubscribeMessage('disconnect')
     handleDisconnect(@ConnectedSocket() client: Socket) {
       this.connectedUsers.forEach((socket, userId) => {
@@ -94,6 +105,8 @@ import { v4 as uuidv4 } from 'uuid';
     @ConnectedSocket() client: Socket,
     ) {
     const userId = client.data.userId;
+
+    console.log("On envoit les messages à l'utilisateur:", userId);
 
     const messages = await this.messageModel
         .find({

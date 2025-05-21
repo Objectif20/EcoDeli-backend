@@ -83,6 +83,21 @@ class ShipmentDTO {
     arrival_location: LocationDTO;
 
     @IsString()
+    arrival_handling: string;
+
+    @IsString()
+    handling_floor_arrival: string;
+
+    @IsString()
+    elevator_arrival: string;
+
+    @IsString()
+    arrival_postal_code: string;
+
+    @IsString()
+    arrival_address: string;
+
+    @IsString()
     delivery_mail: string;
 
     @IsArray()

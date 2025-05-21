@@ -51,7 +51,6 @@ export class Shipment {
     @Column({ type: 'varchar', length: 255, nullable: true })
     arrival_city: string | null;
 
-    // Modification : stocke un POINT pour la localisation
     @Column({ type: 'geometry', spatialFeatureType: 'Point', srid: 4326, nullable: true })
     departure_location: Point | null;
 
@@ -83,4 +82,33 @@ export class Shipment {
     @OneToMany(() => Favorite, (favorite) => favorite.shipment)
     favorites: Favorite[];
 
+    @Column({ type: 'varchar', length: 255, nullable: true })
+    arrival_address: string | null;
+
+    @Column({ type: 'varchar', length: 255, nullable: true })
+    departure_address: string | null;
+
+    @Column({ type: 'varchar', length: 15, nullable: true })
+    arrival_postal: string | null;
+
+    @Column({ type: 'varchar', length: 15, nullable: true })
+    departure_postal: string | null;
+
+    @Column({ type: 'boolean', default: false })
+    arrival_handling: boolean;
+
+    @Column({ type: 'boolean', default: false })
+    departure_handling: boolean;
+
+    @Column({ type: 'int', default: 0 })
+    floor_departure_handling: number;
+
+    @Column({ type: 'boolean', default: false })
+    elevator_departure: boolean;
+
+    @Column({ type: 'int', default: 0 })
+    floor_arrival_handling: number;
+
+    @Column({ type: 'boolean', default: false })
+    elevator_arrival: boolean;
 }
