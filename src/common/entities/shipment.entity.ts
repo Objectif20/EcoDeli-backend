@@ -111,5 +111,4 @@ export class Shipment {
 
     @Column({ type: 'boolean', default: false })
     elevator_arrival: boolean;
-
 }

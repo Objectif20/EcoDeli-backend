@@ -128,6 +128,16 @@ export class DeliveryService {
             image: "https://static.vecteezy.com/ti/vecteur-libre/p1/5720408-icone-image-croisee-image-non-disponible-supprimer-symbole-vecteur-image-gratuit-vectoriel.jpg",
             user: user,
             delivery_mail: createShipmentDTO.shipment.delivery_mail,
+            arrival_address : createShipmentDTO.shipment.arrival_address,
+            arrival_postal : createShipmentDTO.shipment.arrival_postal_code,
+            departure_address : createShipmentDTO.shipment.departure_address,
+            departure_postal : createShipmentDTO.shipment.departure_postal_code,
+            arrival_handling : createShipmentDTO.shipment.arrival_handling === 'true',
+            departure_handling : createShipmentDTO.shipment.departure_handling === 'true',
+            floor_arrival_handling : Number(createShipmentDTO.shipment.handling_floor_arrival),
+            floor_departure_handling : Number(createShipmentDTO.shipment.handling_floor_departure),
+            elevator_arrival : createShipmentDTO.shipment.elevator_arrival === 'true',
+            elevator_departure : createShipmentDTO.shipment.elevator_departure === 'true',
         });
     
         const departureLatitude = parseFloat(createShipmentDTO.shipment.departure_location.latitude);
@@ -258,6 +268,16 @@ export class DeliveryService {
             user: user,
             delivery_mail: createShipmentDTO.shipment.delivery_mail,
             trolleydrop: true,
+            arrival_address : createShipmentDTO.shipment.arrival_address,
+            arrival_postal : createShipmentDTO.shipment.arrival_postal_code,
+            departure_address : merchant.address,
+            departure_postal : merchant.postal_code,
+            arrival_handling : createShipmentDTO.shipment.arrival_handling === 'true',
+            departure_handling : false,
+            floor_arrival_handling : Number(createShipmentDTO.shipment.handling_floor_arrival),
+            floor_departure_handling : 0,
+            elevator_arrival : createShipmentDTO.shipment.elevator_arrival === 'true',
+            elevator_departure : false,
         });
     
         if (!isNaN(departureLatitude) && !isNaN(departureLongitude)) {
