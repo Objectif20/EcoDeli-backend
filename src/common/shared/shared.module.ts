@@ -13,6 +13,7 @@ import { DeliveryPerson } from '../entities/delivery_persons.entity';
 import { StripeService } from '../services/stripe/stripe.service';
 import { OneSignalService } from '../services/notification/oneSignal.service';
 import { OneSignalDevice } from '../entities/onesignal-device.entity';
+import { PdfService } from '../services/pdf/pdf.service';
 
 @Module({
   imports: [
@@ -24,13 +25,15 @@ import { OneSignalDevice } from '../entities/onesignal-device.entity';
     MinioService,
     StripeService,
     OneSignalService,
+    PdfService,
   ],
   exports: [
     TypeOrmModule,
     AdminAuthModule,
     MinioService,
     StripeService,
-    OneSignalService
+    OneSignalService,
+    PdfService,
   ],
 })
 export class SharedModule {}

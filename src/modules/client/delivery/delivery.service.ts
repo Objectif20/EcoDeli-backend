@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, Not, Repository } from "typeorm";
 import { CreateShipmentDTO } from "./dto/create-shipment.dto";
@@ -36,7 +36,10 @@ import { Subscription } from "src/common/entities/subscription.entity";
 import axios from "axios";
 import { Merchant } from "src/common/entities/merchant.entity";
 import { CreateShipmentTrolleyDTO } from "./dto/create-trolley.dto";
-
+import { PdfService } from "src/common/services/pdf/pdf.service";
+import { ShipmentDetails } from "src/common/services/pdf/type";
+import * as nodemailer from 'nodemailer';
+import { Readable } from "stream";
 
 @Injectable()
 export class DeliveryService {
@@ -97,8 +100,8 @@ export class DeliveryService {
         private readonly merchantRepository: Repository<Merchant>,
 
         @InjectModel(Message.name) private messageModel: Model<Message>,
-        
-
+        @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
+        private readonly pdfService: PdfService,
         private readonly stripeService : StripeService,
         private readonly minioService: MinioService, 
     ) {}
@@ -784,73 +787,133 @@ export class DeliveryService {
         return result;
     }
 
-
     async bookShipment(id: string, user_id: string): Promise<Delivery> {
         const shipment = await this.shipmentRepository.findOne({
             where: { shipment_id: id },
-            relations: ['deliveries', 'stores', 'stores.exchangePoint'],
+            relations: ['deliveries', 'stores', 'stores.exchangePoint', 'user', 'parcels'],
         });
-    
+
         if (!shipment) {
             throw new Error('Shipment not found.');
         }
-    
+
         const user = await this.userRepository.findOne({
             where: { user_id },
             relations: ['deliveryPerson'],
         });
-    
+
         if (!user || !user.deliveryPerson) {
             throw new Error('User or delivery person profile not found.');
         }
-    
+
         const existingSteps = shipment.deliveries.map(d => d.shipment_step);
         const isFinalStep = existingSteps.includes(1000);
         const shipment_step = isFinalStep ? 1000 : 0;
-    
+
         const reverseCoords = (point: any) => {
             if (!point || !point.coordinates) return null;
             return [...point.coordinates].reverse();
         };
-    
+
         const departureCoords = reverseCoords(shipment.departure_location);
         const arrivalCoords = reverseCoords(shipment.arrival_location);
-    
+
         console.log("DEPARTURE:", departureCoords);
         console.log("ARRIVAL:", arrivalCoords);
-    
+
         const commissions = await this.deliveryCommissionRepository.findOne({ where: {} });
-    
+
         let existingDelivery = await this.deliveryRepository.findOne({
             where: { shipment: { shipment_id: id } },
             relations: ['shipment'],
         });
-    
+
         let delivery_code: string;
-    
+
         if (existingDelivery && existingDelivery.delivery_code) {
             delivery_code = existingDelivery.delivery_code;
         } else {
             delivery_code = crypto.randomBytes(16).toString('hex');
         }
-    
+
         const qrCodeBase64 = await QRCode.toDataURL(delivery_code);
-    
+
         console.log("Delivery Code:", delivery_code);
         console.log("QR Code Base64:", qrCodeBase64);
-    
+
+        let totalAmount = shipment.proposed_delivery_price ?? 0;
+
+        if (isNaN(totalAmount)) {
+            totalAmount = 0;
+        }
+
+        if (shipment_step === 0 && shipment.departure_handling) {
+            totalAmount += 29;
+        }
+        if ((shipment_step === 0 || shipment_step === 1000) && shipment.arrival_handling) {
+            totalAmount += 29;
+        }
+
         const delivery = this.deliveryRepository.create({
             send_date: new Date(),
             status: 'pending',
-            amount: shipment.proposed_delivery_price ?? 0,
+            amount: totalAmount,
             shipment: shipment,
             delivery_person: user.deliveryPerson,
             shipment_step,
             delivery_commission: commissions ?? undefined,
             delivery_code,
         });
-    
+
+
+        if (shipment_step === 0) {
+            const qrCodeBase64 = await QRCode.toDataURL(delivery_code);
+
+            const shipmentDetails: ShipmentDetails = {
+            deliveryCode: delivery_code,
+            departureCity: shipment.departure_city || shipment.departure_location?.coordinates,
+            departureAddress: shipment.departure_address || shipment.departure_location?.coordinates,
+            arrivalCity: shipment.arrival_city || shipment.arrival_location?.coordinates,
+            arrivalAddress: shipment.arrival_address || shipment.arrival_location?.coordinates,
+            numberOfPackages: shipment.parcels.length,
+            totalWeight: shipment.parcels.reduce((sum, parcel) => sum + (parcel.weight ?? 0), 0),
+            qrCodeBase64: qrCodeBase64,
+            };
+
+                const pdfBuffer = await this.pdfService.generateBordereauPdf(shipmentDetails);
+                const fromEmail = this.mailer.options.auth.user;
+                  await this.mailer.sendMail({
+                    from: fromEmail,
+                    to: shipment.user.email,
+                    subject: 'Votre Bordereau de Colis',
+                    text: 'Veuillez trouver ci-joint votre bordereau de colis.',
+                    attachments: [
+                    {
+                        filename: `bordereau_${delivery_code}.pdf`,
+                        content: pdfBuffer,
+                    },
+                    ],
+                });
+
+                const file: Express.Multer.File = {
+                fieldname: 'file',
+                originalname: `bordereau_${shipment.shipment_id}.pdf`,
+                encoding: '7bit',
+                mimetype: 'application/pdf',
+                buffer: pdfBuffer,
+                size: pdfBuffer.length,
+                destination: '', 
+                filename: `bordereau_${shipment.shipment_id}.pdf`,
+                path: '', 
+                stream: Readable.from(pdfBuffer),
+                };
+
+                const filePath = `/shipments/${shipment.shipment_id}/bordereau_${shipment.shipment_id}.pdf`;
+                await this.minioService.uploadFileToBucket('client-images', filePath, file);
+        }
+
         const savedDelivery = await this.deliveryRepository.save(delivery);
+
         return savedDelivery;
     }
     
@@ -1893,7 +1956,6 @@ export class DeliveryService {
 
         return shipmentListItems;
     }
-
 
     async getMyShipmentsHistory(userId: string, page: number, limit: number): Promise<{ data: ShipmentHistoryRequest[], totalRows: number }> {
         const offset = (page - 1) * limit;
