@@ -1175,37 +1175,211 @@ export class DeliveryService {
         return shipments;
     }
 
-    async takeDeliveryPackage(deliveryId : string, user_id : string, secretCode : string) : Promise<{ message: string }> {
-        const delivery = await this.deliveryRepository.findOne({
-            where: { delivery_id: deliveryId },
-            relations: ["delivery_person", "shipment", "delivery_person.user", "shipment.stores", "shipment.stores.exchangePoint"],
-        });
 
-        if (!delivery) {
-            throw new Error("Delivery not found.");
+    // Si livraison prioritaire, on applique sur la somme de cette livraison + le prix restant dans shipment
+        // Si mois de priorité, checker date de création abonnement pour appliquer (si oui on déduit tous les frais de livraison)
+        // On check le max de l'assurance qui protège, sinon on applique le prix d'assurance en plus si on dépasse le prix 
+        // On check si y'a une réduction sur le prix de la livraison (EcoDeli prend le pourcentage à sa charge)
+        // On check la réduction permanente disponible
+        // Si on considère la livraison comme des petits colis alors on applique la réduction
+        // Si la première livraison est gratuite, on check si déjà utilisée (si non on l'appliquer et on met à jour dans la bdd)
+        // Après les mois offerts de frais, on check aussi si on est en première livraison en respectant le seuil max
+
+        // On ajoute les frais de stripe : 1.5% + 0.25€ à ajouté pour la prise en compte de Stripe (dans tous les cas de chaque livraison)
+
+        /* 
+            Ordre de calcul : 
+
+            - Check si des mois offerts et combien 
+            - Check si encore dans les mois offerts -> Si oui skip : juste à payer envoi prioritaire + stripe
+            - Check si une livraison offerte et quel prix pour l'obtenir (si les mois sont finis)
+            - On check le prix de courverture de l'assurance (si on dépasse, on ajoute le prix de l'assurance)
+            - On déduit les différentes réductions 
+            - On check si on est dans les petits colis (si oui on applique la réduction)
+
+
+            - On prend la valeur totale et on ajoute x*1.5% + O,25€ pour la prise en charge de stripe
+        */
+
+
+        async takeDeliveryPackage(deliveryId: string, user_id: string, secretCode: string): Promise<{ message: string }> {
+            const delivery = await this.deliveryRepository.findOne({
+                where: { delivery_id: deliveryId },
+                relations: [
+                    "delivery_person",
+                    "shipment",
+                    "delivery_person.user",
+                    "shipment.stores",
+                    "shipment.stores.exchangePoint",
+                    "shipment.user",
+                ],
+            });
+
+            if (!delivery) {
+                throw new Error("Delivery not found.");
+            }
+
+            if (delivery.delivery_person.user.user_id !== user_id) {
+                throw new Error("User is not authorized to take this delivery.");
+            }
+
+            if (["finished", "validated"].includes(delivery.status)) {
+                throw new Error(`Cannot take a delivery with status '${delivery.status}'.`);
+            }
+
+            if (delivery.delivery_code !== secretCode) {
+                throw new Error("Invalid secret code.");
+            }
+
+            let totalPrice = Number(delivery.amount);
+            console.log("Initial Delivery Price:", totalPrice);
+
+            const isMainStep = delivery.shipment_step === 0 || delivery.shipment_step === 1;
+
+            if (isMainStep) {
+                const user = await this.userRepository.findOne({
+                    where: { user_id: delivery.shipment.user.user_id },
+                    relations: ["clients", "merchant", "subscriptions", "subscriptions.plan"],
+                });
+
+                if (!user?.subscriptions || user.subscriptions.length === 0) {
+                    throw new Error("User has no active subscription.");
+                }
+
+                const subscription = user.subscriptions[0];
+                const plan = subscription.plan;
+
+                console.log("Total Price after initialization:", totalPrice);
+
+                // Priority shipping adjustment
+                if (plan.priority_months_offered > 0) {
+                    const now = new Date();
+                    const startDate = new Date(subscription.start_date);
+                    const endDate = new Date(startDate);
+                    endDate.setMonth(startDate.getMonth() + plan.priority_months_offered);
+
+                    if (now <= endDate) {
+                        const priorityFee = (plan.priority_shipping_percentage / 100) * totalPrice;
+                        totalPrice += priorityFee;
+                        console.log("Total Price after priority shipping adjustment:", totalPrice);
+                    }
+                }
+
+                // First shipping free
+                if (
+                    plan.first_shipping_free &&
+                    !subscription.first_shipping_free_taken &&
+                    totalPrice <= plan.first_shipping_free_threshold
+                ) {
+                    totalPrice = 0;
+                    console.log("Total Price after first shipping free adjustment:", totalPrice);
+                    subscription.first_shipping_free_taken = true;
+                    await this.subscriptionRepository.save(subscription);
+                }
+
+                // Extra insurance
+                if (delivery.amount > plan.max_insurance_coverage) {
+                    totalPrice += plan.extra_insurance_price ?? 0;
+                    console.log("Total Price after extra insurance adjustment:", totalPrice);
+                }
+
+                // Discounts
+                totalPrice -= plan.shipping_discount ?? 0;
+                console.log("Total Price after shipping discount adjustment:", totalPrice);
+
+                totalPrice -= plan.permanent_discount ?? 0;
+                console.log("Total Price after permanent discount adjustment:", totalPrice);
+
+                totalPrice -= plan.small_package_permanent_discount ?? 0;
+                console.log("Total Price after small package discount adjustment:", totalPrice);
+
+                // Final fee
+                if (totalPrice > 0) {
+                    const fee = totalPrice * 0.015 + 0.25;
+                    totalPrice += fee;
+                    console.log("Total Price after final fee adjustment:", totalPrice);
+                }
+
+                if (totalPrice < 0) {
+                    throw new Error("Invalid delivery: total price is negative.");
+                }
+
+                if (totalPrice > 0 && totalPrice < 1) {
+                    console.log(`Total price ${totalPrice} is less than 1. Rounding to 1.00.`);
+                    totalPrice = 1.00;
+                }
+
+                // Paiement Stripe si nécessaire
+                if (totalPrice > 0) {
+                    const stripeCustomerId =
+                        user.clients?.[0]?.stripe_customer_id ?? user.merchant?.stripe_customer_id;
+
+                    if (!stripeCustomerId) {
+                        throw new Error("Stripe customer ID not found for user.");
+                    }
+
+                    console.log("Stripe Customer ID:", stripeCustomerId);
+                    console.log("Final Total Price:", totalPrice);
+                    console.log("Delivery ID:", deliveryId);
+
+                    await this.stripeService.chargeCustomer(
+                        stripeCustomerId,
+                        Math.round(totalPrice * 100),
+                        `Delivery for shipment ${delivery.shipment.shipment_id} : ${delivery.shipment.description}`,
+                    );
+                } else {
+                    console.log("No charge needed. Delivery total is zero.");
+                }
+
+                // Reset free shipping
+                if (subscription.first_shipping_free_taken) {
+                    subscription.first_shipping_free_taken = false;
+                    await this.subscriptionRepository.save(subscription);
+                }
+
+            } else {
+                // Autres steps : on applique juste les frais Stripe
+                console.log("Non-main step. Applying flat Stripe fee.");
+
+                if (totalPrice < 0) {
+                    throw new Error("Invalid delivery: total price is negative.");
+                }
+
+                if (totalPrice > 0) {
+                    const fee = totalPrice * 0.015 + 0.25;
+                    totalPrice += fee;
+                    console.log("Final Total Price (other step):", totalPrice);
+
+                    const user = await this.userRepository.findOne({
+                        where: { user_id: delivery.shipment.user.user_id },
+                        relations: ["clients", "merchant"],
+                    });
+
+                    const stripeCustomerId =
+                        user?.clients?.[0]?.stripe_customer_id ?? user?.merchant?.stripe_customer_id;
+
+                    if (!stripeCustomerId) {
+                        throw new Error("Stripe customer ID not found for user.");
+                    }
+
+                    await this.stripeService.chargeCustomer(
+                        stripeCustomerId,
+                        Math.round(totalPrice * 100),
+                        `Delivery for shipment ${delivery.shipment.shipment_id} : ${delivery.shipment.description}`,
+                    );
+                }
+            }
+
+            delivery.status = "taken";
+            await this.deliveryRepository.save(delivery);
+
+            return { message: "Delivery taken successfully." };
         }
 
-        if (delivery.delivery_person.user.user_id !== user_id) {
-            throw new Error("User is not authorized to take this delivery.");
-        }
 
-        if (delivery.status === 'finished') {
-            throw new Error("Cannot take a finished delivery.");
-        }
 
-        if (delivery.status === 'validated') {
-            throw new Error("Cannot take a validated delivery.");
-        }
 
-        if (delivery.delivery_code !== secretCode) {
-            throw new Error("Invalid secret code.");
-        }
 
-        delivery.status = 'taken';
-        await this.deliveryRepository.save(delivery);
-        
-        return { message: "Delivery taken successfully." };
-    }
 
     async finishDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
         const delivery = await this.deliveryRepository.findOne({
@@ -1931,15 +2105,13 @@ export class DeliveryService {
 
     async getSubscriptionPlanForClient(user_id: string): Promise<SubscriptionForClient> {
 
-        const user = await this.userRepository.findOne({ where: { user_id } });
+        const user = await this.userRepository.findOne({ where: { user_id }, relations: ['clients', 'subscriptions', 'subscriptions.plan'] });
         if (!user) {
             throw new Error('User not found');
         }
+
     
-        const subscription = await this.subscriptionRepository.findOne({
-            where: { user: user, status: 'active' },
-            relations: ['plan']
-        });
+        const subscription = user.subscriptions.find(sub => sub.status === 'active');
     
         if (!subscription) {
             return {
@@ -1956,7 +2128,7 @@ export class DeliveryService {
             priorityRate: subscription.plan.priority_shipping_percentage,
             insuranceLimit: subscription.plan.max_insurance_coverage,
             additionalInsuranceCost: subscription.plan.extra_insurance_price,
-            freeShipmentAvailable: subscription.plan.first_shipping_free,
+            freeShipmentAvailable: subscription.plan.first_shipping_free && !subscription.first_shipping_free_taken,
             freePriorityShipmentsPerMonth: subscription.plan.priority_months_offered,
             freePriotiryShipmentsIfLower: subscription.plan.first_shipping_free_threshold,
             permanentDiscount: subscription.plan.permanent_discount,

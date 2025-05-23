@@ -277,4 +277,44 @@ export class StripeService {
   
     return price;
   }
+
+  async chargeCustomer(
+    customerId: string,
+    amountInCents: number,
+    description: string
+  ): Promise<Stripe.PaymentIntent> {
+    try {
+      const paymentMethods = await this.stripeClient.paymentMethods.list({
+        customer: customerId,
+        type: 'card',
+      });
+
+      if (paymentMethods.data.length === 0) {
+        throw new BadRequestException('Aucun moyen de paiement attaché au client.');
+      }
+
+      const paymentMethodId = paymentMethods.data[0].id;
+
+      const paymentIntent = await this.stripeClient.paymentIntents.create({
+        amount: amountInCents,
+        currency: 'eur',
+        customer: customerId,
+        payment_method: paymentMethodId,
+        off_session: true,
+        confirm: true,
+        description,
+      });
+
+      return paymentIntent;
+    } catch (error) {
+      console.error('Erreur lors du prélèvement Stripe:', error);
+
+      if (error.code === 'authentication_required' || error.code === 'card_declined') {
+        throw new BadRequestException(`Paiement échoué : ${error.message}`);
+      }
+
+      throw new BadRequestException('Erreur lors du prélèvement Stripe', error);
+    }
+  }
+
 }

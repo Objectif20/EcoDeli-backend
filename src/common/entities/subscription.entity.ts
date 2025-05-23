@@ -34,5 +34,8 @@ export class Subscription {
     @JoinColumn({ name: 'plan_id' })
     plan: Plan;
 
+    @Column({ type: 'boolean', default: false })
+    first_shipping_free_taken: boolean;
+
 
 }
