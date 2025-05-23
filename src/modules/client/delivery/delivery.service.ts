@@ -920,7 +920,7 @@ export class DeliveryService {
     async bookPartial(dto: BookPartialDTO, shipment_id: string): Promise<Delivery> {
         const shipment = await this.shipmentRepository.findOne({
             where: { shipment_id },
-            relations: ['stores', 'stores.exchangePoint'],
+            relations: ['stores', 'stores.exchangePoint', 'user', 'parcels'],
         });
 
         if (!shipment) {
