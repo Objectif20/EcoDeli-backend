@@ -889,7 +889,7 @@ export class DeliveryService {
                     text: 'Veuillez trouver ci-joint votre bordereau de colis.',
                     attachments: [
                     {
-                        filename: `bordereau_${delivery_code}.pdf`,
+                        filename: `bordereau_${shipment.shipment_id}.pdf`,
                         content: pdfBuffer,
                     },
                     ],
@@ -939,7 +939,6 @@ export class DeliveryService {
         const existingSteps = shipment.stores.map((store) => store.step);
         const nextStep = existingSteps.length > 0 ? Math.max(...existingSteps) + 1 : 1;
 
-        // Préparation des variables pour le futur exchange point
         let exchangePoint: ExchangePoint;
         let city: string;
         let coordinates: { type: string; coordinates: [number, number] };
@@ -995,7 +994,6 @@ export class DeliveryService {
             throw new Error('You must provide either a warehouse_id or city, latitude, and longitude.');
         }
 
-        // Création unique de l'exchange point
         exchangePoint = this.exchangePointRepository.create({
             city,
             coordinates,
@@ -1006,7 +1004,6 @@ export class DeliveryService {
 
         await this.exchangePointRepository.save(exchangePoint);
 
-        // Création du store
         let startDate: Date;
         if (shipment.stores.length > 0) {
             const lastStep = shipment.stores[shipment.stores.length - 1];
@@ -1047,6 +1044,52 @@ export class DeliveryService {
             delivery_code,
         });
 
+        if (nextStep === 1) {
+            const qrCodeBase64 = await QRCode.toDataURL(delivery_code);
+
+            const shipmentDetails: ShipmentDetails = {
+            deliveryCode: delivery_code,
+            departureCity: shipment.departure_city || shipment.departure_location?.coordinates,
+            departureAddress: shipment.departure_address || shipment.departure_location?.coordinates,
+            arrivalCity: shipment.arrival_city || shipment.arrival_location?.coordinates,
+            arrivalAddress: shipment.arrival_address || shipment.arrival_location?.coordinates,
+            numberOfPackages: shipment.parcels.length,
+            totalWeight: shipment.parcels.reduce((sum, parcel) => sum + (parcel.weight ?? 0), 0),
+            qrCodeBase64: qrCodeBase64,
+            };
+
+                const pdfBuffer = await this.pdfService.generateBordereauPdf(shipmentDetails);
+                const fromEmail = this.mailer.options.auth.user;
+                  await this.mailer.sendMail({
+                    from: fromEmail,
+                    to: shipment.user.email,
+                    subject: 'Votre Bordereau de Colis',
+                    text: 'Veuillez trouver ci-joint votre bordereau de colis.',
+                    attachments: [
+                    {
+                        filename: `bordereau_${shipment.shipment_id}.pdf`,
+                        content: pdfBuffer,
+                    },
+                    ],
+                });
+
+                const file: Express.Multer.File = {
+                fieldname: 'file',
+                originalname: `bordereau_${shipment.shipment_id}.pdf`,
+                encoding: '7bit',
+                mimetype: 'application/pdf',
+                buffer: pdfBuffer,
+                size: pdfBuffer.length,
+                destination: '', 
+                filename: `bordereau_${shipment.shipment_id}.pdf`,
+                path: '', 
+                stream: Readable.from(pdfBuffer),
+                };
+
+                const filePath = `/shipments/${shipment.shipment_id}/bordereau_${shipment.shipment_id}.pdf`;
+                await this.minioService.uploadFileToBucket('client-images', filePath, file);
+        }
+
         return await this.deliveryRepository.save(delivery);
     }
 
@@ -1068,13 +1111,28 @@ export class DeliveryService {
         }
     
         const client_id = shipment.user.user_id;
-    
-        const client = await this.clientRepository.findOne({
+
+        let shipment_owner: Client | Merchant | undefined = undefined;
+
+        const foundClient = await this.clientRepository.findOne({
             where: { user: { user_id: client_id } },
             relations: ["user"],
         });
-        if (!client) {
-            throw new Error("Client not found.");
+
+        if (foundClient) {
+            shipment_owner = foundClient;
+        } else {
+            const foundMerchant = await this.merchantRepository.findOne({
+            where: { user: { user_id: client_id } },
+            relations: ["user"],
+            });
+            if (foundMerchant) {
+                shipment_owner = foundMerchant;
+            }
+        }
+
+        if (!shipment_owner) {
+            throw new Error("Shipment owner (client or merchant) not found.");
         }
     
         const deliveryName = shipment.description || "votre demande de livraison";
@@ -1108,7 +1166,8 @@ export class DeliveryService {
         const shipments = await this.shipmentRepository.find({
             where: {
                 user: { user_id: user.user_id },
-                status: "pending"
+                status: "pending",
+                trolleydrop : false,
             },
             relations: ["deliveries", "stores", "stores.exchangePoint"],
         });
