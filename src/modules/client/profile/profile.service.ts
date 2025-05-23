@@ -100,12 +100,12 @@ import { Languages } from "src/common/entities/languages.entity";
       } else if (merchant) {
         first_name = merchant.first_name;
         last_name = merchant.last_name;
-        // customer_stripe_id = merchant.stripe_customer_id ? true : false;
+        customer_stripe_id = merchant.stripe_customer_id ? true : false;
         validateProfile = true;
       } else if (client) {
         first_name = client.first_name;
         last_name = client.last_name;
-        // customer_stripe_id = client.stripe_customer_id ? true : false;
+        customer_stripe_id = client.stripe_customer_id ? true : false;
         if (deliverymanExists > 0) {
           const deliveryman = await this.deliveryPersonRepository.findOne({ where: { user: { user_id } } });
           if (deliveryman) {

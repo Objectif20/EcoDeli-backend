@@ -354,13 +354,16 @@ export class DeliveryService {
         const { user: shipmentUser, ...shipmentWithoutUser } = savedShipment;
         return shipmentWithoutUser;
     }
-
     async getShipments(filters: GetShipmentsDTO): Promise<ShipmentWithCoveredSteps[]> {
         const queryBuilder = this.shipmentRepository.createQueryBuilder("shipment")
             .leftJoinAndSelect("shipment.deliveries", "deliveries")
             .leftJoinAndSelect("shipment.stores", "stores")
-            .leftJoinAndSelect("stores.exchangePoint", "exchangePoint");
-    
+            .leftJoinAndSelect("stores.exchangePoint", "exchangePoint")
+            .leftJoin("shipment.user", "user")
+            .leftJoin("user.clients", "clients")
+            .leftJoin("user.merchant", "merchant")
+            .andWhere("EXISTS (SELECT 1 FROM clients WHERE clients.stripe_customer_id IS NOT NULL) OR merchant.stripe_customer_id IS NOT NULL");
+
         if (filters.latitude && filters.longitude && filters.radius) {
             queryBuilder.andWhere(
                 `ST_DWithin(
@@ -378,7 +381,7 @@ export class DeliveryService {
                 )`
             );
         }
-    
+
         if (filters.routeStartLatitude && filters.routeStartLongitude && filters.routeEndLatitude && filters.routeEndLongitude && filters.routeRadius) {
             queryBuilder.andWhere(
                 `ST_DWithin(
@@ -395,67 +398,67 @@ export class DeliveryService {
                 }
             );
         }
-    
+
         if (filters.minPrice !== undefined) {
             queryBuilder.andWhere("shipment.estimated_total_price >= :minPrice AND shipment.estimated_total_price IS NOT NULL", { minPrice: filters.minPrice });
         }
-    
+
         if (filters.maxPrice !== undefined) {
             queryBuilder.andWhere("shipment.estimated_total_price <= :maxPrice AND shipment.estimated_total_price IS NOT NULL", { maxPrice: filters.maxPrice });
         }
-    
+
         if (filters.minWeight !== undefined) {
             queryBuilder.andWhere("shipment.weight >= :minWeight AND shipment.weight IS NOT NULL", { minWeight: filters.minWeight });
         }
-    
+
         if (filters.maxWeight !== undefined) {
             queryBuilder.andWhere("shipment.weight <= :maxWeight AND shipment.weight IS NOT NULL", { maxWeight: filters.maxWeight });
         }
-    
+
         queryBuilder.andWhere("NOT EXISTS (SELECT 1 FROM deliveries WHERE deliveries.shipment_id = shipment.shipment_id AND (deliveries.shipment_step = 0 OR deliveries.shipment_step = 1000))");
-    
+
         if (filters.page && filters.limit) {
             const offset = (filters.page - 1) * filters.limit;
             queryBuilder.skip(offset).take(filters.limit);
         }
-    
+
         const shipments = await queryBuilder.getMany();
-    
+
         const canceledDeliveries = await this.deliveryRepository.find({
             where: { status: 'canceled' },
             relations: ['shipment', 'shipment.stores', 'shipment.stores.exchangePoint']
         });
-    
+
         const updatedShipments = await Promise.all(shipments.map(async (shipment) => {
             const deliveries = shipment.deliveries.sort((a, b) => a.shipment_step - b.shipment_step);
             const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
-    
+
             let departureCity = shipment.departure_city;
             let departureLocation = shipment.departure_location;
             let arrivalCity = shipment.arrival_city;
             let arrivalLocation = shipment.arrival_location;
-    
+
             const coveredSteps = new Set(deliveries.filter(d => d.status !== 'canceled').map(d => d.shipment_step));
-    
+
             const shipmentCanceledDeliveries = canceledDeliveries.filter(d => d.shipment.shipment_id === shipment.shipment_id);
             const mergedDeliveries: Delivery[] = [];
-    
+
             shipmentCanceledDeliveries.forEach(canceledDelivery => {
                 const step = canceledDelivery.shipment_step;
-    
+
                 if (coveredSteps.has(step)) {
                     return;
                 }
-    
+
                 let nextDelivery = canceledDeliveries.find(d => d.shipment_step === step + 1 && d.shipment.shipment_id === shipment.shipment_id);
-    
+
                 if (!nextDelivery || nextDelivery.status !== 'canceled') {
                     mergedDeliveries.push(canceledDelivery);
                     coveredSteps.add(step);
                 } else {
                     let startStep = step;
                     let endStep = step;
-    
+
                     while (nextDelivery && nextDelivery.status === 'canceled' && !coveredSteps.has(nextDelivery.shipment_step)) {
                         endStep = nextDelivery.shipment_step;
                         coveredSteps.add(endStep);
@@ -463,18 +466,18 @@ export class DeliveryService {
                         if (!nextNextDelivery || nextNextDelivery.status !== 'canceled') break;
                         nextDelivery = nextNextDelivery;
                     }
-    
+
                     const mergedDelivery = {
                         ...canceledDelivery,
                         shipment_step: startStep,
                         arrival_city: storesByStep.find(s => s.step === endStep)?.exchangePoint?.city ?? shipment.arrival_city,
                         arrival_location: storesByStep.find(s => s.step === endStep)?.exchangePoint?.coordinates ?? shipment.arrival_location,
                     };
-    
+
                     mergedDeliveries.push(mergedDelivery);
                 }
             });
-    
+
             if (deliveries.length > 0 || mergedDeliveries.length > 0) {
                 const lastDelivery = deliveries.length > 0 ? deliveries[deliveries.length - 1] : mergedDeliveries[mergedDeliveries.length - 1];
                 if (lastDelivery.shipment_step !== 1000) {
@@ -482,7 +485,7 @@ export class DeliveryService {
                     departureCity = lastStore?.exchangePoint?.city ?? shipment.departure_city;
                     departureLocation = lastStore?.exchangePoint?.coordinates ?? shipment.departure_location;
                 }
-    
+
                 if (lastDelivery.shipment_step === 1000) {
                     arrivalCity = shipment.arrival_city;
                     arrivalLocation = shipment.arrival_location;
@@ -492,9 +495,9 @@ export class DeliveryService {
                     arrivalLocation = nextStore?.exchangePoint?.coordinates ?? shipment.arrival_location;
                 }
             }
-    
+
             const shipmentImageUrl = shipment.image ? await this.minioService.generateImageUrl("client-images", shipment.image) : null;
-    
+
             return {
                 ...shipment,
                 departure_city: departureCity,
@@ -505,7 +508,7 @@ export class DeliveryService {
                 covered_steps: Array.from(coveredSteps),
             };
         }));
-    
+
         return updatedShipments;
     }
 
@@ -521,11 +524,13 @@ export class DeliveryService {
                 'stores',
                 'stores.exchangePoint',
                 'user',
+                'user.clients',
+                'user.merchant',
             ],
         });
-    
+
         if (!shipment) throw new Error('Shipment not found');
-    
+
         const parcels = await Promise.all(
             shipment.parcels.map(async parcel => ({
                 id: parcel.parcel_id,
@@ -541,27 +546,28 @@ export class DeliveryService {
                 ),
             }))
         );
-    
+
         const deliveries = shipment.deliveries.sort((a, b) => a.shipment_step - b.shipment_step);
         const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
-    
+
         const initialPrice = Number(shipment.estimated_total_price ?? 0);
         const priceWithStep = deliveries.map(delivery => ({
             step: `Step ${delivery.shipment_step}`,
             price: Number(delivery.delivery_price ?? delivery.amount),
         }));
-    
+
         const steps: {
             id: string | number;
             title: string;
             description: string;
             date: string | undefined;
-            departure: { city: string | null; coordinates: any };
-            arrival: { city: string | null; coordinates: any };
+            departure: { city: string | null; coordinates: any; address: string | null; postal_code: string | null };
+            arrival: { city: string | null; coordinates: any; address: string | null; postal_code: string | null };
             courier: { name: string; photoUrl: string | null } | null;
+            end_time: string | undefined;
             idLink?: string;
         }[] = [];
-    
+
         if (deliveries.length === 0) {
             steps.push({
                 id: -1,
@@ -571,12 +577,17 @@ export class DeliveryService {
                 departure: {
                     city: null,
                     coordinates: null,
+                    address: null,
+                    postal_code: null,
                 },
                 arrival: {
                     city: null,
                     coordinates: null,
+                    address: null,
+                    postal_code: null,
                 },
                 courier: null,
+                end_time: undefined,
                 idLink: undefined,
             });
         } else {
@@ -584,29 +595,37 @@ export class DeliveryService {
                 const delivery = deliveries[i];
                 const store = storesByStep.find(s => s.step === delivery.shipment_step);
                 const courier = delivery.delivery_person;
-    
-                let departureCity, departureCoords, arrivalCity, arrivalCoords;
-    
+
+                let departureCity, departureCoords, departureAddress, departurePostalCode, arrivalCity, arrivalCoords, arrivalAddress, arrivalPostalCode;
+
                 if (delivery.shipment_step === 1) {
                     departureCity = shipment.departure_city;
                     departureCoords = shipment.departure_location?.coordinates?.slice().reverse();
+                    departureAddress = shipment.departure_address;
+                    departurePostalCode = shipment.departure_postal;
                     arrivalCity = store?.exchangePoint?.city;
                     arrivalCoords = store?.exchangePoint?.coordinates.coordinates?.slice().reverse();
+                    arrivalAddress = store?.exchangePoint?.address;
+                    arrivalPostalCode = store?.exchangePoint?.postal_code;
                 } else {
                     const prevStore = storesByStep.find(s => s.step === delivery.shipment_step - 1);
                     departureCity = prevStore?.exchangePoint?.city;
                     departureCoords = prevStore?.exchangePoint?.coordinates.coordinates?.slice().reverse();
+                    departureAddress = prevStore?.exchangePoint?.address;
+                    departurePostalCode = prevStore?.exchangePoint?.postal_code;
                     arrivalCity = store?.exchangePoint?.city;
                     arrivalCoords = store?.exchangePoint?.coordinates.coordinates?.slice().reverse();
+                    arrivalAddress = store?.exchangePoint?.address;
+                    arrivalPostalCode = store?.exchangePoint?.postal_code;
                 }
-    
+
                 let clientOrMerchant;
-                if (shipment.user.clients.length > 0) {
+                if (shipment.user?.clients?.length) {
                     clientOrMerchant = shipment.user.clients[0];
-                } else if (shipment.user.merchant) {
+                } else if (shipment.user?.merchant) {
                     clientOrMerchant = shipment.user.merchant[0];
                 }
-    
+
                 steps.push({
                     id: delivery.shipment_step,
                     title: `Step ${delivery.shipment_step}`,
@@ -615,29 +634,34 @@ export class DeliveryService {
                     departure: {
                         city: departureCity,
                         coordinates: departureCoords,
+                        address: departureAddress,
+                        postal_code: departurePostalCode,
                     },
                     arrival: {
                         city: arrivalCity,
                         coordinates: arrivalCoords,
+                        address: arrivalAddress,
+                        postal_code: arrivalPostalCode,
                     },
                     courier: {
                         name: clientOrMerchant ? `${clientOrMerchant.first_name} ${clientOrMerchant.last_name}` : "Unknown",
                         photoUrl: courier?.user.profile_picture || null,
                     },
+                    end_time: store?.end_date?.toISOString(),
                 });
             }
-    
+
             const finalDelivery = deliveries.find(delivery => delivery.shipment_step === 1000);
             if (finalDelivery) {
                 const lastStore = storesByStep.find(s => s.step === finalDelivery.shipment_step - 1);
-    
+
                 let clientOrMerchant;
-                if (shipment.user.clients.length > 0) {
+                if (shipment.user?.clients?.length) {
                     clientOrMerchant = shipment.user.clients[0];
-                } else if (shipment.user.merchant) {
+                } else if (shipment.user?.merchant) {
                     clientOrMerchant = shipment.user.merchant[0];
                 }
-    
+
                 steps.push({
                     id: 1000,
                     title: 'Step finale',
@@ -646,39 +670,77 @@ export class DeliveryService {
                     departure: {
                         city: lastStore?.exchangePoint?.city || "",
                         coordinates: lastStore?.exchangePoint?.coordinates.coordinates?.slice().reverse(),
+                        address: lastStore?.exchangePoint?.address || "",
+                        postal_code: lastStore?.exchangePoint?.postal_code || "",
                     },
                     arrival: {
                         city: shipment.arrival_city,
                         coordinates: shipment.arrival_location?.coordinates?.slice().reverse(),
+                        address: shipment.arrival_address,
+                        postal_code: shipment.arrival_postal,
                     },
                     courier: {
                         name: clientOrMerchant ? `${clientOrMerchant.first_name} ${clientOrMerchant.last_name}` : "Unknown",
                         photoUrl: clientOrMerchant?.user.profile_picture || null,
                     },
+                    end_time: shipment.deadline_date?.toISOString(),
                 });
             }
+
+            // Mettre à jour le end_time de la dernière étape
+            if (steps.length > 0) {
+                const lastStepIndex = steps.length - 1;
+                steps[lastStepIndex].end_time = shipment.deadline_date?.toISOString();
+            }
         }
-    
+
         let realArrivalCity = shipment.arrival_city;
         let realArrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse();
-    
+        let realArrivalAddress = shipment.arrival_address;
+        let realArrivalPostalCode = shipment.arrival_postal;
+
         if (deliveries.length > 0) {
             const lastDelivery = deliveries[deliveries.length - 1];
             if (lastDelivery.shipment_step === 1000) {
                 realArrivalCity = shipment.arrival_city;
                 realArrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse();
+                realArrivalAddress = shipment.arrival_address;
+                realArrivalPostalCode = shipment.arrival_postal;
             } else {
                 const lastStore = storesByStep.find(s => s.step === lastDelivery.shipment_step);
                 realArrivalCity = lastStore?.exchangePoint?.city ?? shipment.arrival_city;
                 realArrivalCoords = lastStore?.exchangePoint?.coordinates.coordinates?.slice().reverse() ?? shipment.arrival_location?.coordinates?.slice().reverse();
+                realArrivalAddress = lastStore?.exchangePoint?.address ?? shipment.arrival_address;
+                realArrivalPostalCode = lastStore?.exchangePoint?.postal_code ?? shipment.arrival_postal;
             }
         }
-    
+
         let finished = false;
         if (deliveries.some(delivery => delivery.shipment_step === 0)) {
             finished = true;
         }
-    
+
+        const showArrivalHandling = shipment.arrival_handling && !deliveries.some(delivery => delivery.shipment_step === 1);
+
+        const showDepartureHandling = shipment.departure_handling && !deliveries.some(delivery => delivery.shipment_step === 1000);
+
+        let totalPrice = shipment.estimated_total_price ?? 0;
+        if (showArrivalHandling) {
+            totalPrice += 29;
+        }
+        if (showDepartureHandling) {
+            totalPrice += 29;
+        }
+
+        // Mettre à jour le departure_date dans les détails
+        let departureDate = shipment.deadline_date?.toISOString().split('T')[0];
+        if (steps.length > 0) {
+            const lastStep = steps[steps.length - 1];
+            if (lastStep.date) {
+                departureDate = lastStep.date.split('T')[0];
+            }
+        }
+
         const result = {
             details: {
                 id: shipment.shipment_id,
@@ -686,30 +748,42 @@ export class DeliveryService {
                 departure: {
                     city: shipment.departure_city,
                     coordinates: shipment.departure_location?.coordinates?.slice().reverse(),
+                    address: shipment.departure_address,
+                    postal_code: shipment.departure_postal,
                 },
                 arrival: {
                     city: realArrivalCity,
                     coordinates: realArrivalCoords,
+                    address: realArrivalAddress,
+                    postal_code: realArrivalPostalCode,
                 },
-                departure_date: shipment.deadline_date?.toISOString().split('T')[0],
+                departure_date: departureDate,
                 arrival_date: shipment.deadline_date?.toISOString().split('T')[0],
+                time_slot: shipment.time_slot,
                 status: shipment.status ?? 'In Progress',
-                initial_price: initialPrice,
+                initial_price: totalPrice,
                 price_with_step: priceWithStep,
                 invoice: parcels.map(p => ({
                     name: p.name,
                     url_invoice: p.picture[0],
                 })),
-                urgent : shipment.urgent,
-                finished : finished,
-                trolleydrop : shipment.trolleydrop,
+                urgent: shipment.urgent,
+                finished: finished,
+                trolleydrop: shipment.trolleydrop,
+                departure_handling: showDepartureHandling,
+                arrival_handling: showArrivalHandling,
+                elevator_arrival: shipment.elevator_arrival,
+                elevator_departure: shipment.elevator_departure,
+                floor_arrival_handling: shipment.floor_arrival_handling,
+                floor_departure_handling: shipment.floor_departure_handling,
             },
             package: parcels,
             steps: steps,
         };
-    
+
         return result;
     }
+
 
     async bookShipment(id: string, user_id: string): Promise<Delivery> {
         const shipment = await this.shipmentRepository.findOne({
@@ -785,56 +859,91 @@ export class DeliveryService {
             where: { shipment_id },
             relations: ['stores', 'stores.exchangePoint'],
         });
-    
+
         if (!shipment) {
             throw new Error('Shipment not found.');
         }
-    
+
         const user = await this.userRepository.findOne({
             where: { user_id: dto.delivery_person_id },
             relations: ['deliveryPerson'],
         });
-    
+
         if (!user || !user.deliveryPerson) {
             throw new Error('User or delivery person profile not found.');
         }
-    
+
         const existingSteps = shipment.stores.map((store) => store.step);
         const nextStep = existingSteps.length > 0 ? Math.max(...existingSteps) + 1 : 1;
-    
+
+        // Préparation des variables pour le futur exchange point
         let exchangePoint: ExchangePoint;
-    
+        let city: string;
+        let coordinates: { type: string; coordinates: [number, number] };
+        let address: string | undefined;
+        let postal_code: string | undefined;
+        let warehouse_id: string | undefined;
+
         if (dto.warehouse_id) {
             const warehouse = await this.warehouseRepository.findOne({
                 where: { warehouse_id: dto.warehouse_id },
             });
-    
+
             if (!warehouse) {
                 throw new Error('Warehouse not found.');
             }
-    
-            exchangePoint = this.exchangePointRepository.create({
-                city: warehouse.city,
-                coordinates: warehouse.coordinates,
-                warehouse_id: warehouse.warehouse_id,
-            });
-    
-            await this.exchangePointRepository.save(exchangePoint);
+
+            city = warehouse.city;
+            coordinates = warehouse.coordinates;
+            address = warehouse.address;
+            postal_code = warehouse.postal_code;
+            warehouse_id = warehouse.warehouse_id;
+
         } else if (dto.city && dto.latitude && dto.longitude) {
-            exchangePoint = this.exchangePointRepository.create({
-                city: dto.city,
-                coordinates: {
-                    type: 'Point',
-                    coordinates: [dto.longitude, dto.latitude],
-                },
-                warehouse_id: undefined,
-            });
-    
-            await this.exchangePointRepository.save(exchangePoint);
+            city = dto.city;
+            coordinates = {
+                type: 'Point',
+                coordinates: [dto.longitude, dto.latitude],
+            };
+
+            try {
+                const response = await axios.get('https://nominatim.openstreetmap.org/reverse', {
+                    params: {
+                        format: 'json',
+                        lat: dto.latitude,
+                        lon: dto.longitude,
+                    },
+                    headers: {
+                        'User-Agent': 'EcoDeli/1.0 (contact.ecodeli@gmail.com)',
+                    },
+                });
+
+                const data = response.data;
+
+                if (data?.address) {
+                    address = data.address.road || data.display_name || undefined;
+                    postal_code = data.address.postcode || undefined;
+                }
+            } catch (error) {
+                console.error('Erreur lors de la récupération de l’adresse depuis Nominatim:', error);
+            }
+
         } else {
             throw new Error('You must provide either a warehouse_id or city, latitude, and longitude.');
         }
-    
+
+        // Création unique de l'exchange point
+        exchangePoint = this.exchangePointRepository.create({
+            city,
+            coordinates,
+            warehouse_id,
+            address,
+            postal_code,
+        });
+
+        await this.exchangePointRepository.save(exchangePoint);
+
+        // Création du store
         let startDate: Date;
         if (shipment.stores.length > 0) {
             const lastStep = shipment.stores[shipment.stores.length - 1];
@@ -842,9 +951,9 @@ export class DeliveryService {
         } else {
             startDate = shipment.deadline_date || new Date();
         }
-    
+
         const endDate = dto.end_date || undefined;
-    
+
         const store = this.storeRepository.create({
             exchangePoint,
             step: nextStep,
@@ -852,15 +961,18 @@ export class DeliveryService {
             end_date: endDate,
             shipment_id: shipment.shipment_id,
         });
-    
+
         await this.storeRepository.save(store);
-    
+
         shipment.proposed_delivery_price = dto.new_price;
-    
-        const delivery_code = crypto.createHmac('sha256', 'secret').update(shipment.shipment_id).digest('hex');
-    
+
+        const delivery_code = crypto
+            .createHmac('sha256', 'secret')
+            .update(shipment.shipment_id)
+            .digest('hex');
+
         const commissions = await this.deliveryCommissionRepository.findOne({ where: {} });
-    
+
         const delivery = this.deliveryRepository.create({
             send_date: new Date(),
             status: 'pending',
@@ -871,7 +983,7 @@ export class DeliveryService {
             delivery_commission: commissions ?? undefined,
             delivery_code,
         });
-    
+
         return await this.deliveryRepository.save(delivery);
     }
 
@@ -1461,11 +1573,11 @@ export class DeliveryService {
             where: { shipment_id: shipment_id },
             relations: ['parcels', 'parcels.images', 'deliveries', 'deliveries.delivery_person', 'deliveries.delivery_person.user', 'deliveries.delivery_person.user.clients', 'stores', 'stores.exchangePoint'],
         });
-    
+
         if (!shipment) {
             throw new Error('Shipment not found');
         }
-    
+
         const parcels = await Promise.all(
             shipment.parcels.map(async parcel => ({
                 id: parcel.parcel_id,
@@ -1481,27 +1593,27 @@ export class DeliveryService {
                 ),
             }))
         );
-    
+
         const deliveries = shipment.deliveries.sort((a, b) => a.shipment_step - b.shipment_step);
         const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
-    
+
         const initialPrice = Number(shipment.estimated_total_price ?? 0);
         const priceWithStep = deliveries.map(delivery => ({
             step: `Step ${delivery.shipment_step}`,
             price: Number(delivery.delivery_price ?? delivery.amount),
         }));
-    
+
         const steps: {
             id: number;
             title: string;
             description: string;
             date: string;
-            departure: { city: string; coordinates: [number, number] };
-            arrival: { city: string; coordinates: [number, number] };
+            departure: { city: string; coordinates: [number, number]; address: string; postalCode: string };
+            arrival: { city: string; coordinates: [number, number]; address: string; postalCode: string };
             courier: { name: string; photoUrl: string };
             idLink: string;
         }[] = [];
-    
+
         if (deliveries.length === 0) {
             steps.push({
                 id: -1,
@@ -1511,10 +1623,14 @@ export class DeliveryService {
                 departure: {
                     city: shipment.departure_city || "",
                     coordinates: shipment.departure_location?.coordinates?.slice().reverse() as [number, number],
+                    address: shipment.departure_address || "",
+                    postalCode: shipment.departure_postal || "",
                 },
                 arrival: {
                     city: shipment.arrival_city || "",
                     coordinates: shipment.arrival_location?.coordinates?.slice().reverse() as [number, number],
+                    address: shipment.arrival_address || "",
+                    postalCode: shipment.arrival_postal || "",
                 },
                 courier: {
                     name: "Unknown",
@@ -1527,24 +1643,32 @@ export class DeliveryService {
                 const delivery = deliveries[i];
                 const store = storesByStep.find(s => s.step === delivery.shipment_step);
                 const courier = delivery.delivery_person;
-    
-                let departureCity, departureCoords, arrivalCity, arrivalCoords;
-    
+
+                let departureCity, departureCoords, departureAddress, departurePostalCode, arrivalCity, arrivalCoords, arrivalAddress, arrivalPostalCode;
+
                 if (delivery.shipment_step === 1) {
                     departureCity = shipment.departure_city;
                     departureCoords = shipment.departure_location?.coordinates?.slice().reverse() as [number, number];
+                    departureAddress = shipment.departure_address;
+                    departurePostalCode = shipment.departure_postal;
                     arrivalCity = store?.exchangePoint?.city ?? "";
                     arrivalCoords = store?.exchangePoint?.coordinates.coordinates?.slice().reverse() as [number, number];
+                    arrivalAddress = store?.exchangePoint?.address ?? "";
+                    arrivalPostalCode = store?.exchangePoint?.postal_code ?? "";
                 } else {
                     const prevStore = storesByStep.find(s => s.step === delivery.shipment_step - 1);
                     departureCity = prevStore?.exchangePoint?.city ?? "";
                     departureCoords = prevStore?.exchangePoint?.coordinates.coordinates?.slice().reverse() as [number, number];
+                    departureAddress = prevStore?.exchangePoint?.address ?? "";
+                    departurePostalCode = prevStore?.exchangePoint?.postal_code ?? "";
                     arrivalCity = store?.exchangePoint?.city ?? "";
                     arrivalCoords = store?.exchangePoint?.coordinates.coordinates?.slice().reverse() as [number, number];
+                    arrivalAddress = store?.exchangePoint?.address ?? "";
+                    arrivalPostalCode = store?.exchangePoint?.postal_code ?? "";
                 }
-    
+
                 const client = courier?.user.clients?.[0];
-    
+
                 steps.push({
                     id: delivery.shipment_step,
                     title: `Step ${delivery.shipment_step}`,
@@ -1553,10 +1677,14 @@ export class DeliveryService {
                     departure: {
                         city: departureCity,
                         coordinates: departureCoords,
+                        address: departureAddress,
+                        postalCode: departurePostalCode,
                     },
                     arrival: {
                         city: arrivalCity,
                         coordinates: arrivalCoords,
+                        address: arrivalAddress,
+                        postalCode: arrivalPostalCode,
                     },
                     courier: {
                         name: client ? `${client.first_name} ${client.last_name}` : "Unknown",
@@ -1565,12 +1693,12 @@ export class DeliveryService {
                     idLink: delivery.delivery_id,
                 });
             }
-    
+
             const finalDelivery = deliveries.find(delivery => delivery.shipment_step === 1000);
             if (finalDelivery) {
                 const lastStore = storesByStep.find(s => s.step === finalDelivery.shipment_step - 1);
                 const client = finalDelivery.delivery_person?.user.clients?.[0];
-    
+
                 steps.push({
                     id: 1000,
                     title: 'Step finale',
@@ -1579,10 +1707,14 @@ export class DeliveryService {
                     departure: {
                         city: lastStore?.exchangePoint?.city ?? "",
                         coordinates: lastStore?.exchangePoint?.coordinates.coordinates?.slice().reverse() as [number, number],
+                        address: lastStore?.exchangePoint?.address ?? "",
+                        postalCode: lastStore?.exchangePoint?.postal_code ?? "",
                     },
                     arrival: {
                         city: shipment.arrival_city || "",
                         coordinates: shipment.arrival_location?.coordinates?.slice().reverse() as [number, number],
+                        address: shipment.arrival_address || "",
+                        postalCode: shipment.arrival_postal || "",
                     },
                     courier: {
                         name: client ? `${client.first_name} ${client.last_name}` : "Unknown",
@@ -1592,27 +1724,44 @@ export class DeliveryService {
                 });
             }
         }
-    
+
         let realArrivalCity = shipment.arrival_city;
         let realArrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse() as [number, number];
-    
+        let realArrivalAddress = shipment.arrival_address;
+        let realArrivalPostalCode = shipment.arrival_postal;
+
         if (deliveries.length > 0) {
             const lastDelivery = deliveries[deliveries.length - 1];
             if (lastDelivery.shipment_step === 1000) {
                 realArrivalCity = shipment.arrival_city;
                 realArrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse() as [number, number];
+                realArrivalAddress = shipment.arrival_address;
+                realArrivalPostalCode = shipment.arrival_postal;
             } else {
                 const lastStore = storesByStep.find(s => s.step === lastDelivery.shipment_step);
                 realArrivalCity = lastStore?.exchangePoint?.city ?? shipment.arrival_city;
                 realArrivalCoords = lastStore?.exchangePoint?.coordinates.coordinates?.slice().reverse() as [number, number] ?? shipment.arrival_location?.coordinates?.slice().reverse() as [number, number];
+                realArrivalAddress = lastStore?.exchangePoint?.address ?? shipment.arrival_address;
+                realArrivalPostalCode = lastStore?.exchangePoint?.postal_code ?? shipment.arrival_postal;
             }
         }
-    
+
         let finished = false;
         if (deliveries.some(delivery => delivery.shipment_step === 0)) {
             finished = true;
         }
-    
+
+        const showArrivalHandling = shipment.arrival_handling && !deliveries.some(delivery => delivery.shipment_step === 1);
+        const showDepartureHandling = shipment.departure_handling && !deliveries.some(delivery => delivery.shipment_step === 1000);
+
+        let totalPrice = shipment.estimated_total_price ?? 0;
+        if (showArrivalHandling) {
+            totalPrice += 29;
+        }
+        if (showDepartureHandling) {
+            totalPrice += 29;
+        }
+
         const result: DeliveryDetailsOffice = {
             details: {
                 id: shipment.shipment_id,
@@ -1621,30 +1770,40 @@ export class DeliveryService {
                 departure: {
                     city: shipment.departure_city || "",
                     coordinates: shipment.departure_location?.coordinates?.slice().reverse() as [number, number],
+                    address: shipment.departure_address || "",
+                    postalCode: shipment.departure_postal || "",
                 },
                 arrival: {
                     city: realArrivalCity || "",
                     coordinates: realArrivalCoords,
+                    address: realArrivalAddress || "",
+                    postalCode: realArrivalPostalCode || "",
                 },
                 departure_date: shipment.deadline_date?.toISOString().split('T')[0] ?? new Date().toISOString().split('T')[0],
                 arrival_date: shipment.deadline_date?.toISOString().split('T')[0] ?? new Date().toISOString().split('T')[0],
                 status: shipment.status ?? 'In Progress',
-                initial_price: initialPrice,
+                initial_price: totalPrice,
                 price_with_step: priceWithStep,
                 invoice: parcels.map(p => ({
                     name: p.name,
-                    url_invoice: "",
+                    url_invoice: p.picture[0],
                 })),
                 urgent: shipment.urgent,
                 finished: finished,
                 trolleydrop: shipment.trolleydrop || false,
                 complementary_info: '',
                 facture_url: "",
+                departure_handling: showDepartureHandling,
+                arrival_handling: showArrivalHandling,
+                elevator_arrival: shipment.elevator_arrival,
+                elevator_departure: shipment.elevator_departure,
+                floor_arrival_handling: shipment.floor_arrival_handling,
+                floor_departure_handling: shipment.floor_departure_handling,
             },
             package: parcels,
             steps: steps,
         };
-    
+
         return result;
     }
 
@@ -1691,16 +1850,16 @@ export class DeliveryService {
             where: { user: { user_id: userId }, status: Not('validated') },
             relations: ['parcels', 'deliveries'],
         });
-    
+
         const shipmentListItems: ShipmentListItem[] = await Promise.all(
             shipments.map(async (shipment) => {
                 try {
                     const parcels = await this.parcelRepository.find({ where: { shipment: { shipment_id: shipment.shipment_id } } });
                     const deliveries = await this.deliveryRepository.find({ where: { shipment: { shipment_id: shipment.shipment_id } } });
-    
+
                     const packageCount = parcels.length;
-                    const progress = (deliveries.length / (deliveries.length + 1))*100;
-    
+                    const progress = (deliveries.length / (deliveries.length + 1)) * 100;
+
                     return {
                         id: shipment.shipment_id,
                         name: shipment.description ?? "Unnamed Shipment",
@@ -1708,13 +1867,18 @@ export class DeliveryService {
                         urgent: shipment.urgent,
                         departure: {
                             city: shipment.departure_city,
+                            address: shipment.departure_address,
+                            postalCode: shipment.departure_postal,
                             coordinates: shipment.departure_location?.coordinates ? [shipment.departure_location.coordinates[1], shipment.departure_location.coordinates[0]] : [0, 0],
                         },
                         arrival: {
                             city: shipment.arrival_city,
+                            address: shipment.arrival_address,
+                            postalCode: shipment.arrival_postal,
                             coordinates: shipment.arrival_location?.coordinates ? [shipment.arrival_location.coordinates[1], shipment.arrival_location.coordinates[0]] : [0, 0],
                         },
                         arrival_date: shipment.deadline_date ? shipment.deadline_date.toISOString().split('T')[0] : null,
+                        theoretical_departure_date: shipment.deadline_date ? shipment.deadline_date.toISOString().split('T')[0] : null,
                         packageCount,
                         progress,
                         finished: shipment.status === 'finished',
@@ -1726,8 +1890,10 @@ export class DeliveryService {
                 }
             })
         ).then(items => items.filter(item => item !== null)) as ShipmentListItem[];
+
         return shipmentListItems;
     }
+
 
     async getMyShipmentsHistory(userId: string, page: number, limit: number): Promise<{ data: ShipmentHistoryRequest[], totalRows: number }> {
         const offset = (page - 1) * limit;
@@ -1901,79 +2067,105 @@ export class DeliveryService {
                 'shipment.parcels.images',
             ],
         });
-    
+
         if (!delivery) {
             throw new Error('Delivery not found.');
         }
-    
+
         const shipment = delivery.shipment;
         if (!shipment || !shipment.user) {
             throw new Error('Shipment or associated user not found.');
         }
-    
+
         const isOwner = shipment.user.user_id === user_id;
         const isDeliveryPerson = delivery.delivery_person?.user?.user_id === user_id;
-    
+
         if (!isOwner && !isDeliveryPerson) {
             throw new Error('Unauthorized access to delivery details.');
         }
-    
+
         const storesByStep = (shipment.stores || []).sort((a, b) => a.step - b.step);
-    
+
         let departureCity: string | undefined;
         let departureCoords: [number, number] | undefined;
+        let departureAddress: string | undefined;
+        let departurePostal: string | undefined;
         let arrivalCity: string | undefined;
         let arrivalCoords: [number, number] | undefined;
-    
+        let arrivalAddress: string | undefined;
+        let arrivalPostal: string | undefined;
+        let isBox: boolean | undefined;
+
         const step = delivery.shipment_step;
-    
+
         if (step === 0) {
             departureCity = shipment.departure_city || "";
             departureCoords = shipment.departure_location?.coordinates?.slice().reverse() as [number, number];
-        
+            departureAddress = shipment.departure_address || "";
+            departurePostal = shipment.departure_postal || "";
+
             arrivalCity = storesByStep[0]?.exchangePoint?.city ?? shipment.arrival_city;
             arrivalCoords = storesByStep[0]?.exchangePoint?.coordinates.coordinates?.slice().reverse()
                 ?? shipment.arrival_location?.coordinates?.slice().reverse();
+            arrivalAddress = storesByStep[0]?.exchangePoint?.address ?? shipment.arrival_address;
+            arrivalPostal = storesByStep[0]?.exchangePoint?.postal_code ?? shipment.arrival_postal;
+            isBox = storesByStep[0]?.exchangePoint?.isbox;
         } else if (step === 1000) {
             const lastStore = storesByStep.find(s => s.step === step - 1);
             departureCity = lastStore?.exchangePoint?.city ?? shipment.departure_city ?? undefined;
             departureCoords = lastStore?.exchangePoint?.coordinates.coordinates?.slice().reverse()
                 ?? shipment.departure_location?.coordinates?.slice().reverse();
-        
+            departureAddress = lastStore?.exchangePoint?.address ?? shipment.departure_address ?? "";
+            departurePostal = lastStore?.exchangePoint?.postal_code ?? shipment.departure_postal ?? "";
+
             arrivalCity = shipment.arrival_city ?? undefined;
             arrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse();
+            arrivalAddress = shipment.arrival_address || "";
+            arrivalPostal = shipment.arrival_postal || "";
         } else {
             const prevStore = storesByStep.find(s => s.step === step - 1);
             const currStore = storesByStep.find(s => s.step === step);
-        
+
             if (!prevStore) {
                 departureCity = shipment.departure_city ?? undefined;
                 departureCoords = shipment.departure_location?.coordinates?.slice().reverse() as [number, number];
+                departureAddress = shipment.departure_address || "";
+                departurePostal = shipment.departure_postal || "";
             } else {
                 departureCity = prevStore.exchangePoint?.city;
                 departureCoords = prevStore.exchangePoint?.coordinates.coordinates?.slice().reverse() as [number, number];
+                departureAddress = prevStore.exchangePoint?.address;
+                departurePostal = prevStore.exchangePoint?.postal_code;
             }
-        
+
             arrivalCity = currStore?.exchangePoint?.city;
             arrivalCoords = currStore?.exchangePoint?.coordinates.coordinates?.slice().reverse() as [number, number];
+            arrivalAddress = currStore?.exchangePoint?.address;
+            arrivalPostal = currStore?.exchangePoint?.postal_code;
+            isBox = currStore?.exchangePoint?.isbox;
         }
-    
+
         const deliveryDetails: DeliveryDetails = {
             departure: {
                 city: departureCity || '',
+                address: departureAddress || '',
+                postalCode: departurePostal || '',
                 coordinates: departureCoords ?? [0, 0],
             },
             arrival: {
                 city: arrivalCity || '',
+                address: arrivalAddress || '',
+                postalCode: arrivalPostal || '',
                 coordinates: arrivalCoords ?? [0, 0],
             },
-            departure_date: delivery.send_date?.toISOString().split('T')[0] || '',
-            arrival_date: delivery.delivery_date?.toISOString().split('T')[0] || '',
+            departure_date: delivery.send_date?.toISOString() || '',
+            arrival_date: delivery.delivery_date?.toISOString() || '',
             status: (['pending', 'taken', 'finished', 'validated'].includes(delivery.status)
                 ? delivery.status
                 : 'pending') as 'pending' | 'taken' | 'finished' | 'validated',
             total_price: Number(delivery.delivery_price ?? delivery.amount),
             cart_dropped: shipment.trolleydrop,
+            isBox: isBox || false,
             packages: await Promise.all(
                 (shipment.parcels || []).map(async (parcel: any) => ({
                     id: parcel.parcel_id,
@@ -1990,7 +2182,7 @@ export class DeliveryService {
                 }))
             ),
         };
-    
+
         return deliveryDetails;
     }
     
@@ -2033,15 +2225,6 @@ export class DeliveryService {
     
 
 // PAS ENCORE UTILISE
-
-
-
-
-
-
-
-    
-
 
     async getShipmentFavorites(user_id: string, page: number, limit: number): Promise<Shipment[]> {
         const user = await this.userRepository.findOne({

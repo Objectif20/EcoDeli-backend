@@ -102,66 +102,81 @@ export interface DeliveryOnGoing {
     remainingPriorityShipments?: number; 
   }
 
-  export interface DeliveryDetailsOffice {
-    details: {
-      id: string;
-      name: string;
-      description: string;
-      complementary_info: string;
-      facture_url : string;
-      departure: {
-        city: string;
-        coordinates: [number, number];
-      };
-      arrival: {
-        city: string;
-        coordinates: [number, number];
-      };
-      departure_date: string;
-      arrival_date: string;
-      status: string;
-      initial_price: number;
-      price_with_step: {
-        step: string;
-        price: number;
-      }[];
-      invoice: {
-        name: string;
-        url_invoice: string;
-      }[];
-      urgent: boolean;
-      finished: boolean;
-      trolleydrop: boolean;
+export interface DeliveryDetailsOffice {
+  details: {
+    id: string;
+    name: string;
+    description: string;
+    complementary_info: string;
+    facture_url: string;
+    departure: {
+      city: string;
+      address: string;
+      postalCode: string;
+      coordinates: [number, number];
     };
-    package: {
-      id: string;
-      picture: string[];
+    arrival: {
+      city: string;
+      address: string;
+      postalCode: string;
+      coordinates: [number, number];
+    };
+    departure_date: string;
+    arrival_date: string;
+    status: string;
+    initial_price: number;
+    price_with_step: {
+      step: string;
+      price: number;
+    }[];
+    invoice: {
       name: string;
-      fragility: boolean;
-      estimated_price: number;
-      weight: number;
-      volume: number;
+      url_invoice: string;
     }[];
-    steps: {
-      id: number;
-      title: string;
-      description: string;
-      date: string;
-      departure: {
-        city: string;
-        coordinates: [number, number];
-      };
-      arrival: {
-        city: string;
-        coordinates: [number, number];
-      };
-      courier: {
-        name: string;
-        photoUrl: string;
-      };
-      idLink: string;
-    }[];
-  }
+    urgent: boolean;
+    finished: boolean;
+    trolleydrop: boolean;
+    departure_handling: boolean;
+    arrival_handling: boolean;
+    elevator_arrival: boolean;
+    elevator_departure: boolean;
+    floor_arrival_handling: number;
+    floor_departure_handling: number;
+  };
+  package: {
+    id: string;
+    picture: string[];
+    name: string;
+    fragility: boolean;
+    estimated_price: number;
+    weight: number;
+    volume: number;
+  }[];
+  steps: {
+    id: number;
+    title: string;
+    description: string;
+    date: string;
+    departure: {
+      city: string;
+      address: string;
+      postalCode: string;
+      coordinates: [number, number];
+    };
+    arrival: {
+      city: string;
+      address: string;
+      postalCode: string;
+      coordinates: [number, number];
+    };
+    courier: {
+      name: string;
+      photoUrl: string;
+    };
+    idLink: string;
+  }[];
+}
+
   
 export interface ShipmentListItem {
   id: string;
@@ -170,13 +185,18 @@ export interface ShipmentListItem {
   urgent: boolean;
   departure: {
     city: string;
+    address: string;
+    postalCode: string;
     coordinates: [number, number];
   };
   arrival: {
     city: string;
+    address: string;
+    postalCode: string;
     coordinates: [number, number];
   };
   arrival_date: string;
+  theoretical_departure_date: string;
   packageCount: number;
   progress: number;
   finished: boolean;
@@ -212,10 +232,14 @@ export interface DeliveryHistoryAsClient {
 export interface DeliveryDetails {
   departure: {
     city: string;
+    address: string;
+    postalCode: string;
     coordinates: [number, number];
   };
   arrival: {
     city: string;
+    address: string;
+    postalCode: string;
     coordinates: [number, number];
   };
   departure_date: string;
@@ -223,6 +247,7 @@ export interface DeliveryDetails {
   status: "pending" | "taken" | "finished" | "validated";
   total_price: number;
   cart_dropped: boolean;
+  isBox: boolean;
   packages: {
     id: string;
     name: string;
