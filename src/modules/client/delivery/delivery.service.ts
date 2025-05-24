@@ -1263,7 +1263,6 @@ export class DeliveryService {
                     }
                 }
 
-                // First shipping free
                 if (
                     plan.first_shipping_free &&
                     !subscription.first_shipping_free_taken &&
@@ -1277,13 +1276,11 @@ export class DeliveryService {
 
                 console.log("Total Price after first shipping free check:", totalPrice);
 
-                // Extra insurance
                 if (delivery.amount > plan.max_insurance_coverage) {
                     totalPrice += Number(plan.extra_insurance_price) ?? 0;
                     console.log("Total Price after extra insurance adjustment:", totalPrice);
                 }
 
-                // Discounts
                 totalPrice -= plan.shipping_discount ?? 0;
                 console.log("Total Price after shipping discount adjustment:", totalPrice);
 
@@ -1293,7 +1290,6 @@ export class DeliveryService {
                 totalPrice -= plan.small_package_permanent_discount ?? 0;
                 console.log("Total Price after small package discount adjustment:", totalPrice);
 
-                // Final fee
                 if (totalPrice > 0) {
                     const fee = totalPrice * 0.015 + 0.25;
                     totalPrice += fee;
@@ -1309,7 +1305,6 @@ export class DeliveryService {
                     totalPrice = 1.00;
                 }
 
-                // Paiement Stripe si nécessaire
                 if (totalPrice > 0) {
                     const stripeCustomerId =
                         user.clients?.[0]?.stripe_customer_id ?? user.merchant?.stripe_customer_id;
@@ -1392,7 +1387,6 @@ export class DeliveryService {
                 departureCity = "Ville de départ inconnue";
             }
 
-            // Récupérer la ville d’arrivée
             let arrivalCity = "";
             if (delivery.shipment.stores?.length > 1 && delivery.shipment.stores[1]?.exchangePoint?.city) {
                 arrivalCity = delivery.shipment.stores[1].exchangePoint.city;
@@ -1477,9 +1471,6 @@ export class DeliveryService {
 
 
 
-
-
-
     async finishDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
         const delivery = await this.deliveryRepository.findOne({
             where: { delivery_id: deliveryId },
@@ -1542,10 +1533,9 @@ export class DeliveryService {
 
     async validateDeliveryWithCode(deliveryId: string, user_id: string, code: string): Promise<{ message: string }> {
 
-    
         const delivery = await this.deliveryRepository.findOne({
             where: { delivery_id: deliveryId },
-            relations: ["delivery_person", "shipment", "shipment.stores", "shipment.stores.exchangePoint", "delivery_person.user"],
+            relations: ["delivery_person", "shipment", "shipment.stores", "shipment.stores.exchangePoint", "delivery_person.user", "shipment.user", "shipment.user.clients"],
         });
     
         if (!delivery) {
@@ -1574,7 +1564,37 @@ export class DeliveryService {
                 status: 'validated',
             });
         }
-    
+        const promisedPrice = Number(delivery.amount);
+
+        const deliveryPerson = await this.deliveryPersonRepository.findOne({
+            where: { delivery_person_id: delivery.delivery_person.delivery_person_id },
+            relations: ['user', 'user.clients'],
+        });
+        if (!deliveryPerson) {
+            throw new Error("Delivery person not found.");
+        }
+        deliveryPerson.balance = Number(deliveryPerson.balance) || 0;
+        deliveryPerson.balance += promisedPrice;
+        console.log(`Updating delivery person balance: ${deliveryPerson.balance}`);
+        await this.deliveryPersonRepository.save(deliveryPerson);
+
+        const fromEmail = this.mailer.options.auth.user;
+        await this.mailer.sendMail({
+            from: fromEmail,
+            to: deliveryPerson.user.email,
+            subject: 'Livraison Validée',
+            text: `Bonjour ${deliveryPerson.user?.clients[0]?.first_name},\n\nVotre livraison a été validée avec succès. Vous avez reçu un montant de ${promisedPrice} € sur votre compte.\n\nMerci pour votre service !\n\nCordialement,\nL'équipe EcoDeli`,
+        });
+
+        const clientEmail = delivery.shipment.user.email;
+        const clientName = delivery.shipment.user.clients?.[0]?.first_name || "Client";
+        await this.mailer.sendMail({
+            from: fromEmail,
+            to: clientEmail,
+            subject: 'Livraison Validée',
+            text: `Bonjour ${clientName},\n\nVotre livraison a été validée avec succès par le livreur. Merci de votre confiance !\n\nCordialement,\nL'équipe EcoDeli`,
+        });
+
         return { message: "Delivery validated successfully." };
     }
 
