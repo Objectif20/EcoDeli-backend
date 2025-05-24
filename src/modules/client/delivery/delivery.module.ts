@@ -36,6 +36,9 @@ import { DeliveryReviewResponse } from "src/common/entities/delivery_review_resp
 import { MongooseModule } from "@nestjs/mongoose";
 import { Message, MessageSchema } from "src/common/schemas/message.schema";
 import { DeliveryTransfer } from "src/common/entities/delivery_transfer.entity";
+import { DeliveryStateService } from "./delivery-state.service";
+import { ShipmentService } from "./shipment.service";
+import { DeliveryUtilsService } from "./delivery-utils.service";
 
 
 @Module({
@@ -50,8 +53,8 @@ import { DeliveryTransfer } from "src/common/entities/delivery_transfer.entity";
         MongooseModule.forFeature([{ name: Message.name, schema: MessageSchema }]),
     ],
     controllers: [DeliveryController],
-    providers: [DeliveryController, JwtService, DeliveryService],
-    exports: [TypeOrmModule, DeliveryService],
+    providers: [DeliveryController, JwtService, DeliveryService, DeliveryStateService, ShipmentService, DeliveryUtilsService],
+    exports: [TypeOrmModule, DeliveryService, DeliveryStateService, ShipmentService, DeliveryUtilsService],
 
 })
 export class DeliveryModule {}

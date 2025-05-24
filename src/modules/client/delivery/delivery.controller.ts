@@ -8,12 +8,18 @@ import { ClientJwtGuard } from "src/common/guards/user-jwt.guard";
 import { BookPartialDTO } from "./dto/book-partial.dto";
 import { DeliveryHistoryAsClient, HistoryDelivery, ShipmentHistoryRequest, ShipmentListItem, SubscriptionForClient } from "./types";
 import { CreateShipmentTrolleyDTO } from "./dto/create-trolley.dto";
+import { DeliveryStateService } from "./delivery-state.service";
+import { ShipmentService } from "./shipment.service";
+import { DeliveryUtilsService } from "./delivery-utils.service";
 
 @Controller("client/shipments")
 export class DeliveryController {
 
     constructor(
-        private readonly deliveryService: DeliveryService
+        private readonly deliveryService: DeliveryService,
+        private readonly deliveryStateService: DeliveryStateService,
+        private readonly shipmentService : ShipmentService,
+        private readonly deliveryUtilsService : DeliveryUtilsService
     ) {}
 
     @Post()
@@ -24,7 +30,7 @@ export class DeliveryController {
         @UploadedFiles() files: Express.Multer.File[],
         @Req() req: { user: { user_id: string }; body: any }
     ) {
-        const shipment = await this.deliveryService.createDelivery(createShipmentDTO, files, req.user.user_id);
+        const shipment = await this.shipmentService.createShipment(createShipmentDTO, files, req.user.user_id);
         return { message: "Shipment received successfully!", data: shipment };
     }
 
@@ -36,7 +42,7 @@ export class DeliveryController {
         @UploadedFiles() files: Express.Multer.File[],
         @Req() req: { user: { user_id: string }; body: any }
     ) {
-        const shipment = await this.deliveryService.createTrolleyShipment(createShipmentDTO, files, req.user.user_id);
+        const shipment = await this.shipmentService.createTrolleyShipment(createShipmentDTO, files, req.user.user_id);
         return { message: "Shipment Trolley received successfully!", data: shipment };
     }
 
@@ -48,12 +54,12 @@ export class DeliveryController {
 
     @Get()
     async getShipments(@Query() filters: GetShipmentsDTO) {
-        return this.deliveryService.getShipments(filters);
+        return this.shipmentService.getShipments(filters);
     }
 
     @Get("warehouses")
     async getWarehouses() {
-        return this.deliveryService.getWarehouseList();
+        return this.deliveryUtilsService.getWarehouseList();
     }
 
     @Get("myCurrentShipmentsForNegotiation")
@@ -61,7 +67,7 @@ export class DeliveryController {
     async getCurrentPendingShipments(
         @Body("user_id") user_id : string,
     ) {
-        return this.deliveryService.getMyCurrentShipmentsForNegoctation(user_id);
+        return this.deliveryUtilsService.getMyCurrentShipmentsForNegoctation(user_id);
     }
 
     @Get("onGoingDeliveries")
@@ -77,7 +83,7 @@ export class DeliveryController {
     async getSubscriptionStat(
         @Body("user_id") user_id : string,
     ) : Promise<SubscriptionForClient> {
-        return this.deliveryService.getSubscriptionPlanForClient(user_id);
+        return this.deliveryUtilsService.getSubscriptionPlanForClient(user_id);
     }
 
     @Get("myCurrentShipments")
@@ -85,7 +91,7 @@ export class DeliveryController {
     async getCurrentShipment(
         @Body("user_id") user_id : string,
     ) : Promise<ShipmentListItem[]> {
-        return this.deliveryService.getShipmentListItems(user_id);
+        return this.shipmentService.getShipmentListItems(user_id);
     }
 
     @Get("favorites")
@@ -104,7 +110,7 @@ export class DeliveryController {
         @Body("user_id") user_id : string,
         @Body("secretCode") secretCode : string,
     ) {
-        return this.deliveryService.takeDeliveryPackage(deliveryId, user_id, secretCode);
+        return this.deliveryStateService.takeDeliveryPackage(deliveryId, user_id, secretCode);
     }
 
     @Post("delivery/:id/finish")
@@ -113,7 +119,7 @@ export class DeliveryController {
         @Param("id") deliveryId : string,
         @Body("user_id") user_id : string,
     ) {
-        return this.deliveryService.finishDelivery(deliveryId, user_id);
+        return this.deliveryStateService.finishDelivery(deliveryId, user_id);
     }
 
     @Post("delivery/:id/validate")
@@ -122,7 +128,7 @@ export class DeliveryController {
         @Param("id") deliveryId : string,
         @Body("user_id") user_id : string,
     ) {
-        return this.deliveryService.validateDelivery(deliveryId, user_id);
+        return this.deliveryStateService.validateDelivery(deliveryId, user_id);
     }
 
     @Post("delivery/:id/validateWithCode")
@@ -132,7 +138,7 @@ export class DeliveryController {
         @Body("user_id") user_id : string,
         @Body("secretCode") secretCode : string,
     ) {
-        return this.deliveryService.validateDeliveryWithCode(deliveryId, user_id, secretCode);
+        return this.deliveryStateService.validateDeliveryWithCode(deliveryId, user_id, secretCode);
     }
 
     @Delete("delivery/:id/cancel")
@@ -172,7 +178,7 @@ export class DeliveryController {
         @Query("page") page : number,
         @Query("limit") limit : number,
     ) {
-        return this.deliveryService.getReviewsForDeliveryPerson(user_id, page, limit);
+        return this.deliveryUtilsService.getReviewsForDeliveryPerson(user_id, page, limit);
     }
 
     @Get("delivery/myReviews")
@@ -182,7 +188,7 @@ export class DeliveryController {
         @Query("page") page : number,
         @Query("limit") limit : number,
     ) {
-        return this.deliveryService.getMyReviewsAsClient(user_id, page, limit);
+        return this.deliveryUtilsService.getMyReviewsAsClient(user_id, page, limit);
     }
 
     @Get("myShipmentsHistory")
@@ -192,7 +198,7 @@ export class DeliveryController {
         @Query("page") page : number,
         @Query("limit") limit : number,
     ) : Promise<{ data: ShipmentHistoryRequest[], totalRows: number }> {
-        return this.deliveryService.getMyShipmentsHistory(user_id, page, limit);
+        return this.shipmentService.getMyShipmentsHistory(user_id, page, limit);
     }
 
     @Get("delivery/myLocation")
@@ -218,7 +224,7 @@ export class DeliveryController {
         @Body("user_id") user_id : string,
         @Body("content") content : string,
     ) {
-        return this.deliveryService.replyComment(content, user_id, comment_id);
+        return this.deliveryUtilsService.replyComment(content, user_id, comment_id);
     }
 
     @Get("delivery/:id")
@@ -238,7 +244,7 @@ export class DeliveryController {
         @Body("user_id") user_id : string,
         @Param("id") delivery_id : string,
     ) {
-        return this.deliveryService.addComment(comment, user_id, delivery_id, rate);
+        return this.deliveryUtilsService.addComment(comment, user_id, delivery_id, rate);
     }
 
     @Post(":id/book")
@@ -247,7 +253,7 @@ export class DeliveryController {
         @Param("id") shipment_id : string,
         @Body("user_id") user_id : string,
     ) {
-        return this.deliveryService.bookShipment(shipment_id, user_id);
+        return this.deliveryService.bookDelivery(shipment_id, user_id);
     }
 
     @Post(':id/bookPartial')
@@ -266,7 +272,7 @@ export class DeliveryController {
         @Body("user_id") user_id : string
     )
     {
-        return this.deliveryService.askToNegociate(shipment_id, user_id);
+        return this.deliveryUtilsService.askToNegociate(shipment_id, user_id);
     }
 
     @Post("negociate")
@@ -299,14 +305,14 @@ export class DeliveryController {
     async getOfficeById(
         @Param("id") shipment_id : string,
     ) {
-        return this.deliveryService.getShipmentDetails(shipment_id);
+        return this.shipmentService.getShipmentDetails(shipment_id);
     }
 
     @Get(":id")
     async getShipmentById(
         @Param("id") shipment_id : string,
     ) {
-        return this.deliveryService.getShipmentById(shipment_id);
+        return this.shipmentService.getShipmentById(shipment_id);
     }
 
     @Patch(":id")
