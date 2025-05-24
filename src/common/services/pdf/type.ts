@@ -30,4 +30,5 @@ export interface InvoiceDetails {
   lineItems: InvoiceLineItem[];
   totalAmount: number;
   isMainStep: boolean;
+  stripeIntentId?: string | null;
 }

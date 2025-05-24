@@ -35,6 +35,7 @@ import { DeliveryReview } from "src/common/entities/delivery_reviews.entity";
 import { DeliveryReviewResponse } from "src/common/entities/delivery_review_responses.entity";
 import { MongooseModule } from "@nestjs/mongoose";
 import { Message, MessageSchema } from "src/common/schemas/message.schema";
+import { DeliveryTransfer } from "src/common/entities/delivery_transfer.entity";
 
 
 @Module({
@@ -42,7 +43,8 @@ import { Message, MessageSchema } from "src/common/schemas/message.schema";
     imports: [
         TypeOrmModule.forFeature([Users, Client, DeliveryPerson, Merchant, Plan, Subscription, Merchant, 
             ProviderContracts, ProviderDocuments, DeliveryPerson, DeliveryPersonDocument, Category, Delivery,
-            Shipment, Keyword, DeliveryKeyword, Parcel, ParcelImage, Favorite, Store, ExchangePoint, Warehouse, DeliveryCommission, DeliveryReview, DeliveryReviewResponse, Client, DeliveryCommission]),
+            Shipment, Keyword, DeliveryKeyword, Parcel, ParcelImage, Favorite, Store, ExchangePoint, Warehouse, DeliveryCommission, DeliveryReview, DeliveryReviewResponse, Client, DeliveryCommission,
+            DeliveryTransfer]),
         JwtModule.register({}),
         SharedModule,
         MongooseModule.forFeature([{ name: Message.name, schema: MessageSchema }]),

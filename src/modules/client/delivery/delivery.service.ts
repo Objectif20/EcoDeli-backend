@@ -40,6 +40,7 @@ import { PdfService } from "src/common/services/pdf/pdf.service";
 import { InvoiceDetails, ShipmentDetails } from "src/common/services/pdf/type";
 import * as nodemailer from 'nodemailer';
 import { Readable } from "stream";
+import { DeliveryTransfer } from "src/common/entities/delivery_transfer.entity";
 
 @Injectable()
 export class DeliveryService {
@@ -54,11 +55,8 @@ export class DeliveryService {
         @InjectRepository(ParcelImage)
         private readonly parcelImageRepository: Repository<ParcelImage>,
 
-        @InjectRepository(DeliveryKeyword)
-        private readonly deliveryKeywordRepository: Repository<DeliveryKeyword>,
-
-        @InjectRepository(Keyword)
-        private readonly keywordRepository: Repository<Keyword>,
+        @InjectRepository(DeliveryTransfer)
+        private readonly deliveryTransferRepository: Repository<DeliveryTransfer>,
 
         @InjectRepository(Users)
         private readonly userRepository: Repository<Users>,
@@ -1235,6 +1233,8 @@ export class DeliveryService {
 
             const isMainStep = delivery.shipment_step === 0 || delivery.shipment_step === 1;
 
+            let stripeIntentId : string | null = null;
+
             if (isMainStep) {
                 const user = await this.userRepository.findOne({
                     where: { user_id: delivery.shipment.user.user_id },
@@ -1275,9 +1275,11 @@ export class DeliveryService {
                     await this.subscriptionRepository.save(subscription);
                 }
 
+                console.log("Total Price after first shipping free check:", totalPrice);
+
                 // Extra insurance
                 if (delivery.amount > plan.max_insurance_coverage) {
-                    totalPrice += plan.extra_insurance_price ?? 0;
+                    totalPrice += Number(plan.extra_insurance_price) ?? 0;
                     console.log("Total Price after extra insurance adjustment:", totalPrice);
                 }
 
@@ -1320,16 +1322,16 @@ export class DeliveryService {
                     console.log("Final Total Price:", totalPrice);
                     console.log("Delivery ID:", deliveryId);
 
-                    await this.stripeService.chargeCustomer(
+                    const { stripePaymentIntentId } = await this.stripeService.chargeCustomer(
                         stripeCustomerId,
                         Math.round(totalPrice * 100),
                         `Delivery for shipment ${delivery.shipment.shipment_id} : ${delivery.shipment.description}`,
                     );
+                    stripeIntentId = stripePaymentIntentId;
                 } else {
                     console.log("No charge needed. Delivery total is zero.");
                 }
 
-                // Reset free shipping
                 if (subscription.first_shipping_free_taken) {
                     subscription.first_shipping_free_taken = false;
                     await this.subscriptionRepository.save(subscription);
@@ -1357,24 +1359,49 @@ export class DeliveryService {
                         throw new Error("Stripe customer ID not found for user.");
                     }
 
-                    await this.stripeService.chargeCustomer(
+                    const { stripePaymentIntentId } = await this.stripeService.chargeCustomer(
                         stripeCustomerId,
                         Math.round(totalPrice * 100),
                         `Delivery for shipment ${delivery.shipment.shipment_id} : ${delivery.shipment.description}`,
                     );
+                    stripeIntentId = stripePaymentIntentId;
+
                 }
             }
 
             let customerName = "";
-            if (delivery.shipment.user.clients.length > 0) {
+            if (delivery.shipment.user.clients?.length > 0) {
                 customerName = `${delivery.shipment.user.clients[0].first_name} ${delivery.shipment.user.clients[0].last_name}`;
             } else if (delivery.shipment.user.merchant) {
                 customerName = `${delivery.shipment.user.merchant.first_name} ${delivery.shipment.user.merchant.last_name}`;
             }
 
             let deliveryPersonName = "";
-            if (delivery.delivery_person.user.clients.length > 0) {
+            if (delivery.delivery_person.user.clients?.length > 0) {
                 deliveryPersonName = `${delivery.delivery_person.user.clients[0].first_name} ${delivery.delivery_person.user.clients[0].last_name}`;
+            }
+
+            let departureCity = "";
+            if (delivery.shipment.stores?.length > 0 && delivery.shipment.stores[0]?.exchangePoint?.city) {
+                departureCity = delivery.shipment.stores[0].exchangePoint.city;
+            } else if (delivery.shipment.departure_city) {
+                departureCity = delivery.shipment.departure_city;
+            } else if (delivery.shipment.departure_location?.coordinates) {
+                departureCity = `${delivery.shipment.departure_location.coordinates[1]}, ${delivery.shipment.departure_location.coordinates[0]}`; // lat, long
+            } else {
+                departureCity = "Ville de départ inconnue";
+            }
+
+            // Récupérer la ville d’arrivée
+            let arrivalCity = "";
+            if (delivery.shipment.stores?.length > 1 && delivery.shipment.stores[1]?.exchangePoint?.city) {
+                arrivalCity = delivery.shipment.stores[1].exchangePoint.city;
+            } else if (delivery.shipment.arrival_city) {
+                arrivalCity = delivery.shipment.arrival_city;
+            } else if (delivery.shipment.arrival_location?.coordinates) {
+                arrivalCity = `${delivery.shipment.arrival_location.coordinates[1]}, ${delivery.shipment.arrival_location.coordinates[0]}`; // lat, long
+            } else {
+                arrivalCity = "Ville d’arrivée inconnue";
             }
 
             const invoiceDetails: InvoiceDetails = {
@@ -1386,10 +1413,11 @@ export class DeliveryService {
                 shipmentDescription: delivery.shipment.description || "No description",
                 deliveryCode: delivery.delivery_code,
                 deliveryDate: "A venir",
-                departureCity: delivery.shipment.stores[0].exchangePoint.city,
-                arrivalCity: delivery.shipment.stores[1].exchangePoint.city,
+                departureCity: departureCity,
+                arrivalCity: arrivalCity,
                 deliveryPersonName: deliveryPersonName,
                 deliveryPersonPhone: delivery.delivery_person.phone_number,
+                stripeIntentId: stripeIntentId,
                 lineItems: [
                     { label: 'Montant de la livraison', value: Number(delivery.amount) },
                 ],
@@ -1412,8 +1440,37 @@ export class DeliveryService {
                 ],
             });
 
+            const file: Express.Multer.File = {
+                fieldname: 'file',
+                originalname: `facture_${delivery.delivery_id}.pdf`,
+                encoding: '7bit',
+                mimetype: 'application/pdf',
+                buffer: pdfBuffer,
+                size: pdfBuffer.length,
+                destination: '', 
+                filename: `facture_${delivery.delivery_id}.pdf`,
+                path: '', 
+                stream: Readable.from(pdfBuffer),
+                };
+
+                const filePath = `/shipments/${delivery.shipment.shipment_id}/delivery/${delivery.delivery_id}/facture_${delivery.delivery_id}.pdf`;
+                await this.minioService.uploadFileToBucket('client-images', filePath, file);
+
+
+            const deliveryTranser = this.deliveryTransferRepository.create({
+                date: new Date(),
+                amount: totalPrice,
+                delivery: delivery,
+                type: 'auto',
+                stripe_id: stripeIntentId ?? undefined,
+                url: filePath,
+            });
+            await this.deliveryTransferRepository.save(deliveryTranser);
+
+
             delivery.status = "taken";
             await this.deliveryRepository.save(delivery);
+
 
             return { message: "Delivery taken successfully." };
         }

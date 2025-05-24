@@ -282,7 +282,7 @@ export class StripeService {
     customerId: string,
     amountInCents: number,
     description: string
-  ): Promise<Stripe.PaymentIntent> {
+  ): Promise<{ stripePaymentIntentId: string }> {
     try {
       const paymentMethods = await this.stripeClient.paymentMethods.list({
         customer: customerId,
@@ -305,7 +305,7 @@ export class StripeService {
         description,
       });
 
-      return paymentIntent;
+      return { stripePaymentIntentId: paymentIntent.id };
     } catch (error) {
       console.error('Erreur lors du prélèvement Stripe:', error);
 
