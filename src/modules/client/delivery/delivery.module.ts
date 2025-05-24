@@ -39,6 +39,7 @@ import { DeliveryTransfer } from "src/common/entities/delivery_transfer.entity";
 import { DeliveryStateService } from "./delivery-state.service";
 import { ShipmentService } from "./shipment.service";
 import { DeliveryUtilsService } from "./delivery-utils.service";
+import { DeliveryScheduleService } from "./delivery-schedule.service";
 
 
 @Module({
@@ -53,7 +54,7 @@ import { DeliveryUtilsService } from "./delivery-utils.service";
         MongooseModule.forFeature([{ name: Message.name, schema: MessageSchema }]),
     ],
     controllers: [DeliveryController],
-    providers: [DeliveryController, JwtService, DeliveryService, DeliveryStateService, ShipmentService, DeliveryUtilsService],
+    providers: [DeliveryController, JwtService, DeliveryService, DeliveryStateService, ShipmentService, DeliveryUtilsService, DeliveryScheduleService],
     exports: [TypeOrmModule, DeliveryService, DeliveryStateService, ShipmentService, DeliveryUtilsService],
 
 })

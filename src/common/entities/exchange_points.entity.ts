@@ -18,12 +18,12 @@ export class ExchangePoint {
     @Column({ type: 'text', nullable: true })
     description?: string;
 
-    @Column({ type: 'uuid' })
+    @Column({ type: 'uuid', nullable: true })
     warehouse_id: string;
 
-    @ManyToOne(() => Warehouse, warehouse => warehouse.exchangePoints, { onDelete: 'CASCADE' })
+    @ManyToOne(() => Warehouse, warehouse => warehouse.exchangePoints, { onDelete: 'CASCADE', nullable: true })
     @JoinColumn({ name: 'warehouse_id' })
-    warehouse: Warehouse;
+    warehouse: Warehouse | null;
 
     @Column({type : 'boolean', default: false})
     isbox: boolean;
