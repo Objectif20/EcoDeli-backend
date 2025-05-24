@@ -477,38 +477,67 @@ export class DeliveryStateService {
         }
     
         async validateDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
-    
+
             const delivery = await this.deliveryRepository.findOne({
                 where: { delivery_id: deliveryId },
-                relations: ["delivery_person", "shipment"],
+                relations: [
+                    "delivery_person",
+                    "shipment",
+                    "shipment.user",
+                    "delivery_person.user",
+                    "delivery_person.user.clients",
+                ],
             });
-    
+
             if (!delivery) {
                 throw new Error("Delivery not found.");
             }
-    
-            if (delivery.status != 'finished'){
+
+            if (delivery.status !== 'finished') {
                 throw new Error("Delivery is not in a state that allows it to be validated.");
             }
-    
+
             if (delivery.shipment.user.user_id !== user_id) {
                 throw new Error("User is not authorized to validate this delivery.");
             }
-    
+
             delivery.status = 'validated';
             await this.deliveryRepository.save(delivery);
-    
+
             const delivery_step = delivery.shipment_step;
-    
+
             if (delivery_step === 0 || delivery_step === 1000) {
                 await this.shipmentRepository.update(delivery.shipment.shipment_id, {
                     status: 'validated',
                 });
             }
-            
+
+            const promisedPrice = Number(delivery.amount);
+
+            const deliveryPerson = await this.deliveryPersonRepository.findOne({
+                where: { delivery_person_id: delivery.delivery_person.delivery_person_id },
+                relations: ['user', 'user.clients'],
+            });
+
+            if (!deliveryPerson) {
+                throw new Error("Delivery person not found.");
+            }
+
+            deliveryPerson.balance = Number(deliveryPerson.balance) || 0;
+            deliveryPerson.balance += promisedPrice;
+
+            console.log(`Updating delivery person balance: ${deliveryPerson.balance}`);
+            await this.deliveryPersonRepository.save(deliveryPerson);
+
+            const fromEmail = this.mailer.options.auth.user;
+            await this.mailer.sendMail({
+                from: fromEmail,
+                to: deliveryPerson.user.email,
+                subject: 'Livraison Validée',
+                text: `Bonjour ${deliveryPerson.user?.clients[0]?.first_name},\n\nVotre livraison a été validée avec succès. Vous avez reçu un montant de ${promisedPrice} € sur votre compte.\n\nMerci pour votre service !\n\nCordialement,\nL'équipe EcoDeli`,
+            });
+
             return { message: "Delivery validated successfully." };
         }
-
-
 
 }
