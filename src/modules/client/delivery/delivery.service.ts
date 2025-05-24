@@ -1465,6 +1465,18 @@ export class DeliveryService {
             delivery.status = "taken";
             await this.deliveryRepository.save(delivery);
 
+            if (delivery.shipment_step == 0 || delivery.shipment_step == 1000) {
+
+                const recipientEmail = delivery.shipment.delivery_mail;
+
+                await this.mailer.sendMail({
+                    from: fromEmail,
+                    to: recipientEmail,
+                    subject: 'Votre livraison est en route',
+                    text: `Bonjour,\n\nLa personne en charge de vous apporter le colis "${delivery.shipment.description}" est en route vers vous. Lorsque cette personne vous remettra le colis, il vous faudra lui fournir un code qui vous sera envoyé par email.\n\nMerci de votre confiance !\n\nCordialement,\nL'équipe EcoDeli`,
+                });
+
+            }
 
             return { message: "Delivery taken successfully." };
         }
