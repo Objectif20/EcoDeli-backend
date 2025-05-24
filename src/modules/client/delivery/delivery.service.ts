@@ -37,7 +37,7 @@ import axios from "axios";
 import { Merchant } from "src/common/entities/merchant.entity";
 import { CreateShipmentTrolleyDTO } from "./dto/create-trolley.dto";
 import { PdfService } from "src/common/services/pdf/pdf.service";
-import { ShipmentDetails } from "src/common/services/pdf/type";
+import { InvoiceDetails, ShipmentDetails } from "src/common/services/pdf/type";
 import * as nodemailer from 'nodemailer';
 import { Readable } from "stream";
 
@@ -1232,7 +1232,6 @@ export class DeliveryService {
             }
 
             let totalPrice = Number(delivery.amount);
-            console.log("Initial Delivery Price:", totalPrice);
 
             const isMainStep = delivery.shipment_step === 0 || delivery.shipment_step === 1;
 
@@ -1251,7 +1250,6 @@ export class DeliveryService {
 
                 console.log("Total Price after initialization:", totalPrice);
 
-                // Priority shipping adjustment
                 if (plan.priority_months_offered > 0) {
                     const now = new Date();
                     const startDate = new Date(subscription.start_date);
@@ -1338,8 +1336,6 @@ export class DeliveryService {
                 }
 
             } else {
-                // Autres steps : on applique juste les frais Stripe
-                console.log("Non-main step. Applying flat Stripe fee.");
 
                 if (totalPrice < 0) {
                     throw new Error("Invalid delivery: total price is negative.");
@@ -1348,7 +1344,6 @@ export class DeliveryService {
                 if (totalPrice > 0) {
                     const fee = totalPrice * 0.015 + 0.25;
                     totalPrice += fee;
-                    console.log("Final Total Price (other step):", totalPrice);
 
                     const user = await this.userRepository.findOne({
                         where: { user_id: delivery.shipment.user.user_id },
@@ -1369,6 +1364,53 @@ export class DeliveryService {
                     );
                 }
             }
+
+            let customerName = "";
+            if (delivery.shipment.user.clients.length > 0) {
+                customerName = `${delivery.shipment.user.clients[0].first_name} ${delivery.shipment.user.clients[0].last_name}`;
+            } else if (delivery.shipment.user.merchant) {
+                customerName = `${delivery.shipment.user.merchant.first_name} ${delivery.shipment.user.merchant.last_name}`;
+            }
+
+            let deliveryPersonName = "";
+            if (delivery.delivery_person.user.clients.length > 0) {
+                deliveryPersonName = `${delivery.delivery_person.user.clients[0].first_name} ${delivery.delivery_person.user.clients[0].last_name}`;
+            }
+
+            const invoiceDetails: InvoiceDetails = {
+                invoiceNumber: `INV-${delivery.delivery_id}`,
+                invoiceDate: new Date().toISOString().split('T')[0],
+                customerName: customerName,
+                customerEmail: delivery.shipment.user.email,
+                deliveryId: delivery.delivery_id,
+                shipmentDescription: delivery.shipment.description || "No description",
+                deliveryCode: delivery.delivery_code,
+                deliveryDate: "A venir",
+                departureCity: delivery.shipment.stores[0].exchangePoint.city,
+                arrivalCity: delivery.shipment.stores[1].exchangePoint.city,
+                deliveryPersonName: deliveryPersonName,
+                deliveryPersonPhone: delivery.delivery_person.phone_number,
+                lineItems: [
+                    { label: 'Montant de la livraison', value: Number(delivery.amount) },
+                ],
+                totalAmount: totalPrice,
+                isMainStep: isMainStep,
+            };
+
+            const pdfBuffer = await this.pdfService.generateInvoicePdf(invoiceDetails);
+            const fromEmail = this.mailer.options.auth.user;
+            await this.mailer.sendMail({
+                from: fromEmail,
+                to: delivery.shipment.user.email,
+                subject: 'Votre Facture de Livraison',
+                text: 'Veuillez trouver ci-joint votre facture de livraison.',
+                attachments: [
+                    {
+                        filename: `facture_${delivery.delivery_id}.pdf`,
+                        content: pdfBuffer,
+                    },
+                ],
+            });
 
             delivery.status = "taken";
             await this.deliveryRepository.save(delivery);
