@@ -352,62 +352,106 @@ export class DeliveryStateService {
         async finishDelivery(deliveryId: string, user_id: string): Promise<{ message: string }> {
             const delivery = await this.deliveryRepository.findOne({
                 where: { delivery_id: deliveryId },
-                relations: ["delivery_person", "shipment", "shipment.stores", "shipment.stores.exchangePoint", "delivery_person.user"],
+                relations: [
+                    "delivery_person",
+                    "shipment",
+                    "shipment.stores",
+                    "shipment.stores.exchangePoint",
+                    "delivery_person.user",
+                    "shipment.user",
+                    "shipment.user.clients"
+                ],
             });
-        
-            if (!delivery) {
-                throw new Error("Delivery not found.");
-            }
-        
-            if (delivery.status != 'taken') {
-                throw new Error("Delivery is not in a state that allows it to be finished.");
-            }
-        
-            if (delivery.delivery_person.user.user_id !== user_id) {
-                throw new Error("User is not authorized to finish this delivery.");
-            }
-        
-            delivery.status = 'finished';    
+
+            if (!delivery) throw new Error("Delivery not found.");
+            if (delivery.status !== 'taken') throw new Error("Delivery is not in a state that allows it to be finished.");
+            if (delivery.delivery_person.user.user_id !== user_id) throw new Error("User is not authorized to finish this delivery.");
+
+            delivery.status = 'finished';
             const secretCode = Math.floor(100000 + Math.random() * 900000).toString();
             delivery.end_code = secretCode;
-        
             await this.deliveryRepository.save(delivery);
-        
+
             const currentStep = delivery.shipment_step;
             const currentStore = delivery.shipment.stores.find(store => store.step === currentStep);
-        
+            const fromEmail = this.mailer.options.auth.user;
+
             if (currentStep === 0 || currentStep === 1000) {
-                console.log(`Email to: ${delivery.shipment.delivery_mail}, Code: ${secretCode}`);
+                const recipientEmail = delivery.shipment.delivery_mail;
+                await this.mailer.sendMail({
+                    from: fromEmail,
+                    to: recipientEmail,
+                    subject: 'Code de Validation de Livraison',
+                    text: `Bonjour,\n\nLe livreur vient de terminer la livraison du colis "${delivery.shipment.description}". Veuillez lui fournir le code suivant pour valider la livraison : ${secretCode}.\n\nMerci de votre confiance,\n\nL'équipe EcoDeli`,
+                });
             } else if (currentStore) {
-                if (currentStore.exchangePoint.warehouse_id) {
-                    console.log(`Email to: ecodeli@gmail.com, Code: ${secretCode}`);
-                } else if (currentStore.exchangePoint.isbox) {
-                    console.log(`Code for box: ${secretCode}`);
+                const exchangePoint = currentStore.exchangePoint;
+
+                if (exchangePoint.warehouse_id) {
+                    await this.mailer.sendMail({
+                        from: fromEmail,
+                        to: fromEmail,
+                        subject: 'Code pour dépôt en entrepôt',
+                        text: `Bonjour,\n\nVoici le code de livraison pour dépôt en entrepôt : ${secretCode}.\n\nColis : ${delivery.shipment.description}.\n\nCordialement,\nL'équipe EcoDeli`,
+                    });
+                } else if (exchangePoint.isbox) {
+
+                    // ATTENTION : ICI NOUS SIMULONS L'AJOUT DU COLIS DANS UNE BOÎTE ECODELI
+                    // COMME NOUS N'AVONS PAS D'INTÉGRATION AVEC UNE BOÎTE ECODELI, NOUS ENVOYONS LE CODE PAR EMAIL POUR SIMULER L'ENVOI
+
+                    await this.mailer.sendMail({
+                        from: fromEmail,
+                        to: fromEmail,
+                        subject: 'Code pour dépôt en boîte EcoDeli',
+                        text: `Bonjour,\n\nVoici le code de livraison pour la boîte EcoDeli : ${secretCode}.\n\nColis : ${delivery.shipment.description}.\n\nCordialement,\nL'équipe EcoDeli`,
+                    });
                 } else {
                     const nextStepStore = delivery.shipment.stores.find(store => store.step === currentStep + 1);
                     if (nextStepStore) {
                         const nextDelivery = await this.deliveryRepository.findOne({
-                            where: { shipment: { shipment_id: delivery.shipment.shipment_id }, shipment_step: currentStep + 1 },
-                            relations: ["delivery_person"]
+                            where: {
+                                shipment: { shipment_id: delivery.shipment.shipment_id },
+                                shipment_step: currentStep + 1
+                            },
+                            relations: ["delivery_person", "delivery_person.user"],
                         });
-                        if (nextDelivery) {
-                            console.log(`Code sent to delivery person of next step: ${nextDelivery.delivery_person.professional_email}, Code: ${secretCode}`);
+
+                        if (nextDelivery && nextDelivery.delivery_person?.user?.email) {
+                            await this.mailer.sendMail({
+                                from: fromEmail,
+                                to: nextDelivery.delivery_person.user.email,
+                                subject: 'Code pour collecte de colis',
+                                text: `Bonjour,\n\nVoici le code nécessaire pour récupérer le colis : ${secretCode}.\n\nColis : ${delivery.shipment.description}.\n\nMerci de votre collaboration,\n\nL'équipe EcoDeli`,
+                            });
                         } else {
-                            console.log(`Code: ${secretCode}`);
-                            console.log(`Email to: personne`);
+                            await this.mailer.sendMail({
+                                from: fromEmail,
+                                to: delivery.shipment.user.email,
+                                subject: 'Code de livraison',
+                                text: `Bonjour,\n\nVoici le code de validation pour la suite de la livraison : ${secretCode}.\n\nColis : ${delivery.shipment.description}.\n\nMerci de votre confiance,\n\nL'équipe EcoDeli`,
+                            });
                         }
                     } else {
-                        console.log(`Code: ${secretCode}`);
-                        console.log(`Email to: personne`);
+                        await this.mailer.sendMail({
+                            from: fromEmail,
+                            to: delivery.shipment.user.email,
+                            subject: 'Code de livraison',
+                            text: `Bonjour,\n\nVoici le code de validation pour la suite de la livraison : ${secretCode}.\n\nColis : ${delivery.shipment.description}.\n\nMerci de votre confiance,\n\nL'équipe EcoDeli`,
+                        });
                     }
                 }
             } else {
-                console.log(`Code: ${secretCode}`);
-                console.log(`Email to: personne`);
+                await this.mailer.sendMail({
+                    from: fromEmail,
+                    to: delivery.shipment.user.email,
+                    subject: 'Code de livraison',
+                    text: `Bonjour,\n\nVoici le code de validation pour la suite de la livraison : ${secretCode}.\n\nColis : ${delivery.shipment.description}.\n\nMerci de votre confiance,\n\nL'équipe EcoDeli`,
+                });
             }
-        
+
             return { message: "Delivery finished successfully." };
         }
+
     
         async validateDeliveryWithCode(deliveryId: string, user_id: string, code: string): Promise<{ message: string }> {
     
