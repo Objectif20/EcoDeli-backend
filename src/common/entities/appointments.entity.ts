@@ -61,4 +61,7 @@ export class Appointments {
 
     @OneToOne(() => PrestaReview, (review) => review.appointment)
     review_presta: PrestaReview;
+
+    @Column({ type: "varchar", length : 64, nullable: true })
+    code : string | null;
 }

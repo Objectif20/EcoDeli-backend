@@ -16,6 +16,7 @@ import { SharedModule } from 'src/common/shared/shared.module';
 import { ProviderKeywordsList } from 'src/common/entities/provider_keywords_list.entity';
 import { JwtModule } from '@nestjs/jwt';
 import { ProviderCommission } from 'src/common/entities/provider_commissions.entity';
+import { ServiceScheduleService } from './service-schedule.service';
 
 @Module({
   imports: [
@@ -37,6 +38,6 @@ import { ProviderCommission } from 'src/common/entities/provider_commissions.ent
     JwtModule.register({})
   ],
   controllers: [ServiceController],
-  providers: [ServiceService],
+  providers: [ServiceService, ServiceScheduleService],
 })
 export class ServiceModule {}

@@ -287,5 +287,4 @@ export class PdfService {
         doc.end();
     });
     }
-
 }
