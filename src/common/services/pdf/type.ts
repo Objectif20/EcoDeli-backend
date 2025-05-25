@@ -32,3 +32,14 @@ export interface InvoiceDetails {
   isMainStep: boolean;
   stripeIntentId?: string | null;
 }
+
+export interface TransferDetails {
+    transferId: string;
+    transferDate: string;
+    amount: number;
+    senderName: string;
+    senderFirstName: string;
+    recipientName: string;
+    recipientFirstName: string;
+    description: string;
+}

@@ -138,7 +138,6 @@ export class PdfService {
         doc.on('end', () => resolve(Buffer.concat(buffers)));
         doc.on('error', reject);
 
-        // Header
         doc.fontSize(24)
             .font('Helvetica-Bold')
             .fillColor('#2c3e50')
@@ -146,7 +145,6 @@ export class PdfService {
         
         doc.moveDown();
 
-        // Informations facture
         doc.fontSize(12)
             .font('Helvetica-Bold')
             .text('INFORMATIONS FACTURE')
@@ -158,7 +156,6 @@ export class PdfService {
             .text(`Code: ${data.deliveryCode}`)
             .moveDown();
 
-        // Client
         doc.fontSize(12)
             .font('Helvetica-Bold')
             .text('CLIENT')
@@ -168,7 +165,6 @@ export class PdfService {
             .text(`Email: ${data.customerEmail}`)
             .moveDown();
 
-        // Livraison
         doc.fontSize(12)
             .font('Helvetica-Bold')
             .text('DÉTAILS LIVRAISON')
@@ -180,7 +176,6 @@ export class PdfService {
             .text(`Date prévue: ${data.deliveryDate}`)
             .moveDown();
 
-        // Livreur
         doc.fontSize(12)
             .font('Helvetica-Bold')
             .text('LIVREUR')
@@ -190,13 +185,11 @@ export class PdfService {
             .text(`Tél: ${data.deliveryPersonPhone}`)
             .moveDown();
 
-        // Détails financiers
         doc.fontSize(12)
             .font('Helvetica-Bold')
             .text('DÉTAIL FINANCIER')
             .moveDown(0.5);
 
-        // Tableau des items
         let yPosition = doc.y;
         data.lineItems.forEach((item, index) => {
             doc.fontSize(10)
@@ -206,19 +199,16 @@ export class PdfService {
             yPosition += 15;
         });
 
-        // Ligne de séparation
         doc.moveTo(70, yPosition + 5)
             .lineTo(545, yPosition + 5)
             .stroke('#2c3e50');
 
-        // Total
         doc.fontSize(14)
             .font('Helvetica-Bold')
             .fillColor('#2c3e50')
             .text('TOTAL À PAYER:', 70, yPosition + 15)
             .text(`${data.totalAmount.toFixed(2)} €`, 400, yPosition + 15, { align: 'right' });
 
-        // Note pour étapes non principales
         if (!data.isMainStep) {
             doc.moveDown(2);
             doc.fontSize(9)
@@ -227,7 +217,6 @@ export class PdfService {
             .text('⚠ Cette livraison correspond à une étape intermédiaire. Seuls les frais de base sont appliqués.');
         }
 
-        // Footer
         const pageHeight = doc.page.height;
         doc.fontSize(8)
             .font('Helvetica')
@@ -237,6 +226,66 @@ export class PdfService {
 
         doc.end();
         });
+    }
+
+    async generateTransferInvoicePdf(data: {
+    transferId: string;
+    transferDate: string;
+    amount: number;
+    recipientName: string;
+    recipientFirstName: string;
+    description: string;
+    }): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+        const doc = new PDFDocument({ size: 'A4', margin: 50 });
+        const buffers: Uint8Array[] = [];
+
+        doc.on('data', buffers.push.bind(buffers));
+        doc.on('end', () => resolve(Buffer.concat(buffers)));
+        doc.on('error', reject);
+
+        doc.fontSize(24)
+        .font('Helvetica-Bold')
+        .fillColor('#2c3e50')
+        .text('FACTURE DE VIREMENT', { align: 'center' })
+        .moveDown();
+
+        doc.fontSize(12)
+        .font('Helvetica-Bold')
+        .text('INFORMATIONS DE VIREMENT')
+        .font('Helvetica')
+        .fontSize(10)
+        .text(`N° Virement : ${data.transferId}`)
+        .text(`Date : ${data.transferDate}`)
+        .text(`Montant : ${data.amount} €`)
+        .moveDown();
+
+        doc.fontSize(12)
+        .font('Helvetica-Bold')
+        .text('BÉNÉFICIAIRE')
+        .font('Helvetica')
+        .fontSize(10)
+        .text(`Nom : ${data.recipientName}`)
+        .text(`Prénom : ${data.recipientFirstName}`)
+        .moveDown();
+
+        doc.fontSize(12)
+        .font('Helvetica-Bold')
+        .text('DESCRIPTION')
+        .font('Helvetica')
+        .fontSize(10)
+        .text(data.description)
+        .moveDown();
+
+        const pageHeight = doc.page.height;
+        doc.fontSize(8)
+        .font('Helvetica')
+        .fillColor('#95a5a6')
+        .text('Facture générée automatiquement',
+            50, pageHeight - 50, { align: 'center' });
+
+        doc.end();
+    });
     }
 
 }

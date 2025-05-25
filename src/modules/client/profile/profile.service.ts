@@ -26,6 +26,8 @@ import { Subscription } from "src/common/entities/subscription.entity";
 import { SubscriptionTransaction } from "src/common/entities/subscription_transaction.entity";
 import { CommonSettingsDto } from "./dto/common-settings.dto";
 import { Languages } from "src/common/entities/languages.entity";
+import { PdfService } from "src/common/services/pdf/pdf.service";
+import { Readable } from "stream";
 
   @Injectable()
   export class ProfileService {
@@ -64,6 +66,7 @@ import { Languages } from "src/common/entities/languages.entity";
       private readonly stripeService: StripeService,
       @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
       private readonly onesignalService: OneSignalService,
+      private readonly pdfService: PdfService,
     ) {}
   
     async getMyProfile(user_id: string): Promise<any> {
@@ -517,69 +520,127 @@ import { Languages } from "src/common/entities/languages.entity";
       };
     }
 
-    async createPayment(user_id: string, auto: boolean) {
-      const user = await this.userRepository.findOne({ 
-        where: { user_id },
-        relations: ['deliveryPerson', 'providers', 'clients']
-      });
-      if (!user) {
-        throw new NotFoundException('User not found');
-      }
-    
-      const isProvider = (user.providers ?? []).length > 0;
-      const isDelivery = user.deliveryPerson != null;
-    
-      if (!isProvider && !isDelivery) {
-        throw new Error("L'utilisateur n’est ni provider ni livreur.");
-      }
-    
-      let amount = 0;
-      if (isProvider) {
-        amount = user.providers[0].balance;
-      } else if (isDelivery) {
-        amount = user.deliveryPerson.balance;
-      }
-    
-      if (amount <= 0) {
-        throw new Error("Le montant est inférieur ou égal à zéro.");
-      }
-    
-      const stripeAccountId = await this.getStripeAccountId(user_id);
-      if (!stripeAccountId) {
-        throw new Error("L'utilisateur n'a pas de compte Stripe associé.");
-      }
-    
-      const amountInCents = Math.round(amount * 100);
-    
-      const transfer = await this.stripeService.transferToConnectedAccount(stripeAccountId, amountInCents);
-    
-      if (isProvider) {
-        const transferProvider = new TransferProvider();
-        transferProvider.date = new Date();
-        transferProvider.amount = amount;
-        transferProvider.provider = user.providers[0];
-        transferProvider.type = auto ? 'auto' : 'not-auto';
-        transferProvider.stripe_id = transfer.id;
-        transferProvider.url = 'temp';
-        await this.transferProviderRepository.save(transferProvider);
-      } else if (isDelivery) {
-        const transferDelivery = new Transfer();
-        transferDelivery.date = new Date();
-        transferDelivery.amount = amount;
-        transferDelivery.delivery_person = user.deliveryPerson;
-        transferDelivery.type = auto ? 'auto' : 'not-auto';
-        transferDelivery.stripe_id = transfer.id;
-        transferDelivery.url = 'temp';
-        await this.transferRepository.save(transferDelivery);
-      }
 
-      if (isProvider) {
-        user.providers[0].balance = 0;
-        await this.providerRepository.save(user.providers[0]);
-      } else if (isDelivery) {
-        user.deliveryPerson.balance = 0;
-        await this.deliveryPersonRepository.save(user.deliveryPerson);
-      }
+    async createPayment(user_id: string, auto: boolean) {
+    const user = await this.userRepository.findOne({
+      where: { user_id },
+      relations: [
+        'deliveryPerson',
+        'providers',
+        'clients',
+        'deliveryPerson.user',
+        'providers.user',
+        'deliveryPerson.user.clients',
+        'providers.user.clients',
+      ],
+    });
+
+    if (!user) throw new NotFoundException('Utilisateur introuvable.');
+
+    const provider = user.providers?.[0] ?? null;
+    const delivery = user.deliveryPerson ?? null;
+
+    if (!provider && !delivery) {
+      throw new Error("L'utilisateur n’est ni provider ni livreur.");
+    }
+
+    const role = provider ? 'provider' : 'delivery';
+    const balance = provider ? provider.balance : delivery.balance;
+
+    if (balance <= 0) {
+      throw new Error('Le montant est inférieur ou égal à zéro.');
+    }
+
+    const stripeAccountId = await this.getStripeAccountId(user_id);
+    if (!stripeAccountId) {
+      throw new Error("L'utilisateur n'a pas de compte Stripe associé.");
+    }
+
+    const amountInCents = Math.round(balance * 100);
+    const transfer = await this.stripeService.transferToConnectedAccount(stripeAccountId, amountInCents);
+
+    let transferRecord: Transfer | TransferProvider;
+    if (role === 'provider') {
+      const transferProvider = new TransferProvider();
+      transferProvider.date = new Date();
+      transferProvider.amount = balance;
+      transferProvider.provider = provider;
+      transferProvider.type = auto ? 'auto' : 'not-auto';
+      transferProvider.stripe_id = transfer.id;
+      transferProvider.url = 'temp';
+      transferRecord = await this.transferProviderRepository.save(transferProvider);
+    } else {
+      const transferDelivery = new Transfer();
+      transferDelivery.date = new Date();
+      transferDelivery.amount = balance;
+      transferDelivery.delivery_person = delivery;
+      transferDelivery.type = auto ? 'auto' : 'not-auto';
+      transferDelivery.stripe_id = transfer.id;
+      transferDelivery.url = 'temp';
+      transferRecord = await this.transferRepository.save(transferDelivery);
+    }
+
+    const name = role === 'provider' 
+      ? provider.first_name 
+      : delivery.user.clients[0]?.first_name || 'N/A';
+    const firstName = role === 'provider' 
+      ? provider.last_name 
+      : delivery.user.clients[0]?.last_name || 'N/A';
+
+    const pdfBuffer = await this.pdfService.generateTransferInvoicePdf({
+      transferId: transfer.id,
+      transferDate: new Date().toISOString(),
+      amount: balance,
+      recipientName: name,
+      recipientFirstName: firstName,
+      description: auto ? 'Paiement automatique' : 'Paiement manuel',
+    });
+
+    if (role === 'provider') {
+      provider.balance = 0;
+      await this.providerRepository.save(provider);
+    } else {
+      delivery.balance = 0;
+      await this.deliveryPersonRepository.save(delivery);
+    }
+
+    const fromEmail = this.mailer.options.auth.user;
+    await this.mailer.sendMail({
+      from: fromEmail,
+      to: user.email,
+      subject: 'Votre facture de virement',
+      text: 'Veuillez trouver ci-joint votre facture.',
+      attachments: [
+        {
+          filename: `facture_${transfer.id}.pdf`,
+          content: pdfBuffer,
+        },
+      ],
+    });
+
+    const file: Express.Multer.File = {
+      fieldname: 'file',
+      originalname: `facture_${transfer.id}.pdf`,
+      encoding: '7bit',
+      mimetype: 'application/pdf',
+      buffer: pdfBuffer,
+      size: pdfBuffer.length,
+      destination: '',
+      filename: `facture_${transfer.id}.pdf`,
+      path: '',
+      stream: Readable.from(pdfBuffer),
+    };
+
+    const filePath = `client-document/${user_id}/${role}/invoice/facture_${transfer.id}.pdf`;
+    await this.minioService.uploadFileToBucket('client-documents', filePath, file);
+
+    transferRecord.url = filePath;
+
+    if (role === 'provider') {
+      await this.transferProviderRepository.save(transferRecord as TransferProvider);
+    } else {
+      await this.transferRepository.save(transferRecord as Transfer);
+    }
     }
 
     async getMySubscriptionData(user_id: string): Promise<UserSubscriptionData> {
