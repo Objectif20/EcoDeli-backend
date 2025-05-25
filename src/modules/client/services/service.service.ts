@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, In } from 'typeorm';
 
@@ -20,6 +20,9 @@ import { ProviderCommission } from 'src/common/entities/provider_commissions.ent
 import { Users } from 'src/common/entities/user.entity';
 import { StripeService } from 'src/common/services/stripe/stripe.service';
 import { FutureAppointmentProvider } from './type';
+import { PdfService } from 'src/common/services/pdf/pdf.service';
+import * as nodemailer from 'nodemailer';
+import { Readable } from 'stream';
 
 @Injectable()
 export class ServiceService {
@@ -41,6 +44,9 @@ export class ServiceService {
     private keywordRepo: Repository<ProviderKeywords>,
     private readonly minioService: MinioService,
     private readonly stripeService: StripeService, 
+    private readonly pdfService : PdfService,
+    @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
+    
   ) {}
 
   async createService(
@@ -803,6 +809,53 @@ export class ServiceService {
 
       appointment.stripe_payment_id = stripePaymentIntentId;
 
+      const pdfBuffer = await this.pdfService.generateAppointmentInvoicePdf({
+          appointmentId: appointment.appointment_id,
+          appointmentDate: appointment.service_date.toISOString().split('T')[0],
+          appointmentTime: appointment.service_date.toISOString().split('T')[1].slice(0, 5),
+          amount: appointment.amount,
+          serviceName: appointment.service.name,
+          serviceDescription: appointment.service.description,
+          providerName: `${appointment.provider.first_name} ${appointment.provider.last_name}`,
+          providerEmail: appointment.provider.user.email,
+          clientName: `${appointment.client.first_name} ${appointment.client.last_name}`,
+        });
+
+        const fromEmail = this.mailer.options.auth.user;
+        await this.mailer.sendMail({
+          from: fromEmail,
+          to: appointment.client.user.email,
+          subject: 'Votre Facture de Livraison',
+          text: 'Veuillez trouver ci-joint votre facture de livraison.',
+          attachments: [
+              {
+                  filename: `facture_${appointment.appointment_id}.pdf`,
+                  content: pdfBuffer,
+              },
+          ],
+      });
+
+        const file: Express.Multer.File = {
+            fieldname: 'file',
+            originalname: `facture_${appointment.appointment_id}.pdf`,
+            encoding: '7bit',
+            mimetype: 'application/pdf',
+            buffer: pdfBuffer,
+            size: pdfBuffer.length,
+            destination: '', 
+            filename: `facture_${appointment.appointment_id}.pdf`,
+            path: '', 
+            stream: Readable.from(pdfBuffer),
+            };
+
+          const filePath = `/services/${appointment.service.service_id}/appointments/${appointment.appointment_id}/facture_${appointment.appointment_id}.pdf`;
+          await this.minioService.uploadFileToBucket('client-documents', filePath, file);
+
+        appointment.url_file = filePath;
+        appointment.payment_date = new Date();
+        appointment.refund_date = null;
+
+        await this.appointmentRepo.save(appointment);
     }
 
     return this.appointmentRepo.save(appointment);

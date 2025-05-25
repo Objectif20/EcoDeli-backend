@@ -64,4 +64,7 @@ export class Appointments {
 
     @Column({ type: "varchar", length : 64, nullable: true })
     code : string | null;
+
+    @Column({type : "text" , nullable: true})
+    url_file : string | null;
 }

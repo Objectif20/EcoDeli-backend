@@ -26,7 +26,7 @@ export class ServiceScheduleService {
                 service_date: Between(now, oneHourLater),
                 code: IsNull()
             },
-            relations: ['client', 'client.user', 'services_list', 'service_list.services', 'services.provider'],
+            relations: ['client', 'client.user', 'service', 'provider'],
         });
 
         const fromEmail = this.mailer.options.auth.user;

@@ -287,4 +287,82 @@ export class PdfService {
         doc.end();
     });
     }
+    
+    async generateAppointmentInvoicePdf(data: {
+        appointmentId: string;
+        appointmentDate: string; 
+        appointmentTime: string;
+        amount: number;
+        serviceName: string;
+        serviceDescription: string;
+        providerName: string;
+        providerEmail: string;
+        clientName: string;
+        }): Promise<Buffer> {
+        return new Promise((resolve, reject) => {
+            const doc = new PDFDocument({ size: 'A4', margin: 50 });
+            const buffers: Uint8Array[] = [];
+
+            doc.on('data', buffers.push.bind(buffers));
+            doc.on('end', () => resolve(Buffer.concat(buffers)));
+            doc.on('error', reject);
+
+            doc
+            .fontSize(24)
+            .font('Helvetica-Bold')
+            .fillColor('#2c3e50')
+            .text('FACTURE DE PRESTATION', { align: 'center' })
+            .moveDown(1.5);
+
+            doc
+            .fontSize(12)
+            .font('Helvetica-Bold')
+            .text('RENDEZ-VOUS')
+            .font('Helvetica')
+            .fontSize(10)
+            .text(`N° Rendez-vous : ${data.appointmentId}`)
+            .text(`Date : ${data.appointmentDate}`)
+            .text(`Heure : ${data.appointmentTime}`)
+            .text(`Montant total : ${data.amount.toFixed(2)} €`)
+            .moveDown();
+
+            doc
+            .fontSize(12)
+            .font('Helvetica-Bold')
+            .text('SERVICE')
+            .font('Helvetica')
+            .fontSize(10)
+            .text(`Nom : ${data.serviceName}`)
+            .text(`Description : ${data.serviceDescription}`)
+            .moveDown();
+
+            doc
+            .fontSize(12)
+            .font('Helvetica-Bold')
+            .text('PRESTATAIRE')
+            .font('Helvetica')
+            .fontSize(10)
+            .text(`Nom : ${data.providerName}`)
+            .text(`Email : ${data.providerEmail}`)
+            .moveDown();
+
+            doc
+            .fontSize(12)
+            .font('Helvetica-Bold')
+            .text('CLIENT')
+            .font('Helvetica')
+            .fontSize(10)
+            .text(`Nom : ${data.clientName}`)
+            .moveDown();
+
+            const pageHeight = doc.page.height;
+            doc
+            .fontSize(8)
+            .font('Helvetica')
+            .fillColor('#95a5a6')
+            .text('Facture générée automatiquement', 50, pageHeight - 50, { align: 'center' });
+
+            doc.end();
+        });
+    }
 }
