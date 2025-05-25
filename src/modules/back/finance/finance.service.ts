@@ -2,9 +2,16 @@ import { Injectable } from "@nestjs/common";
 import { DashboardStats, StripeStats, Transaction, TransactionCategory, TransactionType } from "./type";
 import * as fs from "fs";
 import * as path from "path";
-import Stripe from "stripe";
+import { InjectRepository } from "@nestjs/typeorm";
+import { In, Repository } from "typeorm";
+import { Appointments } from "src/common/entities/appointments.entity";
+import { DeliveryTransfer } from "src/common/entities/delivery_transfer.entity";
+import { TransferProvider } from "src/common/entities/transfers_provider.entity";
+import { Transfer } from "src/common/entities/transfers.entity";
+import { SubscriptionTransaction } from "src/common/entities/subscription_transaction.entity";
+import { MinioService } from "src/common/services/file/minio.service";
 
-export const allTransactions: Transaction[] = [
+export const Test: Transaction[] = [
     {
       id: "TR-001",
       name: "Jean Dupont",
@@ -107,45 +114,236 @@ export const allTransactions: Transaction[] = [
 
 @Injectable()
 export class FinanceService {
-    constructor() {}
+      constructor(
+    @InjectRepository(Appointments)
+    private readonly appointmentsRepo: Repository<Appointments>,
+    @InjectRepository(DeliveryTransfer)
+    private readonly deliveryTransferRepo: Repository<DeliveryTransfer>,
+    @InjectRepository(TransferProvider)
+    private readonly transferProviderRepo: Repository<TransferProvider>,
+    @InjectRepository(Transfer)
+    private readonly transferRepo: Repository<Transfer>,
+    @InjectRepository(SubscriptionTransaction)
+    private readonly subscriptionTransactionRepo: Repository<SubscriptionTransaction>,
+    private readonly minioService : MinioService
+  ) {}
 
-    getTransactions(params: {
-        name?: string;
-        type?: TransactionType;
-        year?: string;
-        month?: string;
-        pageIndex: number;
-        pageSize: number;
-    }): Promise<{data : Transaction[], totalRows: number}> {
-        let transactions = [...allTransactions];
+    async getTransactions(params: {
+      name?: string;
+      type?: TransactionType;
+      year?: string;
+      month?: string;
+      pageIndex: number;
+      pageSize: number;
+    }): Promise<{ data: Transaction[]; totalRows: number }> {
+      let allTransactions: Transaction[] = [];
 
-        if (params.name) {
-            transactions = transactions.filter(t => params.name && t.name.includes(params.name));
-        }
-
-        if (params.type) {
-            transactions = transactions.filter(t => t.type === params.type);
-        }
-
-        if (params.year) {
-            transactions = transactions.filter(t => {
-                const date = new Date(t.date);
-                return date.getFullYear().toString() === params.year;
-            });
-        }
-
-        if (params.month) {
-            transactions = transactions.filter(t => {
-                const date = new Date(t.date);
-                return (date.getMonth() + 1).toString() === params.month;
-            });
-        }
-
-        const startIndex = params.pageIndex * params.pageSize;
-        return Promise.resolve({
-            data: transactions.slice(startIndex, startIndex + params.pageSize),
-            totalRows: transactions.length
+      // IN - Appointments
+      if (!params.type || params.type === 'in') {
+        const appointments = await this.appointmentsRepo.find({
+          relations: ['client', 'service'],
         });
+
+        const filteredAppointments = appointments.filter((appointment) => {
+          const date = appointment.payment_date || appointment.service_date;
+          const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
+          const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
+          const fullName = `${appointment.client?.first_name || ''} ${appointment.client?.last_name || ''}`.trim();
+          const matchesName = params.name ? fullName.toLowerCase().includes(params.name.toLowerCase()) : true;
+
+          return matchesYear && matchesMonth && matchesName;
+        });
+
+        const mappedAppointments = await Promise.all(filteredAppointments.map(async (appointment) => ({
+          id: appointment.appointment_id,
+          name: `${appointment.client?.first_name || ''} ${appointment.client?.last_name || ''}`.trim(),
+          type: 'in' as TransactionType,
+          category: 'service' as TransactionCategory,
+          date: (appointment.payment_date || appointment.service_date).toISOString().split('T')[0],
+          invoiceUrl: appointment.url_file
+            ? await this.minioService.generatePresignedUrl('client-documents', appointment.url_file)
+            : '',
+        })));
+
+        allTransactions.push(...mappedAppointments);
+      }
+
+      // IN - Deliveries
+      if (!params.type || params.type === 'in') {
+        const deliveries = await this.deliveryTransferRepo.find({
+          relations: [
+            'delivery',
+            'delivery.shipment',
+            'delivery.shipment.user',
+            'delivery.shipment.user.clients',
+            'delivery.shipment.user.merchant',
+          ],
+        });
+
+        const filteredDeliveries = deliveries.filter((delivery) => {
+          const date = delivery.date;
+          const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
+          const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
+
+          const user = delivery.delivery.shipment?.user;
+          let name = '';
+          if (user?.clients?.length > 0) {
+            name = `${user.clients[0]?.first_name || ''} ${user.clients[0]?.last_name || ''}`.trim();
+          } else if (user?.merchant) {
+            name = `${user.merchant?.first_name || ''} ${user.merchant?.last_name || ''}`.trim();
+          }
+
+          const matchesName = params.name ? name.toLowerCase().includes(params.name.toLowerCase()) : true;
+
+          return matchesYear && matchesMonth && matchesName;
+        });
+
+        const mappedDeliveries = await Promise.all(filteredDeliveries.map(async (delivery) => {
+          const user = delivery.delivery.shipment?.user;
+          let name = '';
+          if (user?.clients?.length > 0) {
+            name = `${user.clients[0]?.first_name || ''} ${user.clients[0]?.last_name || ''}`.trim();
+          } else if (user?.merchant) {
+            name = `${user.merchant?.first_name || ''} ${user.merchant?.last_name || ''}`.trim();
+          }
+
+          return {
+            id: delivery.delivery_transfer_id,
+            name,
+            type: 'in' as TransactionType,
+            category: 'delivery' as TransactionCategory,
+            date: delivery.date.toISOString().split('T')[0],
+            invoiceUrl: delivery.url
+              ? await this.minioService.generatePresignedUrl('client-documents', delivery.url)
+              : '',
+          };
+        }));
+
+        allTransactions.push(...mappedDeliveries);
+      }
+
+      // OUT - Transfers to Provider
+      if (!params.type || params.type === 'out') {
+        const transfersProvider = await this.transferProviderRepo.find({
+          relations: ['provider'],
+        });
+
+        const filteredTransfersProvider = transfersProvider.filter((transfer) => {
+          const date = transfer.date;
+          const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
+          const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
+          const fullName = `${transfer.provider?.first_name || ''} ${transfer.provider?.last_name || ''}`.trim();
+          const matchesName = params.name ? fullName.toLowerCase().includes(params.name.toLowerCase()) : true;
+
+          return matchesYear && matchesMonth && matchesName;
+        });
+
+        const mappedTransfersProvider = await Promise.all(filteredTransfersProvider.map(async (transfer) => ({
+          id: transfer.transfer_id,
+          name: `${transfer.provider?.first_name || ''} ${transfer.provider?.last_name || ''}`.trim(),
+          type: 'out' as TransactionType,
+          category: 'service' as TransactionCategory,
+          date: transfer.date.toISOString().split('T')[0],
+          invoiceUrl: transfer.url
+            ? await this.minioService.generatePresignedUrl('client-documents', transfer.url)
+            : '',
+        })));
+
+        allTransactions.push(...mappedTransfersProvider);
+      }
+
+      // OUT - Transfers to Delivery Person
+      if (!params.type || params.type === 'out') {
+        const transfers = await this.transferRepo.find({
+          relations: ['delivery_person', 'delivery_person.user', 'delivery_person.user.clients'],
+        });
+
+        const filteredTransfers = transfers.filter((transfer) => {
+          const date = transfer.date;
+          const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
+          const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
+          const fullName = `${transfer.delivery_person?.user.clients[0].first_name || ''} ${transfer.delivery_person?.user.clients[0].last_name || ''}`.trim();
+          const matchesName = params.name ? fullName.toLowerCase().includes(params.name.toLowerCase()) : true;
+
+          return matchesYear && matchesMonth && matchesName;
+        });
+
+        const mappedTransfers = await Promise.all(filteredTransfers.map(async (transfer) => ({
+          id: transfer.transfer_id,
+          name: `${transfer.delivery_person?.user.clients[0].first_name || ''} ${transfer.delivery_person?.user.clients[0].last_name || ''}`.trim(),
+          type: 'out' as TransactionType,
+          category: 'delivery' as TransactionCategory,
+          date: transfer.date.toISOString().split('T')[0],
+          invoiceUrl: transfer.url
+            ? await this.minioService.generatePresignedUrl('client-documents', transfer.url)
+            : '',
+        })));
+
+        allTransactions.push(...mappedTransfers);
+      }
+
+      // SUB - Subscriptions
+      if (!params.type || params.type === 'sub') {
+        const subscriptions = await this.subscriptionTransactionRepo.find({
+          relations: [
+            'subscription',
+            'subscription.user',
+            'subscription.user.clients',
+            'subscription.user.merchant',
+          ],
+        });
+
+        const filteredSubscriptions = subscriptions.filter((subscription) => {
+          const date = subscription.created_at;
+          const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
+          const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
+
+          let fullName = '';
+          if (subscription.subscription?.user.clients.length > 0) {
+            fullName = `${subscription.subscription.user.clients[0].first_name || ''} ${subscription.subscription.user.clients[0].last_name || ''}`.trim();
+          } else if (subscription.subscription?.user.merchant) {
+            fullName = `${subscription.subscription.user.merchant.first_name || ''} ${subscription.subscription.user.merchant.last_name || ''}`.trim();
+          }
+
+          const matchesName = params.name ? fullName.toLowerCase().includes(params.name.toLowerCase()) : true;
+
+          return matchesYear && matchesMonth && matchesName;
+        });
+
+        const mappedSubscriptions = await Promise.all(filteredSubscriptions.map(async (subscription) => {
+          let name = '';
+          if (subscription.subscription?.user.clients.length > 0) {
+            name = `${subscription.subscription.user.clients[0].first_name || ''} ${subscription.subscription.user.clients[0].last_name || ''}`.trim();
+          } else if (subscription.subscription?.user.merchant) {
+            name = `${subscription.subscription.user.merchant.first_name || ''} ${subscription.subscription.user.merchant.last_name || ''}`.trim();
+          }
+
+          return {
+            id: subscription.transaction_id,
+            name,
+            type: 'sub' as TransactionType,
+            category: 'sub' as TransactionCategory,
+            date: subscription.created_at.toISOString().split('T')[0],
+            invoiceUrl: subscription.invoice_url
+              ? await this.minioService.generatePresignedUrl('client-documents', subscription.invoice_url)
+              : '',
+          };
+        }));
+
+        allTransactions.push(...mappedSubscriptions);
+      }
+
+      // Sort from newest to oldest
+      allTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      // Pagination
+      const startIndex = params.pageIndex * params.pageSize;
+      const paginatedData = allTransactions.slice(startIndex, startIndex + params.pageSize);
+
+      return {
+        data: paginatedData,
+        totalRows: allTransactions.length,
+      };
     }
 
     generateCsv(params: {
@@ -155,7 +353,7 @@ export class FinanceService {
         endYear?: string;
         categories?: TransactionCategory[];
     }): string {
-        let transactions = [...allTransactions];
+        let transactions = [...Test];
 
         if (params.startYear || params.startMonth) {
             transactions = transactions.filter(t => {
