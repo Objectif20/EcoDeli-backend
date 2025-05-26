@@ -94,8 +94,8 @@ export class DocumentService {
         nodes.push({
           name: 'Profil Transporteur',
           nodes: [
-            { name: 'Documents personnels', nodes: deliveryNodes },
-            { name: 'Documents véhicule(s)', nodes: vehicleNodes },
+            { name: 'Mes justificatifs', nodes: deliveryNodes },
+            { name: 'Mes véhicules', nodes: vehicleNodes },
           ],
         });
       }
@@ -115,10 +115,10 @@ export class DocumentService {
 
       if (profile.includes('MERCHANT')) {
         nodes.push({
-          name: 'Commerçant',
+          name: 'Profil Commerçant',
           nodes: [
             {
-              name: 'Documents boutique',
+              name: 'Mes documents',
               nodes: [
               ],
             },
@@ -142,22 +142,25 @@ export class DocumentService {
           where: { provider: { provider_id: provider.provider_id } }
         });
 
-        const providerContractsNodes = await Promise.all(providerContracts.map(async (contract) => ({
-          name: contract.company_name,
-          siret: contract.siret,
-          address: contract.address,
-          url: await this.minioService.generateImageUrl('provider-documents', contract.contract_url),
-        })));
+        const providerContractsNodes = await Promise.all(providerContracts.map(async (contract) => {
+        const fileName = contract.contract_url.split('/').pop();
+        return {
+            name: fileName,
+            siret: contract.siret,
+            address: contract.address,
+            url: await this.minioService.generateImageUrl('provider-documents', contract.contract_url),
+        };
+        }));
 
         nodes.push({
-          name: 'Fournisseur',
+          name: 'Profil Prestataire',
           nodes: [
             {
-              name: 'Documents fournisseur',
+              name: 'Mes justificatifs',
               nodes: providerDocumentsNodes,
             },
             {
-              name: 'Contrats fournisseur',
+              name: 'Mon contrat',
               nodes: providerContractsNodes,
             },
           ],
