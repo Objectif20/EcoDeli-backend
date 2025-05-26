@@ -3,7 +3,7 @@ import { DashboardStats, StripeStats, Transaction, TransactionCategory, Transact
 import * as fs from "fs";
 import * as path from "path";
 import { InjectRepository } from "@nestjs/typeorm";
-import { In, Repository } from "typeorm";
+import { In, MoreThanOrEqual, Repository } from "typeorm";
 import { Appointments } from "src/common/entities/appointments.entity";
 import { DeliveryTransfer } from "src/common/entities/delivery_transfer.entity";
 import { TransferProvider } from "src/common/entities/transfers_provider.entity";
@@ -11,7 +11,11 @@ import { Transfer } from "src/common/entities/transfers.entity";
 import { SubscriptionTransaction } from "src/common/entities/subscription_transaction.entity";
 import { MinioService } from "src/common/services/file/minio.service";
 import { StripeService } from "src/common/services/stripe/stripe.service";
-
+import { Shipment } from "src/common/entities/shipment.entity";
+import { Subscription } from "src/common/entities/subscription.entity";
+import { format, formatISO, startOfMonth, subMonths } from "date-fns";
+import { fr } from 'date-fns/locale';
+import { Delivery } from "src/common/entities/delivery.entity";
 export const Test: Transaction[] = [
     {
       id: "TR-001",
@@ -126,6 +130,12 @@ export class FinanceService {
     private readonly transferRepo: Repository<Transfer>,
     @InjectRepository(SubscriptionTransaction)
     private readonly subscriptionTransactionRepo: Repository<SubscriptionTransaction>,
+    @InjectRepository(Shipment)
+    private readonly shipmentsRepository: Repository<Shipment>,
+    @InjectRepository(Subscription)
+    private readonly subscriptionRepository: Repository<Subscription>,
+    @InjectRepository(Delivery)
+    private readonly deliveryRepository: Repository<Delivery>,
     private readonly minioService : MinioService,
     private readonly stripeService : StripeService
   ) {}
@@ -468,121 +478,171 @@ export class FinanceService {
 
     async getDashboardStats(): Promise<DashboardStats> {
 
-      return {
-        plan: [
-          { plan: "free", number: 275, fill: "var(--color-free)" },
-          { plan: "starter", number: 200, fill: "var(--color-starter)" },
-          { plan: "premium", number: 187, fill: "var(--color-premium)" },
-        ],
-        parcels: [
-          { taille: "Petit colis (S)", nombre: 120 },
-          { taille: "Moyen colis (M)", nombre: 200 },
-          { taille: "Grand colis (L)", nombre: 150 },
-          { taille: "Très grand colis (XL)", nombre: 80 },
-        ],
-        area: [
-          { date: "2024-04-01", provider: 222, delivery: 150 },
-          { date: "2024-04-02", provider: 97, delivery: 180 },
-          { date: "2024-04-03", provider: 167, delivery: 120 },
-          { date: "2024-04-04", provider: 242, delivery: 260 },
-          { date: "2024-04-05", provider: 373, delivery: 290 },
-          { date: "2024-04-06", provider: 301, delivery: 340 },
-          { date: "2024-04-07", provider: 245, delivery: 180 },
-          { date: "2024-04-08", provider: 409, delivery: 320 },
-          { date: "2024-04-09", provider: 59, delivery: 110 },
-          { date: "2024-04-10", provider: 261, delivery: 190 },
-          { date: "2024-04-11", provider: 327, delivery: 350 },
-          { date: "2024-04-12", provider: 292, delivery: 210 },
-          { date: "2024-04-13", provider: 342, delivery: 380 },
-          { date: "2024-04-14", provider: 137, delivery: 220 },
-          { date: "2024-04-15", provider: 120, delivery: 170 },
-          { date: "2024-04-16", provider: 138, delivery: 190 },
-          { date: "2024-04-17", provider: 446, delivery: 360 },
-          { date: "2024-04-18", provider: 364, delivery: 410 },
-          { date: "2024-04-19", provider: 243, delivery: 180 },
-          { date: "2024-04-20", provider: 89, delivery: 150 },
-          { date: "2024-04-21", provider: 137, delivery: 200 },
-          { date: "2024-04-22", provider: 224, delivery: 170 },
-          { date: "2024-04-23", provider: 138, delivery: 230 },
-          { date: "2024-04-24", provider: 387, delivery: 290 },
-          { date: "2024-04-25", provider: 215, delivery: 250 },
-          { date: "2024-04-26", provider: 75, delivery: 130 },
-          { date: "2024-04-27", provider: 383, delivery: 420 },
-          { date: "2024-04-28", provider: 122, delivery: 180 },
-          { date: "2024-04-29", provider: 315, delivery: 240 },
-          { date: "2024-04-30", provider: 454, delivery: 380 },
-          { date: "2024-05-01", provider: 165, delivery: 220 },
-          { date: "2024-05-02", provider: 293, delivery: 310 },
-          { date: "2024-05-03", provider: 247, delivery: 190 },
-          { date: "2024-05-04", provider: 385, delivery: 420 },
-          { date: "2024-05-05", provider: 481, delivery: 390 },
-          { date: "2024-05-06", provider: 498, delivery: 520 },
-          { date: "2024-05-07", provider: 388, delivery: 300 },
-          { date: "2024-05-08", provider: 149, delivery: 210 },
-          { date: "2024-05-09", provider: 227, delivery: 180 },
-          { date: "2024-05-10", provider: 293, delivery: 330 },
-          { date: "2024-05-11", provider: 335, delivery: 270 },
-          { date: "2024-05-12", provider: 197, delivery: 240 },
-          { date: "2024-05-13", provider: 197, delivery: 160 },
-          { date: "2024-05-14", provider: 448, delivery: 490 },
-          { date: "2024-05-15", provider: 473, delivery: 380 },
-          { date: "2024-05-16", provider: 338, delivery: 400 },
-          { date: "2024-05-17", provider: 499, delivery: 420 },
-          { date: "2024-05-18", provider: 315, delivery: 350 },
-          { date: "2024-05-19", provider: 235, delivery: 180 },
-          { date: "2024-05-20", provider: 177, delivery: 230 },
-          { date: "2024-05-21", provider: 82, delivery: 140 },
-          { date: "2024-05-22", provider: 81, delivery: 120 },
-          { date: "2024-05-23", provider: 252, delivery: 290 },
-          { date: "2024-05-24", provider: 294, delivery: 220 },
-          { date: "2024-05-25", provider: 201, delivery: 250 },
-          { date: "2024-05-26", provider: 213, delivery: 170 },
-          { date: "2024-05-27", provider: 420, delivery: 460 },
-          { date: "2024-05-28", provider: 233, delivery: 190 },
-          { date: "2024-05-29", provider: 78, delivery: 130 },
-          { date: "2024-05-30", provider: 340, delivery: 280 },
-          { date: "2024-05-31", provider: 178, delivery: 230 },
-          { date: "2024-06-01", provider: 178, delivery: 200 },
-          { date: "2024-06-02", provider: 470, delivery: 410 },
-          { date: "2024-06-03", provider: 103, delivery: 160 },
-          { date: "2024-06-04", provider: 439, delivery: 380 },
-          { date: "2024-06-05", provider: 88, delivery: 140 },
-          { date: "2024-06-06", provider: 294, delivery: 250 },
-          { date: "2024-06-07", provider: 323, delivery: 370 },
-          { date: "2024-06-08", provider: 385, delivery: 320 },
-          { date: "2024-06-09", provider: 438, delivery: 480 },
-          { date: "2024-06-10", provider: 155, delivery: 200 },
-          { date: "2024-06-11", provider: 92, delivery: 150 },
-          { date: "2024-06-12", provider: 492, delivery: 420 },
-          { date: "2024-06-13", provider: 81, delivery: 130 },
-          { date: "2024-06-14", provider: 426, delivery: 380 },
-          { date: "2024-06-15", provider: 307, delivery: 350 },
-          { date: "2024-06-16", provider: 371, delivery: 310 },
-          { date: "2024-06-17", provider: 475, delivery: 520 },
-          { date: "2024-06-18", provider: 107, delivery: 170 },
-          { date: "2024-06-19", provider: 341, delivery: 290 },
-          { date: "2024-06-20", provider: 408, delivery: 450 },
-          { date: "2024-06-21", provider: 169, delivery: 210 },
-          { date: "2024-06-22", provider: 317, delivery: 270 },
-          { date: "2024-06-23", provider: 480, delivery: 530 },
-          { date: "2024-06-24", provider: 132, delivery: 180 },
-          { date: "2024-06-25", provider: 141, delivery: 190 },
-          { date: "2024-06-26", provider: 434, delivery: 380 },
-          { date: "2024-06-27", provider: 448, delivery: 490 },
-          { date: "2024-06-28", provider: 149, delivery: 200 },
-          { date: "2024-06-29", provider: 103, delivery: 160 },
-          { date: "2024-06-30", provider: 446, delivery: 400 },
-        ],
-        subscription: [
-          { month: "Janvier", subscription: 186 },
-          { month: "Février", subscription: 305 },
-          { month: "Mars", subscription: 237 },
-          { month: "Avril", subscription: 273 },
-          { month: "Mai", subscription: 209 },
-          { month: "Juin", subscription: 214 },
-        ],
-      };
+        const parcelStats = await this.getParcelSizeStats();
+        const plans = await this.getSubscriptionRepartition();
+        const subscriptionMonths = await this.getMonthlySubscriptionCount();
+        const stats = await this.activityByDay();
+        return {
+          plan: plans,
+          parcels: parcelStats,
+          area: stats,
+          subscription: subscriptionMonths,
+        };
 
     }
 
+      async getParcelSizeStats() {
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+        const shipments = await this.shipmentsRepository.find({
+          where: {
+            deadline_date: MoreThanOrEqual(sixMonthsAgo),
+          },
+          relations: ['parcels'],
+        });
+
+        const sizeCounts = {
+          S: 0,
+          M: 0,
+          L: 0,
+          XL: 0,
+          XXL: 0,
+        };
+
+        shipments.forEach(shipment => {
+          shipment.parcels.forEach(parcel => {
+            const weight = parcel.weight ?? 0;
+
+            if (weight < 5) sizeCounts.S += 1;
+            else if (weight <= 30) sizeCounts.M += 1;
+            else if (weight <= 50) sizeCounts.L += 1;
+            else if (weight <= 100) sizeCounts.XL += 1;
+            else sizeCounts.XXL += 1;
+          });
+        });
+
+        return Object.entries(sizeCounts)
+          .filter(([_, nombre]) => nombre > 0)
+          .map(([taille, nombre]) => ({
+            taille: getLabelFromSize(taille),
+            nombre,
+          }));
+      }
+
+      async getSubscriptionRepartition() {
+        const repartition = await this.subscriptionRepository
+          .createQueryBuilder("subscription")
+          .leftJoin("subscription.plan", "plan")
+          .select("plan.name", "plan")
+          .addSelect("COUNT(*)", "number")
+          .groupBy("plan.name")
+          .orderBy("plan.name", "ASC")
+          .getRawMany();
+
+        return repartition.map((row, index) => ({
+          plan: row.plan,
+          number: parseInt(row.number, 10),
+          colorIndex: index + 1,
+        }));
+      }
+
+      async getMonthlySubscriptionCount() {
+        const today = new Date();
+        const months: { key: string; label: string; count: number }[] = [];
+
+        for (let i = 6; i >= 1; i--) {
+          const date = subMonths(today, i);
+          const key = format(date, 'yyyy-MM');
+          months.push({ key, label: format(date, 'MMMM', { locale: fr }), count: 0 });
+        }
+
+        const rawData = await this.subscriptionRepository
+          .createQueryBuilder('subscription')
+          .select("TO_CHAR(subscription.start_date, 'YYYY-MM')", 'month')
+          .addSelect('COUNT(*)', 'count')
+          .where('subscription.start_date >= :fromDate', { fromDate: startOfMonth(subMonths(today, 6)) })
+          .andWhere('subscription.start_date < :toDate', { toDate: startOfMonth(today) })
+          .groupBy('month')
+          .orderBy('month', 'ASC')
+          .getRawMany();
+
+        return months.map(month => {
+          const found = rawData.find(row => row.month === month.key);
+          return {
+            month: month.label.charAt(0).toUpperCase() + month.label.slice(1),
+            subscription: found ? parseInt(found.count, 10) : 0,
+          };
+        });
+      }
+
+      async activityByDay(): Promise<{ date: string; provider: number; delivery: number }[]> {
+
+          const today = new Date();
+          const startDate = new Date(today);
+          startDate.setDate(today.getDate() - 30);
+
+
+          const appointments = await this.appointmentsRepo.createQueryBuilder('appointment')
+            .select([
+              "DATE_TRUNC('day', appointment.service_date) as day",
+              'COUNT(DISTINCT appointment.provider_id) as provider_count',
+              'COUNT(appointment.appointment_id) as appointment_count'
+            ])
+            .where('appointment.service_date BETWEEN :start AND :end', { start: startDate, end: today })
+            .groupBy('day')
+            .orderBy('day')
+            .getRawMany();
+
+          const deliveries = await this.deliveryRepository.createQueryBuilder('delivery')
+            .select([
+              "DATE_TRUNC('day', delivery.send_date) as day",
+              'COUNT(DISTINCT delivery.delivery_person_id) as delivery_person_count',
+              'COUNT(delivery.delivery_id) as delivery_count'
+            ])
+            .where('delivery.send_date BETWEEN :start AND :end', { start: startDate, end: today })
+            .groupBy('day')
+            .orderBy('day')
+            .getRawMany();
+
+          const appointmentsMap = new Map<string, { provider: number; appointmentCount: number }>();
+          for (const a of appointments) {
+            const day = formatISO(new Date(a.day), { representation: 'date' });
+            appointmentsMap.set(day, { provider: Number(a.provider_count), appointmentCount: Number(a.appointment_count) });
+          }
+
+          const deliveriesMap = new Map<string, { deliveryPerson: number; deliveryCount: number }>();
+          for (const d of deliveries) {
+            const day = formatISO(new Date(d.day), { representation: 'date' });
+            deliveriesMap.set(day, { deliveryPerson: Number(d.delivery_person_count), deliveryCount: Number(d.delivery_count) });
+          }
+
+          const results: { date: string; provider: number; delivery: number }[] = [];
+          for (let d = new Date(startDate); d <= today; d.setDate(d.getDate() + 1)) {
+            const dayStr = formatISO(d, { representation: 'date' });
+            const app = appointmentsMap.get(dayStr);
+            const del = deliveriesMap.get(dayStr);
+
+            results.push({
+              date: dayStr,
+              provider: app?.provider ?? 1,
+              delivery: del?.deliveryCount ?? 1,
+            });
+          }
+
+          return results;
+      }
+
+
+}
+
+function getLabelFromSize(size: string): string {
+  switch (size) {
+    case 'S': return 'Petit colis (S)';
+    case 'M': return 'Moyen colis (M)';
+    case 'L': return 'Grand colis (L)';
+    case 'XL': return 'Très grand colis (XL)';
+    case 'XXL': return 'Colis XXL';
+    default: return 'Inconnu';
+  }
 }

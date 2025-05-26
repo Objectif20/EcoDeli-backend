@@ -22,12 +22,10 @@ export class Parcel {
     @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
     volume: number | null;
 
-    // Une expédition peut avoir plusieurs colis
     @ManyToOne(() => Shipment, (shipment) => shipment.parcels, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'shipment_id' })
     shipment: Shipment;
 
-    // Un colis peut avoir plusieurs images
     @OneToMany(() => ParcelImage, (image) => image.parcel)
     images: ParcelImage[];
 }
