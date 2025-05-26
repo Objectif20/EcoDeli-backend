@@ -10,6 +10,7 @@ import { TransferProvider } from "src/common/entities/transfers_provider.entity"
 import { Transfer } from "src/common/entities/transfers.entity";
 import { SubscriptionTransaction } from "src/common/entities/subscription_transaction.entity";
 import { MinioService } from "src/common/services/file/minio.service";
+import { StripeService } from "src/common/services/stripe/stripe.service";
 
 export const Test: Transaction[] = [
     {
@@ -125,7 +126,8 @@ export class FinanceService {
     private readonly transferRepo: Repository<Transfer>,
     @InjectRepository(SubscriptionTransaction)
     private readonly subscriptionTransactionRepo: Repository<SubscriptionTransaction>,
-    private readonly minioService : MinioService
+    private readonly minioService : MinioService,
+    private readonly stripeService : StripeService
   ) {}
 
     async _fetchTransactions(params: {
@@ -397,8 +399,25 @@ export class FinanceService {
       res.send(csvContent);
     };
 
-    async getStripeStats(period ?: string): Promise<StripeStats> {
-      console.log("getStripeStats", period);
+    async getStripeStats(period?: string): Promise<StripeStats> {
+      (async () => {
+        const now = Math.floor(Date.now() / 1000);
+        const thirtyDaysAgo = now - 30 * 24 * 60 * 60;
+
+        try {
+          await Promise.all([
+            this.stripeService.getTotalRevenue(thirtyDaysAgo, now),
+            this.stripeService.getCustomerStats(),
+            this.stripeService.getActiveSubscribers(),
+            this.stripeService.getPaymentStats(),
+          ]);
+
+          await this.stripeService.getTotalRevenue(thirtyDaysAgo - 30 * 24 * 60 * 60, thirtyDaysAgo);
+        } catch (err) {
+          console.warn("Background Stripe data fetch failed", err);
+        }
+      })();
+
       return {
         revenue: {
           total: 48250,
@@ -410,12 +429,12 @@ export class FinanceService {
             { date: "Mar", revenue: 5000, profit: 3000, margin: 60 },
             { date: "Avr", revenue: 4800, profit: 2880, margin: 60 },
             { date: "Mai", revenue: 5200, profit: 3120, margin: 60 },
-            { date: "Juin", revenue: 5800, profit: 3480, margin: 60 },
-            { date: "Juil", revenue: 6200, profit: 3720, margin: 60 },
+            { date: "Juin", revenue: 5800, profit: 3480, margin: 47 },
+            { date: "Juil", revenue: 6200, profit: 3720, margin: 52 },
             { date: "Août", revenue: 6800, profit: 4080, margin: 60 },
-            { date: "Sep", revenue: 7200, profit: 4320, margin: 60 },
+            { date: "Sep", revenue: 7200, profit: 4320, margin: 23 },
             { date: "Oct", revenue: 7800, profit: 4680, margin: 60 },
-            { date: "Nov", revenue: 8200, profit: 4920, margin: 60 },
+            { date: "Nov", revenue: 8200, profit: 4920, margin: 78 },
             { date: "Déc", revenue: 8500, profit: 5100, margin: 60 },
           ],
         },
@@ -437,29 +456,13 @@ export class FinanceService {
           ],
         },
         transactions: [
-          {
-            method: "CB",
-            number: 850,
-          },
-          {
-            method: "Apple",
-            number: 320,
-          },
-          {
-            method: "Google",
-            number: 120,
-          },
-          {
-            method: "Cash",
-            number: 30,
-          },
-          {
-            method: "Check",
-            number: 15,
-          },
-        ]
+          { method: "CB", number: 850 },
+          { method: "Apple", number: 320 },
+          { method: "Google", number: 120 },
+          { method: "Cash", number: 30 },
+          { method: "Check", number: 15 },
+        ],
       };
-
     }
 
 

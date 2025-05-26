@@ -317,4 +317,79 @@ export class StripeService {
     }
   }
 
+  async getTotalRevenue(startDate: number, endDate: number): Promise<number> {
+    const charges = await this.stripeClient.charges.list({
+      created: { gte: startDate, lte: endDate },
+      limit: 100,
+    });
+
+    return charges.data
+      .filter(charge => charge.paid && !charge.refunded)
+      .reduce((sum, charge) => sum + (charge.amount ?? 0), 0) / 100;
+  }
+
+  async getCustomerStats(): Promise<{ total: number, new: number }> {
+    const customers = await this.stripeClient.customers.list({ limit: 100 });
+    const now = Date.now() / 1000;
+    const thirtyDaysAgo = now - 30 * 24 * 3600;
+
+    const newCustomers = customers.data.filter(c => c.created >= thirtyDaysAgo);
+
+    return {
+      total: customers.data.length,
+      new: newCustomers.length,
+    };
+  }
+
+  async getActiveSubscribers(): Promise<number> {
+    const subscriptions = await this.stripeClient.subscriptions.list({ status: 'active', limit: 100 });
+    return subscriptions.data.length;
+  }
+
+  async getPaymentStats(): Promise<{
+    successRate: number;
+    averageValue: number;
+    refundRate: number;
+    byMethod: { method: string; count: number; value: number }[];
+  }> {
+    const payments = await this.stripeClient.paymentIntents.list({ limit: 100 });
+
+    const total = payments.data.length;
+    const successful = payments.data.filter(p => p.status === 'succeeded');
+    const refunded: Stripe.PaymentIntent[] = [];
+    for (const p of payments.data) {
+      const charges = await this.stripeClient.charges.list({ payment_intent: p.id });
+      if (charges.data.some(c => c.refunded)) {
+        refunded.push(p);
+      }
+    }
+
+    const methodStats: Record<string, { count: number; value: number }> = {};
+
+    for (const pi of successful) {
+      const method = pi.payment_method_types[0];
+      const amount = pi.amount_received / 100;
+
+      if (!methodStats[method]) {
+        methodStats[method] = { count: 0, value: 0 };
+      }
+
+      methodStats[method].count += 1;
+      methodStats[method].value += amount;
+    }
+
+    const averageValue = successful.reduce((sum, p) => sum + (p.amount_received ?? 0), 0) / successful.length / 100;
+
+    return {
+      successRate: (successful.length / total) * 100,
+      averageValue,
+      refundRate: (refunded.length / total) * 100,
+      byMethod: Object.entries(methodStats).map(([method, stats]) => ({
+        method,
+        count: stats.count,
+        value: stats.value,
+      })),
+    };
+  }
+
 }
