@@ -128,292 +128,274 @@ export class FinanceService {
     private readonly minioService : MinioService
   ) {}
 
-    async getTransactions(params: {
+    async _fetchTransactions(params: {
+        name?: string;
+        type?: TransactionType;
+        year?: string;
+        month?: string;
+      }): Promise<Transaction[]> {
+        let allTransactions: Transaction[] = [];
+
+        if (!params.type || params.type === 'in') {
+          const appointments = await this.appointmentsRepo.find({
+            relations: ['client', 'service'],
+            where: { status: In(["completed", "in_progress"]) }
+          });
+
+          const filteredAppointments = appointments.filter((appointment) => {
+            const date = appointment.payment_date || appointment.service_date;
+            const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
+            const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
+            const fullName = `${appointment.client?.first_name || ''} ${appointment.client?.last_name || ''}`.trim();
+            const matchesName = params.name ? fullName.toLowerCase().includes(params.name.toLowerCase()) : true;
+
+            return matchesYear && matchesMonth && matchesName;
+          });
+
+          const mappedAppointments = await Promise.all(filteredAppointments.map(async (appointment) => ({
+            id: appointment.appointment_id,
+            name: `${appointment.client?.first_name || ''} ${appointment.client?.last_name || ''}`.trim(),
+            type: 'in' as TransactionType,
+            category: 'service' as TransactionCategory,
+            date: (appointment.payment_date || appointment.service_date).toISOString().split('T')[0],
+            invoiceUrl: appointment.url_file
+              ? await this.minioService.generatePresignedUrl('client-documents', appointment.url_file)
+              : '',
+          })));
+
+          allTransactions.push(...mappedAppointments);
+        }
+
+        if (!params.type || params.type === 'in') {
+          const deliveries = await this.deliveryTransferRepo.find({
+            relations: [
+              'delivery',
+              'delivery.shipment',
+              'delivery.shipment.user',
+              'delivery.shipment.user.clients',
+              'delivery.shipment.user.merchant',
+            ],
+          });
+
+          const filteredDeliveries = deliveries.filter((delivery) => {
+            const date = delivery.date;
+            const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
+            const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
+
+            const user = delivery.delivery.shipment?.user;
+            let name = '';
+            if (user?.clients?.length > 0) {
+              name = `${user.clients[0]?.first_name || ''} ${user.clients[0]?.last_name || ''}`.trim();
+            } else if (user?.merchant) {
+              name = `${user.merchant?.first_name || ''} ${user.merchant?.last_name || ''}`.trim();
+            }
+
+            const matchesName = params.name ? name.toLowerCase().includes(params.name.toLowerCase()) : true;
+
+            return matchesYear && matchesMonth && matchesName;
+          });
+
+          const mappedDeliveries = await Promise.all(filteredDeliveries.map(async (delivery) => {
+            const user = delivery.delivery.shipment?.user;
+            let name = '';
+            if (user?.clients?.length > 0) {
+              name = `${user.clients[0]?.first_name || ''} ${user.clients[0]?.last_name || ''}`.trim();
+            } else if (user?.merchant) {
+              name = `${user.merchant?.first_name || ''} ${user.merchant?.last_name || ''}`.trim();
+            }
+
+            return {
+              id: delivery.delivery_transfer_id,
+              name,
+              type: 'in' as TransactionType,
+              category: 'delivery' as TransactionCategory,
+              date: delivery.date.toISOString().split('T')[0],
+              invoiceUrl: delivery.url
+                ? await this.minioService.generatePresignedUrl('client-documents', delivery.url)
+                : '',
+            };
+          }));
+
+          allTransactions.push(...mappedDeliveries);
+        }
+
+        if (!params.type || params.type === 'out') {
+          const transfersProvider = await this.transferProviderRepo.find({
+            relations: ['provider'],
+          });
+
+          const filtered = transfersProvider.filter((transfer) => {
+            const date = transfer.date;
+            const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
+            const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
+            const fullName = `${transfer.provider?.first_name || ''} ${transfer.provider?.last_name || ''}`.trim();
+            const matchesName = params.name ? fullName.toLowerCase().includes(params.name.toLowerCase()) : true;
+
+            return matchesYear && matchesMonth && matchesName;
+          });
+
+          const mapped = await Promise.all(filtered.map(async (transfer) => ({
+            id: transfer.transfer_id,
+            name: `${transfer.provider?.first_name || ''} ${transfer.provider?.last_name || ''}`.trim(),
+            type: 'out' as TransactionType,
+            category: 'service' as TransactionCategory,
+            date: transfer.date.toISOString().split('T')[0],
+            invoiceUrl: transfer.url
+              ? await this.minioService.generatePresignedUrl('client-documents', transfer.url)
+              : '',
+          })));
+
+          allTransactions.push(...mapped);
+        }
+
+        if (!params.type || params.type === 'out') {
+          const transfers = await this.transferRepo.find({
+            relations: ['delivery_person', 'delivery_person.user', 'delivery_person.user.clients'],
+          });
+
+          const filtered = transfers.filter((transfer) => {
+            const date = transfer.date;
+            const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
+            const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
+            const fullName = `${transfer.delivery_person?.user.clients[0].first_name || ''} ${transfer.delivery_person?.user.clients[0].last_name || ''}`.trim();
+            const matchesName = params.name ? fullName.toLowerCase().includes(params.name.toLowerCase()) : true;
+
+            return matchesYear && matchesMonth && matchesName;
+          });
+
+          const mapped = await Promise.all(filtered.map(async (transfer) => ({
+            id: transfer.transfer_id,
+            name: `${transfer.delivery_person?.user.clients[0].first_name || ''} ${transfer.delivery_person?.user.clients[0].last_name || ''}`.trim(),
+            type: 'out' as TransactionType,
+            category: 'delivery' as TransactionCategory,
+            date: transfer.date.toISOString().split('T')[0],
+            invoiceUrl: transfer.url
+              ? await this.minioService.generatePresignedUrl('client-documents', transfer.url)
+              : '',
+          })));
+
+          allTransactions.push(...mapped);
+        }
+
+        if (!params.type || params.type === 'sub') {
+          const subscriptions = await this.subscriptionTransactionRepo.find({
+            relations: ['subscription', 'subscription.user', 'subscription.user.clients', 'subscription.user.merchant'],
+          });
+
+          const filtered = subscriptions.filter((subscription) => {
+            const date = subscription.created_at;
+            const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
+            const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
+
+            let fullName = '';
+            if (subscription.subscription?.user.clients.length > 0) {
+              fullName = `${subscription.subscription.user.clients[0].first_name || ''} ${subscription.subscription.user.clients[0].last_name || ''}`.trim();
+            } else if (subscription.subscription?.user.merchant) {
+              fullName = `${subscription.subscription.user.merchant.first_name || ''} ${subscription.subscription.user.merchant.last_name || ''}`.trim();
+            }
+
+            const matchesName = params.name ? fullName.toLowerCase().includes(params.name.toLowerCase()) : true;
+
+            return matchesYear && matchesMonth && matchesName;
+          });
+
+          const mapped = await Promise.all(filtered.map(async (subscription) => {
+            let name = '';
+            if (subscription.subscription?.user.clients.length > 0) {
+              name = `${subscription.subscription.user.clients[0].first_name || ''} ${subscription.subscription.user.clients[0].last_name || ''}`.trim();
+            } else if (subscription.subscription?.user.merchant) {
+              name = `${subscription.subscription.user.merchant.first_name || ''} ${subscription.subscription.user.merchant.last_name || ''}`.trim();
+            }
+
+            return {
+              id: subscription.transaction_id,
+              name,
+              type: 'sub' as TransactionType,
+              category: 'sub' as TransactionCategory,
+              date: subscription.created_at.toISOString().split('T')[0],
+              invoiceUrl: subscription.invoice_url
+                ? await this.minioService.generatePresignedUrl('client-documents', subscription.invoice_url)
+                : '',
+            };
+          }));
+
+          allTransactions.push(...mapped);
+        }
+
+        allTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        return allTransactions;
+      }
+
+      async getTransactions(params: {
+        name?: string;
+        type?: TransactionType;
+        year?: string;
+        month?: string;
+        pageIndex: number;
+        pageSize: number;
+      }): Promise<{ data: Transaction[]; totalRows: number }> {
+        const allTransactions = await this._fetchTransactions(params);
+
+        const startIndex = params.pageIndex * params.pageSize;
+        const paginatedData = allTransactions.slice(startIndex, startIndex + params.pageSize);
+
+        return {
+          data: paginatedData,
+          totalRows: allTransactions.length,
+        };
+      }
+
+    getCsvFile = async (res: any, params: {
+      startMonth?: string;
+      startYear?: string;
+      endMonth?: string;
+      endYear?: string;
+      categories?: TransactionCategory[];
       name?: string;
       type?: TransactionType;
-      year?: string;
-      month?: string;
-      pageIndex: number;
-      pageSize: number;
-    }): Promise<{ data: Transaction[]; totalRows: number }> {
-      let allTransactions: Transaction[] = [];
+    }): Promise<void> => {
+      const allTransactions = await this._fetchTransactions({
+        name: params.name,
+        type: params.type,
+        year: undefined,
+        month: undefined,
+      });
 
-      // IN - Appointments
-      if (!params.type || params.type === 'in') {
-        const appointments = await this.appointmentsRepo.find({
-          relations: ['client', 'service'],
+      let filtered = allTransactions;
+      if (params.startYear || params.startMonth || params.endYear || params.endMonth) {
+        filtered = filtered.filter((t) => {
+          const date = new Date(t.date);
+          const year = date.getFullYear();
+          const month = date.getMonth() + 1;
+
+          const afterStart =
+            !params.startYear || year > +params.startYear ||
+            (year === +params.startYear && (!params.startMonth || month >= +params.startMonth));
+
+          const beforeEnd =
+            !params.endYear || year < +params.endYear ||
+            (year === +params.endYear && (!params.endMonth || month <= +params.endMonth));
+
+          return afterStart && beforeEnd;
         });
-
-        const filteredAppointments = appointments.filter((appointment) => {
-          const date = appointment.payment_date || appointment.service_date;
-          const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
-          const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
-          const fullName = `${appointment.client?.first_name || ''} ${appointment.client?.last_name || ''}`.trim();
-          const matchesName = params.name ? fullName.toLowerCase().includes(params.name.toLowerCase()) : true;
-
-          return matchesYear && matchesMonth && matchesName;
-        });
-
-        const mappedAppointments = await Promise.all(filteredAppointments.map(async (appointment) => ({
-          id: appointment.appointment_id,
-          name: `${appointment.client?.first_name || ''} ${appointment.client?.last_name || ''}`.trim(),
-          type: 'in' as TransactionType,
-          category: 'service' as TransactionCategory,
-          date: (appointment.payment_date || appointment.service_date).toISOString().split('T')[0],
-          invoiceUrl: appointment.url_file
-            ? await this.minioService.generatePresignedUrl('client-documents', appointment.url_file)
-            : '',
-        })));
-
-        allTransactions.push(...mappedAppointments);
       }
 
-      // IN - Deliveries
-      if (!params.type || params.type === 'in') {
-        const deliveries = await this.deliveryTransferRepo.find({
-          relations: [
-            'delivery',
-            'delivery.shipment',
-            'delivery.shipment.user',
-            'delivery.shipment.user.clients',
-            'delivery.shipment.user.merchant',
-          ],
-        });
-
-        const filteredDeliveries = deliveries.filter((delivery) => {
-          const date = delivery.date;
-          const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
-          const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
-
-          const user = delivery.delivery.shipment?.user;
-          let name = '';
-          if (user?.clients?.length > 0) {
-            name = `${user.clients[0]?.first_name || ''} ${user.clients[0]?.last_name || ''}`.trim();
-          } else if (user?.merchant) {
-            name = `${user.merchant?.first_name || ''} ${user.merchant?.last_name || ''}`.trim();
-          }
-
-          const matchesName = params.name ? name.toLowerCase().includes(params.name.toLowerCase()) : true;
-
-          return matchesYear && matchesMonth && matchesName;
-        });
-
-        const mappedDeliveries = await Promise.all(filteredDeliveries.map(async (delivery) => {
-          const user = delivery.delivery.shipment?.user;
-          let name = '';
-          if (user?.clients?.length > 0) {
-            name = `${user.clients[0]?.first_name || ''} ${user.clients[0]?.last_name || ''}`.trim();
-          } else if (user?.merchant) {
-            name = `${user.merchant?.first_name || ''} ${user.merchant?.last_name || ''}`.trim();
-          }
-
-          return {
-            id: delivery.delivery_transfer_id,
-            name,
-            type: 'in' as TransactionType,
-            category: 'delivery' as TransactionCategory,
-            date: delivery.date.toISOString().split('T')[0],
-            invoiceUrl: delivery.url
-              ? await this.minioService.generatePresignedUrl('client-documents', delivery.url)
-              : '',
-          };
-        }));
-
-        allTransactions.push(...mappedDeliveries);
+      if (params.categories?.length) {
+        filtered = filtered.filter(t => params.categories!.includes(t.category));
       }
 
-      // OUT - Transfers to Provider
-      if (!params.type || params.type === 'out') {
-        const transfersProvider = await this.transferProviderRepo.find({
-          relations: ['provider'],
-        });
+      const csvContent = [
+        ['id', 'name', 'type', 'category', 'date', 'invoiceUrl'].join(','), // header
+        ...filtered.map(t =>
+          [t.id, t.name, t.type, t.category, t.date, t.invoiceUrl].join(',')
+        )
+      ].join('\n');
 
-        const filteredTransfersProvider = transfersProvider.filter((transfer) => {
-          const date = transfer.date;
-          const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
-          const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
-          const fullName = `${transfer.provider?.first_name || ''} ${transfer.provider?.last_name || ''}`.trim();
-          const matchesName = params.name ? fullName.toLowerCase().includes(params.name.toLowerCase()) : true;
-
-          return matchesYear && matchesMonth && matchesName;
-        });
-
-        const mappedTransfersProvider = await Promise.all(filteredTransfersProvider.map(async (transfer) => ({
-          id: transfer.transfer_id,
-          name: `${transfer.provider?.first_name || ''} ${transfer.provider?.last_name || ''}`.trim(),
-          type: 'out' as TransactionType,
-          category: 'service' as TransactionCategory,
-          date: transfer.date.toISOString().split('T')[0],
-          invoiceUrl: transfer.url
-            ? await this.minioService.generatePresignedUrl('client-documents', transfer.url)
-            : '',
-        })));
-
-        allTransactions.push(...mappedTransfersProvider);
-      }
-
-      // OUT - Transfers to Delivery Person
-      if (!params.type || params.type === 'out') {
-        const transfers = await this.transferRepo.find({
-          relations: ['delivery_person', 'delivery_person.user', 'delivery_person.user.clients'],
-        });
-
-        const filteredTransfers = transfers.filter((transfer) => {
-          const date = transfer.date;
-          const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
-          const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
-          const fullName = `${transfer.delivery_person?.user.clients[0].first_name || ''} ${transfer.delivery_person?.user.clients[0].last_name || ''}`.trim();
-          const matchesName = params.name ? fullName.toLowerCase().includes(params.name.toLowerCase()) : true;
-
-          return matchesYear && matchesMonth && matchesName;
-        });
-
-        const mappedTransfers = await Promise.all(filteredTransfers.map(async (transfer) => ({
-          id: transfer.transfer_id,
-          name: `${transfer.delivery_person?.user.clients[0].first_name || ''} ${transfer.delivery_person?.user.clients[0].last_name || ''}`.trim(),
-          type: 'out' as TransactionType,
-          category: 'delivery' as TransactionCategory,
-          date: transfer.date.toISOString().split('T')[0],
-          invoiceUrl: transfer.url
-            ? await this.minioService.generatePresignedUrl('client-documents', transfer.url)
-            : '',
-        })));
-
-        allTransactions.push(...mappedTransfers);
-      }
-
-      // SUB - Subscriptions
-      if (!params.type || params.type === 'sub') {
-        const subscriptions = await this.subscriptionTransactionRepo.find({
-          relations: [
-            'subscription',
-            'subscription.user',
-            'subscription.user.clients',
-            'subscription.user.merchant',
-          ],
-        });
-
-        const filteredSubscriptions = subscriptions.filter((subscription) => {
-          const date = subscription.created_at;
-          const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
-          const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
-
-          let fullName = '';
-          if (subscription.subscription?.user.clients.length > 0) {
-            fullName = `${subscription.subscription.user.clients[0].first_name || ''} ${subscription.subscription.user.clients[0].last_name || ''}`.trim();
-          } else if (subscription.subscription?.user.merchant) {
-            fullName = `${subscription.subscription.user.merchant.first_name || ''} ${subscription.subscription.user.merchant.last_name || ''}`.trim();
-          }
-
-          const matchesName = params.name ? fullName.toLowerCase().includes(params.name.toLowerCase()) : true;
-
-          return matchesYear && matchesMonth && matchesName;
-        });
-
-        const mappedSubscriptions = await Promise.all(filteredSubscriptions.map(async (subscription) => {
-          let name = '';
-          if (subscription.subscription?.user.clients.length > 0) {
-            name = `${subscription.subscription.user.clients[0].first_name || ''} ${subscription.subscription.user.clients[0].last_name || ''}`.trim();
-          } else if (subscription.subscription?.user.merchant) {
-            name = `${subscription.subscription.user.merchant.first_name || ''} ${subscription.subscription.user.merchant.last_name || ''}`.trim();
-          }
-
-          return {
-            id: subscription.transaction_id,
-            name,
-            type: 'sub' as TransactionType,
-            category: 'sub' as TransactionCategory,
-            date: subscription.created_at.toISOString().split('T')[0],
-            invoiceUrl: subscription.invoice_url
-              ? await this.minioService.generatePresignedUrl('client-documents', subscription.invoice_url)
-              : '',
-          };
-        }));
-
-        allTransactions.push(...mappedSubscriptions);
-      }
-
-      // Sort from newest to oldest
-      allTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-      // Pagination
-      const startIndex = params.pageIndex * params.pageSize;
-      const paginatedData = allTransactions.slice(startIndex, startIndex + params.pageSize);
-
-      return {
-        data: paginatedData,
-        totalRows: allTransactions.length,
-      };
-    }
-
-    generateCsv(params: {
-        startMonth?: string;
-        startYear?: string;
-        endMonth?: string;
-        endYear?: string;
-        categories?: TransactionCategory[];
-    }): string {
-        let transactions = [...Test];
-
-        if (params.startYear || params.startMonth) {
-            transactions = transactions.filter(t => {
-                const date = new Date(t.date);
-                const year = date.getFullYear().toString();
-                const month = (date.getMonth() + 1).toString();
-
-                const startYearMatch = params.startYear ? year === params.startYear : true;
-                const startMonthMatch = params.startMonth ? month === params.startMonth : true;
-
-                return startYearMatch && startMonthMatch;
-            });
-        }
-
-        if (params.endYear || params.endMonth) {
-            transactions = transactions.filter(t => {
-                const date = new Date(t.date);
-                const year = date.getFullYear().toString();
-                const month = (date.getMonth() + 1).toString();
-
-                const endYearMatch = params.endYear ? year === params.endYear : true;
-                const endMonthMatch = params.endMonth ? month === params.endMonth : true;
-
-                return endYearMatch && endMonthMatch;
-            });
-        }
-
-        if (params.categories && params.categories.length > 0) {
-            transactions = transactions.filter(t => params.categories?.includes(t.category));
-        }
-
-        const csvContent = [
-            ['id', 'name', 'type', 'category', 'date', 'invoiceUrl'].join(','),
-            ...transactions.map(t =>
-                [t.id, t.name, t.type, t.category, t.date, t.invoiceUrl].join(',')
-            )
-        ].join('\n');
-
-        const filePath = path.join(__dirname, '..', 'transactions.csv');
-        fs.writeFileSync(filePath, csvContent);
-
-        return filePath;
-    }
-
-    getCsvFile(res: any, params: {
-        startMonth?: string;
-        startYear?: string;
-        endMonth?: string;
-        endYear?: string;
-        categories?: TransactionCategory[];
-    }): void {
-        const filePath = this.generateCsv(params);
-        if (fs.existsSync(filePath)) {
-            res.setHeader('Content-Type', 'text/csv');
-            res.setHeader('Content-Disposition', 'attachment; filename=transactions.csv');
-            fs.createReadStream(filePath).pipe(res);
-        } else {
-            res.status(404).send('File not found');
-        }
-    }
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=transactions.csv');
+      res.send(csvContent);
+    };
 
     async getStripeStats(period ?: string): Promise<StripeStats> {
       console.log("getStripeStats", period);

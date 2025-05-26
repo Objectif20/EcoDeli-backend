@@ -85,12 +85,3 @@ export interface ParcelsChartData {
   taille: string;
   nombre: number;
 }
-
-export interface TransactionDTO {
-  id: string;
-  name: string;
-  type: TransactionType;
-  category: TransactionCategory;
-  date: string;
-  invoiceUrl: string;
-}
