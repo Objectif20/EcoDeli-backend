@@ -66,7 +66,7 @@ export class Delivery {
 
     @Column({ type : "varchar", length: 255, nullable: true })
     end_code: string ;
-SZ
+    
     @OneToMany(() => DeliveryTransfer, (transfer) => transfer.delivery)
     transfers: DeliveryTransfer[];
 }

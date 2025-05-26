@@ -12,11 +12,13 @@ import { PlanningController } from "./planning.controller";
 import { PlanningService } from "./planning.service";
 import { Appointments } from "src/common/entities/appointments.entity";
 import { ServicesList } from "src/common/entities/services_list.entity";
+import { Delivery } from "src/common/entities/delivery.entity";
+import { Shipment } from "src/common/entities/shipment.entity";
 
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Appointments, ServicesList]),
+        TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Appointments, ServicesList, Delivery, Shipment]),
         JwtModule.register({}),
         SharedModule,
     ],
