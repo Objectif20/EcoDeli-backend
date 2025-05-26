@@ -1024,52 +1024,6 @@ import { Readable } from "stream";
       return this.availabilityRepository.save(newAvailabilities);
     }
 
-    async getMyProfileDocuments() {
-
-      return   {
-        name: "Home",
-        nodes: [
-          {
-            name: "Documents",
-            nodes: [
-              { name: "report.pdf", url: "https://console.minio.remythibaut.fr/api/v1/buckets/test/objects/download?prefix=CV2A_V2.pdf&version_id=null" },
-              {
-                name: "Factures",
-                nodes: [
-                  { name: "January.pdf" },
-                  { name: "February.pdf" },
-                ],
-              },
-              {
-                name: "Contrats",
-                nodes: [
-                  { name: "Contract-2023.pdf" },
-                  { name: "NDA-2023.pdf" },
-                ],
-              },
-              {
-                name: "Rapports",
-                nodes: [
-                  { name: "Annual-Report-2023.pdf" },
-                  { name: "Project-Review.pdf" },
-                ],
-              },
-              {
-                name: "Correspondance",
-                nodes: [
-                  { name: "Letter-to-Client.pdf" },
-                  { name: "Internal-Memo.pdf" },
-                ],
-              },
-            ],
-          },
-          { name: "passwords.txt" },
-        ],
-      }
-
-
-    }
-
     async registerNewDevice(userId: string, playerId: string): Promise<void> {
       const user = await this.userRepository.findOne({ where: { user_id: userId } });
       if (!user) {
