@@ -18,7 +18,7 @@ export class DashboardService {
     @InjectRepository(Users)
     private readonly userRepository: Repository<Users>,
     @InjectRepository(Shipment)
-    private readonly shipmentRepo: Repository<Shipment>,
+    private readonly shipmentRepository: Repository<Shipment>,
   ){}
 
     async getWeather(user_id: string): Promise<WeatherData> {
@@ -85,7 +85,7 @@ export class DashboardService {
         throw new Error('Aucun envoi trouvé pour cet utilisateur.');
       }
 
-      const closestShipment = await this.shipmentRepo.findOne({
+      const closestShipment = await this.shipmentRepository.findOne({
         where: {
           user: { user_id },
         },
@@ -119,12 +119,25 @@ export class DashboardService {
       };
     }
 
-    async getFinishedDelivery(user_id : string) : Promise<finishedDelivery> {
-        console.log("getFinishedDelivery", user_id);
+    async getFinishedDelivery(user_id: string): Promise<finishedDelivery> {
+        const now = new Date();
+        const year = now.getFullYear();
+
+        const startOfYear = new Date(year, 0, 1);
+        const endOfYear = new Date(year + 1, 0, 1);
+
+        const count = await this.shipmentRepository.count({
+            where: {
+                user: { user_id },
+                status: 'validated',
+                deadline_date: Between(startOfYear, endOfYear),
+            },
+        });
+
         return {
-            count: 10,
-            period: "Mars",
-        }
+            count,
+            period: year.toString(),
+        };
     }
 
     async getMyCarrier(user_id : string) : Promise<Carrier[]> {
@@ -163,7 +176,7 @@ export class DashboardService {
         const start = startOfMonth(subMonths(now, i));
         const end = endOfMonth(subMonths(now, i));
 
-        const count = await this.shipmentRepo.count({
+        const count = await this.shipmentRepository.count({
           where: {
             user: { user_id },
             deadline_date: Between(start, end),
@@ -183,23 +196,57 @@ export class DashboardService {
       return deliveriesPerMonth;
     }
 
-    async getCo2Saved(user_id : string) : Promise<co2Saved[]> {
-        console.log("getCo2Saved", user_id);
-        return [
-            { month: "Jan", co2Saved: 10 },
-            { month: "Feb", co2Saved: 20 },
-            { month: "Mar", co2Saved: 30 },
-            { month: "Apr", co2Saved: 40 },
-            { month: "May", co2Saved: 50 },
-            { month: "Jun", co2Saved: 60 },
-            { month: "Jul", co2Saved: 70 },
-            { month: "Aug", co2Saved: 80 },
-            { month: "Sep", co2Saved: 90 },
-            { month: "Oct", co2Saved: 100 },
-            { month: "Nov", co2Saved: 110 },
-            { month: "Dec", co2Saved: 120 },
-        ];
-    }
+      async getCo2Saved(user_id: string): Promise<co2Saved[]> {
+          const now = new Date();
+          const year = now.getFullYear();
+          const startOfYear = new Date(year, 0, 1);
+          const endOfYear = new Date(year + 1, 0, 1);
+
+          const shipments = await this.shipmentRepository.find({
+              where: {
+                  user: { user_id },
+                  status: 'validated',
+                  deadline_date: Between(startOfYear, endOfYear),
+              },
+          });
+
+          // Init CO2 per month
+          const monthsMap: Record<string, number> = {
+              Jan: 0, Feb: 0, Mar: 0, Apr: 0, May: 0, Jun: 0,
+              Jul: 0, Aug: 0, Sep: 0, Oct: 0, Nov: 0, Dec: 0,
+          };
+
+          for (const shipment of shipments) {
+              if (!shipment.departure_location || !shipment.arrival_location) continue;
+
+              const distanceMeters = getDistance(
+                  {
+                      latitude: shipment.departure_location.coordinates[1],
+                      longitude: shipment.departure_location.coordinates[0],
+                  },
+                  {
+                      latitude: shipment.arrival_location.coordinates[1],
+                      longitude: shipment.arrival_location.coordinates[0],
+                  }
+              );
+
+              const reducedDistanceKm = (distanceMeters / 1000) * 0.8;
+              const co2Kg = reducedDistanceKm * 0.11; // 110g/km => 0.11kg/km
+
+              const shipmentMonth = shipment.deadline_date!.toLocaleString('en-US', { month: 'short' });
+              if (monthsMap[shipmentMonth] !== undefined) {
+                  monthsMap[shipmentMonth] += co2Kg;
+              }
+          }
+
+          // Format final result
+          const result: co2Saved[] = Object.entries(monthsMap).map(([month, co2Saved]) => ({
+              month,
+              co2Saved: parseFloat(co2Saved.toFixed(2)), // optional rounding
+          }));
+
+          return result;
+      }
 
     async getPackages(user_id : string) : Promise<packages[]> {
         console.log("getPackages", user_id);
@@ -398,4 +445,29 @@ export class DashboardService {
           period: "Mars",
       }
     }
+}
+
+
+function getDistance(
+  point1: { latitude: number; longitude: number },
+  point2: { latitude: number; longitude: number }
+): number {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+
+  const R = 6371000; 
+  const lat1 = toRad(point1.latitude);
+  const lat2 = toRad(point2.latitude);
+  const deltaLat = toRad(point2.latitude - point1.latitude);
+  const deltaLon = toRad(point2.longitude - point1.longitude);
+
+  const a =
+    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) *
+    Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  const distance = R * c;
+
+  return distance; 
 }
