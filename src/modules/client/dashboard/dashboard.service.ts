@@ -1,10 +1,12 @@
-import { In, Repository } from "typeorm";
+import { Between, In, MoreThanOrEqual, Repository } from "typeorm";
 import { AverageRating, Carrier, clientStats, co2Saved, CompletedService, CurrentBalance, events, finishedDelivery, LastDelivery, nearDeliveries, NextDelivery, nextServiceAsClient, NumberOfDeliveries, PackageLocation, packages, revenueData, upcomingService, WeatherData } from "./type";
 import { InjectRepository } from "@nestjs/typeorm";
 import { DeliveryPerson } from "src/common/entities/delivery_persons.entity";
 import { Delivery } from "src/common/entities/delivery.entity";
 import axios from "axios";
 import { Users } from "src/common/entities/user.entity";
+import { Shipment } from "src/common/entities/shipment.entity";
+import { endOfMonth, startOfMonth, subMonths } from "date-fns";
 
 export class DashboardService {
 
@@ -14,7 +16,9 @@ export class DashboardService {
     @InjectRepository(Delivery)
     private readonly deliveryRepository: Repository<Delivery>,
     @InjectRepository(Users)
-    private readonly userRepository: Repository<Users>
+    private readonly userRepository: Repository<Users>,
+    @InjectRepository(Shipment)
+    private readonly shipmentRepo: Repository<Shipment>,
   ){}
 
     async getWeather(user_id: string): Promise<WeatherData> {
@@ -70,92 +74,49 @@ export class DashboardService {
         }
     }
 
-    async getLastDelivery(user_id: string): Promise<LastDelivery> {
-        const deliveryPerson = await this.deliveryPersonRepository.findOne({
-            where: { user: { user_id } },
-            relations: ['user'],
-        });
 
-        if (!deliveryPerson) {
-            throw new Error('Livreur introuvable.');
+    async getLastShipment(user_id: string): Promise<LastDelivery> {
+      const user = await this.userRepository.findOne({
+        where: { user_id },
+        relations: ['shipments']
+      });
+
+      if (!user || !user.shipments?.length) {
+        throw new Error('Aucun envoi trouvé pour cet utilisateur.');
+      }
+
+      const closestShipment = await this.shipmentRepo.findOne({
+        where: {
+          user: { user_id },
+        },
+        order: {
+          deadline_date: 'ASC',
+        },
+        relations: ['stores', 'stores.exchangePoint'],
+      });
+
+      if (!closestShipment) {
+        throw new Error('Aucune livraison trouvée.');
+      }
+
+      const origin: [number, number] = closestShipment.departure_location?.coordinates?.slice().reverse() ?? [0, 0];
+      const destination: [number, number] = closestShipment.arrival_location?.coordinates?.slice().reverse() ?? [0, 0];
+
+      return {
+        delivery: {
+          id: closestShipment.shipment_id,
+          from: closestShipment.departure_city || 'Inconnu',
+          to: closestShipment.arrival_city || 'Inconnu',
+          status: closestShipment.status || 'En attente',
+          pickupDate: closestShipment.deadline_date?.toISOString().split('T')[0] || '',
+          estimatedDeliveryDate: closestShipment.deadline_date?.toISOString().split('T')[0] || '',
+          coordinates: {
+            origin,
+            destination,
+            current: origin,
+          }
         }
-
-        const activeStatuses = ['pending', 'taken'];
-
-        const delivery = await this.deliveryRepository.findOne({
-            where: {
-                delivery_person: { delivery_person_id: deliveryPerson.delivery_person_id },
-                status: In(activeStatuses),
-            },
-            relations: [
-                'shipment',
-                'shipment.stores',
-                'shipment.stores.exchangePoint',
-            ],
-        });
-
-        if (!delivery || !delivery.shipment) {
-            throw new Error('Aucune livraison active trouvée.');
-        }
-
-        const shipment = delivery.shipment;
-        const storesByStep = (shipment.stores || []).sort((a, b) => a.step - b.step);
-        const step = delivery.shipment_step;
-
-        let from = '';
-        let to = '';
-        let origin: [number, number] = [0, 0];
-        let destination: [number, number] = [0, 0];
-        let current: [number, number] = [0, 0];
-
-        if (step === 0) {
-            from = shipment.departure_city ?? '';
-            origin = shipment.departure_location?.coordinates?.slice().reverse() as [number, number] ?? [0, 0];
-            current = origin;
-
-            const toStore = storesByStep[0];
-            to = toStore?.exchangePoint?.city ?? shipment.arrival_city ?? '';
-            destination = toStore?.exchangePoint?.coordinates?.coordinates?.slice().reverse() ?? [0, 0];
-        } else if (step === 1000) {
-            const prevStore = storesByStep.find(s => s.step === step - 1);
-            from = prevStore?.exchangePoint?.city ?? shipment.departure_city ?? '';
-            origin = prevStore?.exchangePoint?.coordinates?.coordinates?.slice().reverse() ?? [0, 0];
-            current = origin;
-
-            to = shipment.arrival_city ?? '';
-            destination = shipment.arrival_location?.coordinates?.slice().reverse() ?? [0, 0];
-        } else {
-            const prevStore = storesByStep.find(s => s.step === step - 1);
-            const currStore = storesByStep.find(s => s.step === step);
-
-            if (step === 1) {
-                from = shipment.departure_city ?? '';
-                origin = shipment.departure_location?.coordinates?.slice().reverse() ?? [0, 0];
-            } else {
-                from = prevStore?.exchangePoint?.city ?? '';
-                origin = prevStore?.exchangePoint?.coordinates?.coordinates?.slice().reverse() ?? [0, 0];
-            }
-
-            to = currStore?.exchangePoint?.city ?? '';
-            destination = currStore?.exchangePoint?.coordinates?.coordinates?.slice().reverse() ?? [0, 0];
-            current = origin;
-        }
-
-        return {
-            delivery: {
-                id: delivery.delivery_id,
-                from,
-                to,
-                status: delivery.status,
-                pickupDate: shipment.deadline_date?.toISOString().split('T')[0] || '',
-                estimatedDeliveryDate: shipment.deadline_date?.toISOString().split('T')[0] || '',
-                coordinates: {
-                    origin,
-                    destination,
-                    current,
-                },
-            },
-        };
+      };
     }
 
     async getFinishedDelivery(user_id : string) : Promise<finishedDelivery> {
@@ -193,22 +154,33 @@ export class DashboardService {
         ];
     }
 
-    async getNumberOfDeliveries(user_id : string) : Promise<NumberOfDeliveries[]> {
-        console.log("getNumberOfDeliveries", user_id);
-        return [
-            { month: "Jan", packages: 10 },
-            { month: "Feb", packages: 20 },
-            { month: "Mar", packages: 30 },
-            { month: "Apr", packages: 40 },
-            { month: "May", packages: 50 },
-            { month: "Jun", packages: 60 },
-            { month: "Jul", packages: 70 },
-            { month: "Aug", packages: 80 },
-            { month: "Sep", packages: 90 },
-            { month: "Oct", packages: 100 },
-            { month: "Nov", packages: 110 },
-            { month: "Dec", packages: 120 },
-        ];
+    async getNumberOfDeliveries(user_id: string): Promise<{ month: string; packages: number }[]> {
+
+      const now = new Date();
+      const deliveriesPerMonth: { month: string; packages: number }[] = [];
+
+      for (let i = 11; i >= 0; i--) {
+        const start = startOfMonth(subMonths(now, i));
+        const end = endOfMonth(subMonths(now, i));
+
+        const count = await this.shipmentRepo.count({
+          where: {
+            user: { user_id },
+            deadline_date: Between(start, end),
+          },
+        });
+
+        if (count > 0) {
+          const monthName = start.toLocaleString('default', { month: 'short' });
+
+          deliveriesPerMonth.push({
+            month: monthName,
+            packages: count,
+          });
+        }
+      }
+
+      return deliveriesPerMonth;
     }
 
     async getCo2Saved(user_id : string) : Promise<co2Saved[]> {

@@ -19,7 +19,7 @@ export class DashboardController {
     @Get('last-delivery')
     @UseGuards(ClientJwtGuard)
     async getLastDelivery(@Body('user_id') userId: string): Promise<LastDelivery> {
-        return this.dashboardService.getLastDelivery(userId);
+        return this.dashboardService.getLastShipment(userId);
     }
 
     @Get('finished-delivery')
