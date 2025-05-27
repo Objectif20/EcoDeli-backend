@@ -8,6 +8,7 @@ import { DeliveryPerson } from "./delivery_persons.entity";
 import { Blocked } from "./blocked.entity";
 import { Providers } from "./provider.entity";
 import { OneSignalDevice } from "./onesignal-device.entity";
+import { Shipment } from "./shipment.entity";
 
 
 @Entity({ name: 'users' })
@@ -94,4 +95,7 @@ export class Users {
 
     @OneToMany(() => OneSignalDevice, (device) => device.user)
     devices: OneSignalDevice[];
+
+    @OneToMany(() => Shipment, shipment => shipment.user)
+    shipments: Shipment[];
 }
