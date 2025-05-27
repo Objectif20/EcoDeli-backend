@@ -1,34 +1,161 @@
+import { In, Repository } from "typeorm";
 import { AverageRating, Carrier, clientStats, co2Saved, CompletedService, CurrentBalance, events, finishedDelivery, LastDelivery, nearDeliveries, NextDelivery, nextServiceAsClient, NumberOfDeliveries, PackageLocation, packages, revenueData, upcomingService, WeatherData } from "./type";
+import { InjectRepository } from "@nestjs/typeorm";
+import { DeliveryPerson } from "src/common/entities/delivery_persons.entity";
+import { Delivery } from "src/common/entities/delivery.entity";
+import axios from "axios";
+import { Users } from "src/common/entities/user.entity";
 
 export class DashboardService {
 
-    async getWeather(user_id : string) : Promise<WeatherData> {
-        console.log("getWeather", user_id);
-        return {
-            city: "Paris",
-            temperature: 13,
-            condition: "sunny",
-            date: new Date(),
+  constructor(
+    @InjectRepository(DeliveryPerson)
+    private readonly deliveryPersonRepository: Repository<DeliveryPerson>,
+    @InjectRepository(Delivery)
+    private readonly deliveryRepository: Repository<Delivery>,
+    @InjectRepository(Users)
+    private readonly userRepository: Repository<Users>
+  ){}
+
+    async getWeather(user_id: string): Promise<WeatherData> {
+
+        const user = await this.userRepository.findOne({
+            where: { user_id },
+            relations: ['deliveryPerson', 'merchant', 'providers'],
+        });
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        let city: string | null = null;
+
+        if (user.deliveryPerson?.city) {
+            city = user.deliveryPerson.city;
+        } else if (user.merchant?.city) {
+            city = user.merchant.city;
+        } else if (user.providers?.length && user.providers[0].city) {
+            city = user.providers[0].city;
+        }
+
+        if (!city) {
+            return {
+              city : "Paris",
+              temperature: 0,
+              condition: "sunny",
+              date: new Date()
+            };
+        }
+
+        try {
+            const response = await axios.get(`https://wttr.in/${encodeURIComponent(city)}?format=j1`);
+            const data = response.data;
+
+            const current = data.current_condition?.[0];
+
+            return {
+                city,
+                temperature: parseFloat(current.temp_C),
+                condition: current.weatherDesc?.[0]?.value || "Unknown",
+                date: new Date()
+            };
+        } catch (error) {
+            console.error("Weather API error:", error);
+            return {
+              city : "Paris",
+              temperature: 0,
+              condition: "sunny",
+              date: new Date()
+            };
         }
     }
 
-    async getLastDelivery(user_id : string) : Promise<LastDelivery> {
-        console.log("getLastDelivery", user_id);
+    async getLastDelivery(user_id: string): Promise<LastDelivery> {
+        const deliveryPerson = await this.deliveryPersonRepository.findOne({
+            where: { user: { user_id } },
+            relations: ['user'],
+        });
+
+        if (!deliveryPerson) {
+            throw new Error('Livreur introuvable.');
+        }
+
+        const activeStatuses = ['pending', 'taken'];
+
+        const delivery = await this.deliveryRepository.findOne({
+            where: {
+                delivery_person: { delivery_person_id: deliveryPerson.delivery_person_id },
+                status: In(activeStatuses),
+            },
+            relations: [
+                'shipment',
+                'shipment.stores',
+                'shipment.stores.exchangePoint',
+            ],
+        });
+
+        if (!delivery || !delivery.shipment) {
+            throw new Error('Aucune livraison active trouvée.');
+        }
+
+        const shipment = delivery.shipment;
+        const storesByStep = (shipment.stores || []).sort((a, b) => a.step - b.step);
+        const step = delivery.shipment_step;
+
+        let from = '';
+        let to = '';
+        let origin: [number, number] = [0, 0];
+        let destination: [number, number] = [0, 0];
+        let current: [number, number] = [0, 0];
+
+        if (step === 0) {
+            from = shipment.departure_city ?? '';
+            origin = shipment.departure_location?.coordinates?.slice().reverse() as [number, number] ?? [0, 0];
+            current = origin;
+
+            const toStore = storesByStep[0];
+            to = toStore?.exchangePoint?.city ?? shipment.arrival_city ?? '';
+            destination = toStore?.exchangePoint?.coordinates?.coordinates?.slice().reverse() ?? [0, 0];
+        } else if (step === 1000) {
+            const prevStore = storesByStep.find(s => s.step === step - 1);
+            from = prevStore?.exchangePoint?.city ?? shipment.departure_city ?? '';
+            origin = prevStore?.exchangePoint?.coordinates?.coordinates?.slice().reverse() ?? [0, 0];
+            current = origin;
+
+            to = shipment.arrival_city ?? '';
+            destination = shipment.arrival_location?.coordinates?.slice().reverse() ?? [0, 0];
+        } else {
+            const prevStore = storesByStep.find(s => s.step === step - 1);
+            const currStore = storesByStep.find(s => s.step === step);
+
+            if (step === 1) {
+                from = shipment.departure_city ?? '';
+                origin = shipment.departure_location?.coordinates?.slice().reverse() ?? [0, 0];
+            } else {
+                from = prevStore?.exchangePoint?.city ?? '';
+                origin = prevStore?.exchangePoint?.coordinates?.coordinates?.slice().reverse() ?? [0, 0];
+            }
+
+            to = currStore?.exchangePoint?.city ?? '';
+            destination = currStore?.exchangePoint?.coordinates?.coordinates?.slice().reverse() ?? [0, 0];
+            current = origin;
+        }
+
         return {
             delivery: {
-                id: "123456",
-                from: "Paris",
-                to: "Lyon",
-                status: "delivered",
-                pickupDate: "12 mai 2025",
-                estimatedDeliveryDate: "12 mai 2025",
+                id: delivery.delivery_id,
+                from,
+                to,
+                status: delivery.status,
+                pickupDate: shipment.deadline_date?.toISOString().split('T')[0] || '',
+                estimatedDeliveryDate: shipment.deadline_date?.toISOString().split('T')[0] || '',
                 coordinates: {
-                    origin: [48.8566, 2.3522],
-                    destination: [45.7640, 4.8357],
-                    current: [48.8566, 2.3522],
-                }
-            }
-        }
+                    origin,
+                    destination,
+                    current,
+                },
+            },
+        };
     }
 
     async getFinishedDelivery(user_id : string) : Promise<finishedDelivery> {
