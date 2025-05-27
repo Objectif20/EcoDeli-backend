@@ -1,4 +1,4 @@
-import { Between, In, MoreThanOrEqual, Repository } from "typeorm";
+import { Between, In, LessThanOrEqual, MoreThan, MoreThanOrEqual, Repository } from "typeorm";
 import { AverageRating, Carrier, clientStats, co2Saved, CompletedService, CurrentBalance, events, finishedDelivery, LastDelivery, nearDeliveries, NextDelivery, nextServiceAsClient, NumberOfDeliveries, PackageLocation, packages, revenueData, upcomingService, WeatherData } from "./type";
 import { InjectRepository } from "@nestjs/typeorm";
 import { DeliveryPerson } from "src/common/entities/delivery_persons.entity";
@@ -7,6 +7,10 @@ import axios from "axios";
 import { Users } from "src/common/entities/user.entity";
 import { Shipment } from "src/common/entities/shipment.entity";
 import { endOfMonth, startOfMonth, subMonths } from "date-fns";
+import { Providers } from "src/common/entities/provider.entity";
+import { Inject } from "@nestjs/common";
+import { Client } from "minio";
+import { Appointments } from "src/common/entities/appointments.entity";
 
 export class DashboardService {
 
@@ -19,6 +23,12 @@ export class DashboardService {
     private readonly userRepository: Repository<Users>,
     @InjectRepository(Shipment)
     private readonly shipmentRepository: Repository<Shipment>,
+    @InjectRepository(Providers)
+    private readonly providersRepository: Repository<Providers>,
+    @InjectRepository(Client)
+    private readonly clientRepository: Repository<Client>,
+    @InjectRepository(Appointments)
+    private readonly appointmentRepository: Repository<Appointments>,
   ){}
 
     async getWeather(user_id: string): Promise<WeatherData> {
@@ -210,7 +220,6 @@ export class DashboardService {
               },
           });
 
-          // Init CO2 per month
           const monthsMap: Record<string, number> = {
               Jan: 0, Feb: 0, Mar: 0, Apr: 0, May: 0, Jun: 0,
               Jul: 0, Aug: 0, Sep: 0, Oct: 0, Nov: 0, Dec: 0,
@@ -231,7 +240,7 @@ export class DashboardService {
               );
 
               const reducedDistanceKm = (distanceMeters / 1000) * 0.8;
-              const co2Kg = reducedDistanceKm * 0.11; // 110g/km => 0.11kg/km
+              const co2Kg = reducedDistanceKm * 0.11; 
 
               const shipmentMonth = shipment.deadline_date!.toLocaleString('en-US', { month: 'short' });
               if (monthsMap[shipmentMonth] !== undefined) {
@@ -239,39 +248,186 @@ export class DashboardService {
               }
           }
 
-          // Format final result
           const result: co2Saved[] = Object.entries(monthsMap).map(([month, co2Saved]) => ({
               month,
-              co2Saved: parseFloat(co2Saved.toFixed(2)), // optional rounding
+              co2Saved: parseFloat(co2Saved.toFixed(2)), 
           }));
 
           return result;
       }
 
-    async getPackages(user_id : string) : Promise<packages[]> {
+      async getPackages(user_id: string): Promise<{ size: string; packages: number }[]> {
         console.log("getPackages", user_id);
-        return [
-            { size: "S", packages: 10 },
-            { size: "M", packages: 20 },
-            { size: "L", packages: 30 },
-        ];
-    }
 
-    async getNextServiceAsClient(user_id : string) : Promise<nextServiceAsClient> {
-        console.log("getNextServiceAsClient", user_id);
-        return {
+        const shipments = await this.shipmentRepository.find({
+          where: { user: { user_id }, }, 
+          relations: ['parcels'],
+        });
+
+        const sizeCounts: Record<string, number> = {
+          S: 0,
+          M: 0,
+          L: 0,
+          XL: 0,
+          XXL: 0,
+        };
+
+        shipments.forEach(shipment => {
+          shipment.parcels.forEach(parcel => {
+            const weight = parcel.weight ?? 0;
+
+            if (weight < 5) sizeCounts.S += 1;
+            else if (weight <= 30) sizeCounts.M += 1;
+            else if (weight <= 50) sizeCounts.L += 1;
+            else if (weight <= 100) sizeCounts.XL += 1;
+            else sizeCounts.XXL += 1;
+          });
+        });
+
+        return Object.entries(sizeCounts)
+          .filter(([_, count]) => count > 0)
+          .map(([size, count]) => ({ size, packages: count }));
+      }
+
+      async getNextServiceAsClient(user_id: string): Promise<nextServiceAsClient> {
+
+        const user = await this.userRepository.findOne({
+          where: { user_id },
+          relations: ['clients'],
+        });
+
+        const client = user?.clients?.[0] ?? null;
+        if (!client) {
+          return {
             title: "Promenade de votre chien",
             date: "Sam 12 janvier 2025, 14h30",
-            image: "https://letsenhance.io/static/73136da51c245e80edc6ccfe44888a99/1015f/MainBefore.jpg",
-          }
-    }
-
-    async getCurrentBalance(user_id : string) : Promise<CurrentBalance> {
-        console.log("getCurrentBalance", user_id);
-        return {
-            amount: 100,
-            currency: "€",
+            image: "https://www.ennaturesimone.com/wp-content/uploads/2020/08/randonnee-fontainebleau.jpg",
+          };
         }
+
+        const now = new Date();
+
+        const nextAppointment = await this.appointmentRepository.findOne({
+          where: {
+            client: { client_id: client.client_id },
+            service_date: MoreThan(now),
+          },
+          order: { service_date: 'ASC' },
+          relations: ['service'],
+        });
+
+        if (nextAppointment) {
+          return {
+            title: `Prestation : ${nextAppointment.service?.name ?? "Service non défini"}`,
+            date: nextAppointment.service_date.toLocaleString('fr-FR', {
+              weekday: 'short', day: 'numeric', month: 'long', year: 'numeric',
+              hour: '2-digit', minute: '2-digit'
+            }),
+            image: "https://www.ennaturesimone.com/wp-content/uploads/2020/08/randonnee-fontainebleau.jpg",
+          };
+        }
+
+        const lastPastAppointment = await this.appointmentRepository.findOne({
+          where: {
+            client: { client_id: client.client_id },
+            service_date: LessThanOrEqual(now),
+          },
+          order: { service_date: 'DESC' },
+          relations: ['service'],
+        });
+
+        if (lastPastAppointment) {
+          return {
+            title: `Prestation : ${lastPastAppointment.service?.name ?? "Service non défini"}`,
+            date: lastPastAppointment.service_date.toLocaleString('fr-FR', {
+              weekday: 'short', day: 'numeric', month: 'long', year: 'numeric',
+              hour: '2-digit', minute: '2-digit'
+            }),
+            image: "https://www.ennaturesimone.com/wp-content/uploads/2020/08/randonnee-fontainebleau.jpg",
+          };
+        }
+
+        const shipments = await this.shipmentRepository.find({
+          where: { user: { user_id } },
+          relations: ['deliveries'],
+        });
+
+        let futureDeliveries: Delivery[] = [];
+        let pastDeliveries: Delivery[] = [];
+
+        shipments.forEach(shipment => {
+          shipment.deliveries?.forEach(delivery => {
+            if (delivery.send_date > now && ['pending', 'taken', 'finished'].includes(delivery.status)) {
+              futureDeliveries.push(delivery);
+            } else if (delivery.send_date <= now && ['pending', 'taken', 'finished'].includes(delivery.status)) {
+              pastDeliveries.push(delivery);
+            }
+          });
+        });
+
+        futureDeliveries.sort((a, b) => a.send_date.getTime() - b.send_date.getTime());
+        pastDeliveries.sort((a, b) => b.send_date.getTime() - a.send_date.getTime());
+
+        if (futureDeliveries.length > 0) {
+          const d = futureDeliveries[0];
+          return {
+            title: `Livraison prévue`,
+            date: d.send_date.toLocaleString('fr-FR', {
+              weekday: 'short', day: 'numeric', month: 'long', year: 'numeric',
+              hour: '2-digit', minute: '2-digit'
+            }),
+            image: "https://www.ennaturesimone.com/wp-content/uploads/2020/08/randonnee-fontainebleau.jpg",
+          };
+        }
+
+        if (pastDeliveries.length > 0) {
+          const d = pastDeliveries[0];
+          return {
+            title: `Dernière livraison`,
+            date: d.send_date.toLocaleString('fr-FR', {
+              weekday: 'short', day: 'numeric', month: 'long', year: 'numeric',
+              hour: '2-digit', minute: '2-digit'
+            }),
+            image: "https://www.ennaturesimone.com/wp-content/uploads/2020/08/randonnee-fontainebleau.jpg",
+          };
+        }
+
+        return {
+          title: "Promenade de votre chien",
+          date: "Sam 12 janvier 2025, 14h30",
+          image: "https://www.ennaturesimone.com/wp-content/uploads/2020/08/randonnee-fontainebleau.jpg",
+        };
+      }
+
+    async getCurrentBalance(user_id: string): Promise<{ amount: number; currency: string }> {
+      console.log("getCurrentBalance", user_id);
+
+      const deliveryPerson = await this.deliveryPersonRepository.findOne({
+        where: { user: { user_id } },
+      });
+
+      if (deliveryPerson) {
+        return {
+          amount: Number(deliveryPerson.balance), 
+          currency: "€",
+        };
+      }
+
+      const provider = await this.providersRepository.findOne({
+        where: { user: { user_id } },
+      });
+
+      if (provider) {
+        return {
+          amount: Number(provider.balance),
+          currency: "€",
+        };
+      }
+
+      return {
+        amount: 0,
+        currency: "€",
+      };
     }
 
     async getCompletedService(user_id : string) : Promise<CompletedService> {
