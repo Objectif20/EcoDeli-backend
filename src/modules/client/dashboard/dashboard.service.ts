@@ -11,6 +11,7 @@ import { Providers } from "src/common/entities/provider.entity";
 import { Inject } from "@nestjs/common";
 import { Client } from "minio";
 import { Appointments } from "src/common/entities/appointments.entity";
+import { MinioService } from "src/common/services/file/minio.service";
 
 export class DashboardService {
 
@@ -29,6 +30,7 @@ export class DashboardService {
     private readonly clientRepository: Repository<Client>,
     @InjectRepository(Appointments)
     private readonly appointmentRepository: Repository<Appointments>,
+    private readonly minioService : MinioService
   ){}
 
     async getWeather(user_id: string): Promise<WeatherData> {
@@ -290,14 +292,15 @@ export class DashboardService {
       }
 
       async getNextServiceAsClient(user_id: string): Promise<nextServiceAsClient> {
-
         const user = await this.userRepository.findOne({
           where: { user_id },
           relations: ['clients'],
         });
 
         const client = user?.clients?.[0] ?? null;
+
         if (!client) {
+          console.log("Aucun client trouvé pour l'utilisateur", user_id);
           return {
             title: "Promenade de votre chien",
             date: "Sam 12 janvier 2025, 14h30",
@@ -313,17 +316,26 @@ export class DashboardService {
             service_date: MoreThan(now),
           },
           order: { service_date: 'ASC' },
-          relations: ['service'],
+          relations: ['service', 'service.images'],
         });
 
         if (nextAppointment) {
+          const imageKey = nextAppointment.service?.images?.[0]?.image_service_url;
+          const firstImageUrl = imageKey
+            ? await this.minioService.generateImageUrl('provider-images', imageKey)
+            : "https://www.ennaturesimone.com/wp-content/uploads/2020/08/randonnee-fontainebleau.jpg";
+
           return {
             title: `Prestation : ${nextAppointment.service?.name ?? "Service non défini"}`,
             date: nextAppointment.service_date.toLocaleString('fr-FR', {
-              weekday: 'short', day: 'numeric', month: 'long', year: 'numeric',
-              hour: '2-digit', minute: '2-digit'
+              weekday: 'short',
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
             }),
-            image: "https://www.ennaturesimone.com/wp-content/uploads/2020/08/randonnee-fontainebleau.jpg",
+            image: firstImageUrl,
           };
         }
 
@@ -333,17 +345,26 @@ export class DashboardService {
             service_date: LessThanOrEqual(now),
           },
           order: { service_date: 'DESC' },
-          relations: ['service'],
+          relations: ['service', 'service.images'],
         });
 
         if (lastPastAppointment) {
+          const imageKey = lastPastAppointment.service?.images?.[0]?.image_service_url;
+          const firstImageUrl = imageKey
+            ? await this.minioService.generateImageUrl('provider-images', imageKey)
+            : "https://www.ennaturesimone.com/wp-content/uploads/2020/08/randonnee-fontainebleau.jpg";
+
           return {
             title: `Prestation : ${lastPastAppointment.service?.name ?? "Service non défini"}`,
             date: lastPastAppointment.service_date.toLocaleString('fr-FR', {
-              weekday: 'short', day: 'numeric', month: 'long', year: 'numeric',
-              hour: '2-digit', minute: '2-digit'
+              weekday: 'short',
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
             }),
-            image: "https://www.ennaturesimone.com/wp-content/uploads/2020/08/randonnee-fontainebleau.jpg",
+            image: firstImageUrl,
           };
         }
 
@@ -373,8 +394,12 @@ export class DashboardService {
           return {
             title: `Livraison prévue`,
             date: d.send_date.toLocaleString('fr-FR', {
-              weekday: 'short', day: 'numeric', month: 'long', year: 'numeric',
-              hour: '2-digit', minute: '2-digit'
+              weekday: 'short',
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
             }),
             image: "https://www.ennaturesimone.com/wp-content/uploads/2020/08/randonnee-fontainebleau.jpg",
           };
@@ -385,8 +410,12 @@ export class DashboardService {
           return {
             title: `Dernière livraison`,
             date: d.send_date.toLocaleString('fr-FR', {
-              weekday: 'short', day: 'numeric', month: 'long', year: 'numeric',
-              hour: '2-digit', minute: '2-digit'
+              weekday: 'short',
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
             }),
             image: "https://www.ennaturesimone.com/wp-content/uploads/2020/08/randonnee-fontainebleau.jpg",
           };
