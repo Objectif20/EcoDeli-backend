@@ -100,12 +100,6 @@ export class DashboardController {
         return this.dashboardService.getClientStats(userId);
     }
 
-    @Get('package-location')
-    @UseGuards(ClientJwtGuard)
-    async getPackageLocation(@Body('user_id') userId: string): Promise<PackageLocation[]> {
-        return this.dashboardService.getPackageLocation(userId);
-    }
-
     @Get('my-next-event')
     @UseGuards(ClientJwtGuard)
     async getMyNextEvent(@Body('user_id') userId: string): Promise<events[]> {

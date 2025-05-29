@@ -155,30 +155,71 @@ export class DashboardService {
         };
     }
 
-    async getMyCarrier(user_id : string) : Promise<Carrier[]> {
-        return [
-            {
-              id: "1",
-              name: "Nathalie P.",
-              rating: 5,
-              status: "going",
-              avatar: "/placeholder.svg?height=40&width=40",
-            },
-            {
-              id: "2",
-              name: "Rémy T.",
-              rating: 3,
-              status: "stop",
-              avatar: "/placeholder.svg?height=40&width=40",
-            },
-            {
-              id: "3",
-              name: "Quentin D.",
-              rating: 4,
-              status: "finished",
-              avatar: "/placeholder.svg?height=40&width=40",
-            },
-        ];
+    async getMyCarrier(user_id: string): Promise<Carrier[]> {
+        const shipments = await this.shipmentRepository.find({
+            where: { user: { user_id } },
+            relations: [
+                'deliveries',
+                'deliveries.delivery_person',
+                'deliveries.delivery_person.user',
+                'deliveries.delivery_person.user.clients',
+                'deliveries.deliveryReviews'
+            ],
+        });
+
+        const deliveries = shipments.flatMap(s => s.deliveries || []);
+
+        const groupedByDeliveryPerson = new Map<string, {
+            deliveryPerson: DeliveryPerson,
+            ratings: number[],
+            lastStatus: string,
+        }>();
+
+        for (const delivery of deliveries) {
+            const deliveryPerson = delivery.delivery_person;
+            if (!deliveryPerson) continue;
+
+            const id = deliveryPerson.delivery_person_id;
+            const existing = groupedByDeliveryPerson.get(id);
+
+            const rating = (delivery.deliveryReviews || []).map(r => r.rating);
+
+            if (existing) {
+                existing.ratings.push(...rating);
+                existing.lastStatus = delivery.status;
+            } else {
+                groupedByDeliveryPerson.set(id, {
+                    deliveryPerson,
+                    ratings: [...rating],
+                    lastStatus: delivery.status,
+                });
+            }
+        }
+
+        const carriers: Carrier[] = await Promise.all(
+            Array.from(groupedByDeliveryPerson.values()).map(async ({ deliveryPerson, ratings, lastStatus }) => {
+                const averageRating = ratings.length > 0
+                    ? Math.round(ratings.reduce((a, b) => a + b, 0) / ratings.length)
+                    : 0;
+
+                const statusMap: Record<string, "going" | "stop" | "finished"> = {
+                    pending: "going",
+                    taken: "going",
+                    going: "going",
+                    finished: "finished",
+                };
+
+                return {
+                    id: deliveryPerson.delivery_person_id,
+                    name: deliveryPerson.user.clients[0].first_name + ' ' + deliveryPerson.user.clients[0].last_name,
+                    rating: averageRating,
+                    status: statusMap[lastStatus] ?? "stop",
+                    avatar: deliveryPerson.user?.profile_picture ? await this.minioService.generateImageUrl('client-images', deliveryPerson.user.profile_picture) : "/placeholder.svg?height=40&width=40",
+                };
+            })
+        );
+
+        return carriers;
     }
 
     async getNumberOfDeliveries(user_id: string): Promise<{ month: string; packages: number }[]> {
@@ -634,79 +675,298 @@ export class DashboardService {
       return upcoming;
     }
 
-    async getNearDeliveries(user_id : string) : Promise<nearDeliveries> {
+    async getNearDeliveries(user_id: string): Promise<nearDeliveries> {
+      const deliveryPerson = await this.deliveryPersonRepository.findOne({
+        where: { user: { user_id } },
+      });
 
-        return {
-            count: 5,
-            period: "Mars",
-        }
-    }
+      if (!deliveryPerson) throw new Error("Livreur non trouvé");
 
-    async getClientStats(user_id : string) : Promise<clientStats[]> {
-        console.log("getClientStats", user_id);
+      const fullAddress = `${deliveryPerson.address}, ${deliveryPerson.city}, ${deliveryPerson.country}`;
 
-        return  [{ month: "january", merchant: 1260, client: 570 }]
-    }
+      console.log("Recherche de livraisons à proximité pour l'adresse :", fullAddress);
 
-    async getPackageLocation(user_id: string): Promise<PackageLocation[]> {
-        console.log("getPackageLocation", user_id)
-      
-        const baseLat = 48.8566
-        const baseLon = 2.3522
-      
-        const locations: PackageLocation[] = Array.from({ length: 15 }).map((_, index) => {
-          const latOffset = (Math.random() - 0.5) * 0.1 
-          const lonOffset = (Math.random() - 0.5) * 0.1
-          return {
-            id: `pkg-${index + 1}`,
-            latitude: baseLat + latOffset,
-            longitude: baseLon + lonOffset,
-            label: `Colis #${index + 1} - Paris`,
-          }
-        })
-      
-        return locations
-    }
+      const geoResponse = await axios.get('https://nominatim.openstreetmap.org/search', {
+        params: {
+          format: 'json',
+          q: fullAddress,
+          limit: 1,
+        },
+        headers: {
+          'User-Agent': 'Ecodeli',
+        },
+      });
 
-    async getMyNextEvent(user_id: string): Promise<events[]> {      
-        const now = new Date()
-      
-        const events: events[] = [
-          {
-            date: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2),
-            label: "Livraison prévue - Colis Express",
-          },
-          {
-            date: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 5),
-            label: "Retrait en point relais",
-          },
-          {
-            date: new Date(now.getFullYear(), now.getMonth() + 1, 1),
-            label: "Nouvelle commande programmée",
-          },
-        ]
-      
-        return Promise.resolve(events)
-    }
+      let latitude: number, longitude: number, radius = 30000;
 
-    async getNextDelivery(user_id : string) : Promise<NextDelivery> {
-        return {
-            origin :  "Paris",
-            destination:"Marseille",
-            date : new Date(),
-            status : "take",
-            trackingNumber : "FR7589214563",
-            carrier : "Chronopost",
-            weight : "3.5 kg",
-            estimatedTime : "2 jours",
-        }
-    }
-
-    async getCompletedDeliveries(user_id : string) : Promise<CompletedService> {
-      return {
-          count: 10,
-          period: "Mars",
+      const location = geoResponse.data?.[0];
+      if (location) {
+        latitude = parseFloat(location.lat);
+        longitude = parseFloat(location.lon);
+      } else {
+        latitude = 48.8566;
+        longitude = 2.3522;
       }
+
+      const nearbyShipments = await this.shipmentRepository
+        .createQueryBuilder('shipment')
+        .leftJoinAndSelect('shipment.deliveries', 'deliveries')
+        .leftJoinAndSelect('shipment.stores', 'stores')
+        .leftJoin('shipment.user', 'user')
+        .leftJoin('user.clients', 'clients')
+        .leftJoin('user.merchant', 'merchant')
+        .where(`
+          (
+            EXISTS (SELECT 1 FROM clients WHERE clients.stripe_customer_id IS NOT NULL)
+            OR merchant.stripe_customer_id IS NOT NULL
+          )
+        `)
+        .andWhere(`
+          ST_DWithin(
+            shipment.departure_location::geography,
+            ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography,
+            :radius
+          )
+        `, {
+          lon: longitude,
+          lat: latitude,
+          radius,
+        })
+        .getMany();
+
+      const canceledDeliveries = await this.deliveryRepository.find({
+        where: { status: 'canceled' },
+        relations: ['shipment'],
+      });
+
+      const availableShipments = nearbyShipments.filter(shipment => {
+        const allStores = shipment.stores;
+        const totalSteps = allStores.map(s => s.step);
+        const shipmentId = shipment.shipment_id;
+
+        const validDeliveries = shipment.deliveries.filter(d => d.status !== 'canceled');
+        const canceled = canceledDeliveries.filter(d => d.shipment.shipment_id === shipmentId);
+
+        const coveredSteps = new Set<number>(validDeliveries.map(d => d.shipment_step));
+
+        for (const canceledDelivery of canceled) {
+          const step = canceledDelivery.shipment_step;
+          if (!coveredSteps.has(step)) {
+            coveredSteps.add(step);
+          }
+        }
+
+        return totalSteps.some(step => !coveredSteps.has(step));
+      });
+
+      const now = new Date().toLocaleString('fr-FR', { month: 'long' });
+
+      return {
+        count: availableShipments.length,
+        period: now.charAt(0).toUpperCase() + now.slice(1),
+      };
+    }
+
+    async getClientStats(user_id: string): Promise<clientStats[]> {
+      const deliveryPerson = await this.deliveryPersonRepository.findOne({
+        where: { user: { user_id } },
+      });
+      if (!deliveryPerson) throw new Error('Livreur non trouvé');
+
+      const deliveries = await this.deliveryRepository.find({
+        where: {
+          delivery_person: { delivery_person_id: deliveryPerson.delivery_person_id },
+          status: 'validated',
+        },
+        relations: ['shipment', 'shipment.user', 'shipment.user.clients', 'shipment.user.merchant'],
+      });
+
+      console.log("Nombre de livraisons trouvées :", deliveries.length);
+
+      let merchantCount = 0;
+      let clientCount = 0;
+
+      for (const delivery of deliveries) {
+        const shipmentUser = delivery.shipment.user;
+        const hasMerchant = shipmentUser.merchant != null;
+        const hasClient = shipmentUser.clients && shipmentUser.clients.length > 0;
+
+        if (hasMerchant) {
+          merchantCount++;
+        } else if (hasClient) {
+          clientCount++;
+        }
+      }
+
+      return [{
+        month: 'total',
+        merchant: merchantCount,
+        client: clientCount,
+      }];
+    }
+
+    async getMyNextEvent(user_id: string): Promise<events[]> {
+      const deliveryPerson = await this.deliveryPersonRepository.findOne({
+        where: { user: { user_id } },
+      });
+
+      if (!deliveryPerson) throw new Error('Livreur non trouvé');
+
+      const deliveries = await this.deliveryRepository.find({
+        where: { delivery_person: { delivery_person_id: deliveryPerson.delivery_person_id } },
+      });
+
+      const events: events[] = deliveries.map(delivery => ({
+        date: delivery.delivery_date ?? delivery.send_date,
+        label: delivery.delivery_id,
+      }));
+
+      events.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+      return events;
+    }
+
+    async getNextDelivery(user_id: string): Promise<NextDelivery> {
+        const deliveryPerson = await this.deliveryPersonRepository.findOne({
+            where: { user: { user_id } },
+        });
+
+        if (!deliveryPerson) {
+            throw new Error('Livreur non trouvé');
+        }
+
+        const now = new Date();
+        const deliveries = await this.deliveryRepository.find({
+            where: { delivery_person: { delivery_person_id: deliveryPerson.delivery_person_id } },
+            relations: [
+                'shipment',
+                'shipment.stores',
+                'shipment.stores.exchangePoint',
+                'shipment.parcels',
+            ],
+        });
+
+        const sortedDeliveries = deliveries
+            .filter(d => d.delivery_date || d.send_date)
+            .sort((a, b) => {
+                const dateA = new Date(a.delivery_date ?? a.send_date).getTime();
+                const dateB = new Date(b.delivery_date ?? b.send_date).getTime();
+                return dateA - dateB;
+            });
+
+        if (!sortedDeliveries.length) {
+            throw new Error('Aucune livraison trouvée.');
+        }
+
+        // On prend d'abord la prochaine à venir, sinon la plus récente passée
+        const upcomingDelivery =
+            sortedDeliveries.find(d => new Date(d.delivery_date ?? d.send_date) >= now)
+            ?? sortedDeliveries[sortedDeliveries.length - 1];
+
+        const shipment = upcomingDelivery.shipment;
+        const storesByStep = (shipment.stores || []).sort((a, b) => a.step - b.step);
+        const step = upcomingDelivery.shipment_step;
+
+        let origin = '';
+        let destination = '';
+        let originCoords: [number, number] = [0, 0];
+        let destinationCoords: [number, number] = [0, 0];
+
+        if (step === 0) {
+            origin = shipment.departure_city ?? '';
+            originCoords = shipment.departure_location?.coordinates?.slice().reverse() ?? [0, 0];
+
+            const point = storesByStep[0]?.exchangePoint;
+            destination = point?.city ?? shipment.arrival_city ?? '';
+            destinationCoords = point?.coordinates?.coordinates?.slice().reverse() ?? shipment.arrival_location?.coordinates?.slice().reverse() ?? [0, 0];
+        } else if (step === 1000) {
+            const lastStore = storesByStep.find(s => s.step === step - 1);
+            const point = lastStore?.exchangePoint;
+
+            origin = point?.city ?? shipment.departure_city ?? '';
+            originCoords = point?.coordinates?.coordinates?.slice().reverse() ?? shipment.departure_location?.coordinates?.slice().reverse() ?? [0, 0];
+
+            destination = shipment.arrival_city ?? '';
+            destinationCoords = shipment.arrival_location?.coordinates?.slice().reverse() ?? [0, 0];
+        } else {
+            const prevStore = storesByStep.find(s => s.step === step - 1);
+            const currStore = storesByStep.find(s => s.step === step);
+
+            const pointA = prevStore?.exchangePoint;
+            const pointB = currStore?.exchangePoint;
+
+            origin = pointA?.city ?? shipment.departure_city ?? '';
+            originCoords = pointA?.coordinates?.coordinates?.slice().reverse() ?? shipment.departure_location?.coordinates?.slice().reverse() ?? [0, 0];
+
+            destination = pointB?.city ?? shipment.arrival_city ?? '';
+            destinationCoords = pointB?.coordinates?.coordinates?.slice().reverse() ?? shipment.arrival_location?.coordinates?.slice().reverse() ?? [0, 0];
+        }
+
+        const totalWeight = (shipment.parcels || []).reduce((sum, p) => sum + Number(p.weight || 0), 0);
+        const deliveryDate = upcomingDelivery.delivery_date ?? upcomingDelivery.send_date;
+
+        const statusMap: Record<string, "wait" | "take" | "going" | "finished"> = {
+            pending: "wait",
+            taken: "take",
+            going: "going",
+            finished: "finished",
+        };
+
+        const mappedStatus = statusMap[upcomingDelivery.status] ?? "wait";
+
+        const distanceInMeters = getDistance(
+            { latitude: originCoords[0], longitude: originCoords[1] },
+            { latitude: destinationCoords[0], longitude: destinationCoords[1] }
+        );
+
+        const speedMps = 80_000 / 3600;
+        const estimatedSeconds = distanceInMeters / speedMps;
+        const estimatedMinutes = Math.round(estimatedSeconds / 60);
+
+        const estimatedTime =
+            estimatedMinutes < 60
+                ? `${estimatedMinutes} min`
+                : `${Math.floor(estimatedMinutes / 60)}h ${estimatedMinutes % 60} min`;
+
+        const nextDelivery: NextDelivery = {
+            origin,
+            destination,
+            date: deliveryDate,
+            status: mappedStatus,
+            trackingNumber: upcomingDelivery.delivery_id ?? '',
+            carrier: "Vous même",
+            weight: `${totalWeight.toFixed(2)} kg`,
+            estimatedTime,
+        };
+
+        return nextDelivery;
+    }
+
+    async getCompletedDeliveries(user_id: string): Promise<CompletedService> {
+        const deliveryPerson = await this.deliveryPersonRepository.findOne({
+            where: { user: { user_id } },
+        });
+
+        if (!deliveryPerson) {
+            throw new Error('Livreur non trouvé');
+        }
+
+        const now = new Date();
+        const startOfYear = new Date(now.getFullYear(), 0, 1);
+        const endOfYear = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+
+        const count = await this.deliveryRepository.count({
+            where: {
+                delivery_person: { delivery_person_id: deliveryPerson.delivery_person_id },
+                status: 'validated',
+                delivery_date: Between(startOfYear, endOfYear),
+            },
+        });
+
+        return {
+            count,
+            period: now.getFullYear().toString(),
+        };
     }
 }
 
