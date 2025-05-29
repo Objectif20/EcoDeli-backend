@@ -11,11 +11,12 @@ import { Shipment } from 'src/common/entities/shipment.entity';
 import { Providers } from 'src/common/entities/provider.entity';
 import { Client } from 'minio';
 import { Appointments } from 'src/common/entities/appointments.entity';
+import { TransferProvider } from 'src/common/entities/transfers_provider.entity';
 
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Delivery, DeliveryPerson, Users, Shipment, Providers, Client, Appointments]),
+        TypeOrmModule.forFeature([Delivery, DeliveryPerson, Users, Shipment, Providers, Client, Appointments, TransferProvider]),
         JwtModule.register({}),
         SharedModule,
     ],

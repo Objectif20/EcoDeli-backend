@@ -12,6 +12,7 @@ import { Inject } from "@nestjs/common";
 import { Client } from "minio";
 import { Appointments } from "src/common/entities/appointments.entity";
 import { MinioService } from "src/common/services/file/minio.service";
+import { TransferProvider } from "src/common/entities/transfers_provider.entity";
 
 export class DashboardService {
 
@@ -26,6 +27,8 @@ export class DashboardService {
     private readonly shipmentRepository: Repository<Shipment>,
     @InjectRepository(Providers)
     private readonly providersRepository: Repository<Providers>,
+    @InjectRepository(TransferProvider)
+    private readonly transferProviderRepository: Repository<TransferProvider>,
     @InjectRepository(Client)
     private readonly clientRepository: Repository<Client>,
     @InjectRepository(Appointments)
@@ -153,7 +156,6 @@ export class DashboardService {
     }
 
     async getMyCarrier(user_id : string) : Promise<Carrier[]> {
-        console.log("getMyCarrier", user_id);
         return [
             {
               id: "1",
@@ -259,7 +261,6 @@ export class DashboardService {
     }
 
     async getPackages(user_id: string): Promise<{ size: string; packages: number }[]> {
-      console.log("getPackages", user_id);
 
       const shipments = await this.shipmentRepository.find({
         where: { user: { user_id }, }, 
@@ -429,7 +430,6 @@ export class DashboardService {
     }
 
     async getCurrentBalance(user_id: string): Promise<{ amount: number; currency: string }> {
-      console.log("getCurrentBalance", user_id);
 
       const deliveryPerson = await this.deliveryPersonRepository.findOne({
         where: { user: { user_id } },
@@ -460,7 +460,6 @@ export class DashboardService {
     }
 
     async getCompletedService(user_id: string): Promise<CompletedService> {
-      console.log("getCompletedService", user_id);
 
       const provider = await this.providersRepository.findOne({
         where: { user: { user_id } },
@@ -491,7 +490,6 @@ export class DashboardService {
     }
 
     async getAverageRating(user_id: string): Promise<AverageRating> {
-      console.log("getAverageRating", user_id);
 
       const provider = await this.providersRepository.findOne({
         where: { user: { user_id } },
@@ -531,84 +529,113 @@ export class DashboardService {
       };
     }
 
-    async getRevenueData(user_id : string) : Promise<revenueData[]> {
-        console.log("getRevenueData", user_id);
-        return [
-            { month: "Jan", particuliers: 100 },
-            { month: "Feb", particuliers: 200 },
-            { month: "Mar", particuliers: 300 },
-            { month: "Apr", particuliers: 400 },
-            { month: "May", particuliers: 500 },
-            { month: "Jun", particuliers: 600 },
-            { month: "Jul", particuliers: 700 },
-            { month: "Aug", particuliers: 800 },
-            { month: "Sep", particuliers: 900 },
-            { month: "Oct", particuliers: 1000 },
-            { month: "Nov", particuliers: 1100 },
-            { month: "Dec", particuliers: 1200 },
-        ];
+    async getRevenueData(user_id: string): Promise<revenueData[]> {
+      const provider = await this.providersRepository.findOne({
+        where: { user: { user_id } },
+      });
+
+      if (!provider) throw new Error("Provider not found");
+
+      const now = new Date();
+      const oneYearAgo = new Date(now);
+      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+      const transfers = await this.transferProviderRepository.find({
+        where: {
+          provider: { provider_id: provider.provider_id },
+          date: MoreThanOrEqual(oneYearAgo),
+        },
+      });
+
+      const monthNames = [
+        "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", 
+        "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
+      ];
+
+      const monthMap: { [key: string]: number } = {};
+
+      for (const transfer of transfers) {
+        const date = new Date(transfer.date);
+        const monthLabel = monthNames[date.getMonth()];
+        if (!monthMap[monthLabel]) {
+          monthMap[monthLabel] = 0;
+        }
+        monthMap[monthLabel] += Number(transfer.amount);
+      }
+
+      const result: revenueData[] = [];
+
+      for (let i = 0; i < 12; i++) {
+        const date = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
+        const monthLabel = monthNames[date.getMonth()];
+        const amount = monthMap[monthLabel];
+        if (amount !== undefined) {
+          result.push({ month: monthLabel, particuliers: amount });
+        }
+      }
+
+      const currentMonthName = monthNames[now.getMonth()];
+      if (!result.find(item => item.month === currentMonthName)) {
+        result.push({
+          month: `${currentMonthName} (en cours)`,
+          particuliers: 0,
+        });
+      }
+
+      return result;
     }
 
-    async getUpcomingServices(user_id : string) : Promise<upcomingService[]> {
+    async getUpcomingServices(user_id: string): Promise<upcomingService[]> {
+      const provider = await this.providersRepository.findOne({
+        where: { user: { user_id } },
+      });
 
-        console.log("getUpcomingServices", user_id);
-        return [
-            {
-              id: "1",
-              client: {
-                name: "Nathalie P.",
-                avatar: "/placeholder.svg?height=40&width=40",
-                initials: "NP",
-              },
-              service: "Promenade de votre chien",
-              date: "12/03/2025",
-            },
-            {
-              id: "2",
-              client: {
-                name: "Thomas R.",
-                avatar: "/placeholder.svg?height=40&width=40",
-                initials: "TR",
-              },
-              service: "Livraison de colis",
-              date: "14/03/2025",
-            },
-            {
-              id: "3",
-              client: {
-                name: "Sophie M.",
-                avatar: "/placeholder.svg?height=40&width=40",
-                initials: "SM",
-              },
-              service: "Courses alimentaires",
-              date: "15/03/2025",
-            },
-            {
-              id: "4",
-              client: {
-                name: "Jean D.",
-                avatar: "/placeholder.svg?height=40&width=40",
-                initials: "JD",
-              },
-              service: "Promenade de votre chien",
-              date: "18/03/2025",
-            },
-            {
-              id: "5",
-              client: {
-                name: "Marie L.",
-                avatar: "/placeholder.svg?height=40&width=40",
-                initials: "ML",
-              },
-              service: "Livraison de repas",
-              date: "20/03/2025",
-            },
-          ]
+      if (!provider) {
+        throw new Error('Provider not found');
+      }
+
+      const now = new Date();
+
+      const appointments = await this.appointmentRepository.find({
+        where: {
+          provider: { provider_id: provider.provider_id },
+          service_date: MoreThan(now),
+        },
+        relations: ['client', 'service', 'client.user'],
+        order: { service_date: 'ASC' },
+        take: 7,
+      });
+
+      const upcoming: upcomingService[] = [];
+
+      for (const appointment of appointments) {
+        const client = appointment.client;
+        const service = appointment.service;
+
+        if (!client || !service) continue;
+
+        const initials = `${client.first_name?.[0] ?? ''}${client.last_name?.[0] ?? ''}`.toUpperCase();
+        const clientName = `${client.first_name} ${client.last_name ?? ''}`;
+
+        upcoming.push({
+          id: appointment.appointment_id,
+          client: {
+            name: clientName,
+            avatar: client.user.profile_picture
+              ? await this.minioService.generateImageUrl('client-images', client.user.profile_picture)
+              : "/placeholder.svg?height=40&width=40",
+            initials,
+          },
+          service: service.name,
+          date: appointment.service_date.toLocaleDateString('fr-FR'),
+        });
+      }
+
+      return upcoming;
     }
 
     async getNearDeliveries(user_id : string) : Promise<nearDeliveries> {
 
-        console.log("getNearDeliveries", user_id);
         return {
             count: 5,
             period: "Mars",
@@ -641,9 +668,7 @@ export class DashboardService {
         return locations
     }
 
-    async getMyNextEvent(user_id: string): Promise<events[]> {
-        console.log("getMyNextEvent", user_id)
-      
+    async getMyNextEvent(user_id: string): Promise<events[]> {      
         const now = new Date()
       
         const events: events[] = [
@@ -665,7 +690,6 @@ export class DashboardService {
     }
 
     async getNextDelivery(user_id : string) : Promise<NextDelivery> {
-        console.log("getNextDelivery", user_id);
         return {
             origin :  "Paris",
             destination:"Marseille",
@@ -679,8 +703,6 @@ export class DashboardService {
     }
 
     async getCompletedDeliveries(user_id : string) : Promise<CompletedService> {
-
-      console.log("getCompletedDeliveries", user_id);
       return {
           count: 10,
           period: "Mars",
