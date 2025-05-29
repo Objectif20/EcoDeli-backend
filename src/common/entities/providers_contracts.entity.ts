@@ -18,6 +18,9 @@ export class ProviderContracts {
     @Column("text")
     contract_url : string;
 
+    @Column({ type: 'timestamp' })
+    created_at: Date;
+
     @ManyToOne(() => Providers, provider => provider.contracts)
     @JoinColumn({ name: "provider_id" })
     provider: Providers;

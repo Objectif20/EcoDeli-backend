@@ -216,6 +216,19 @@ export class RegisterService {
           throw new BadRequestException('Erreur lors de l\'attachement du paymentMethod au commerçant Stripe', error);
         }
       }
+
+      const contratUrl = await this.contractMerchant({
+        company_name,
+        siret,
+        address,
+        postal_code,
+        city,
+        country,
+        phone,
+        last_name: merchantDto.lastName,
+        first_name: merchantDto.firstName,
+        user: savedUser,
+      });
     
       const newMerchant = this.merchantRepository.create({
         company_name,
@@ -226,6 +239,8 @@ export class RegisterService {
         city,
         country,
         phone,
+        first_name: merchantDto.firstName,
+        last_name: merchantDto.lastName,
         stripe_customer_id: stripeCustomerId ?? null,
         user: savedUser,
       });
@@ -345,6 +360,7 @@ export class RegisterService {
         address: savedProvider.address,
         contract_url: contractUrl,
         provider: savedProvider,
+        created_at: new Date(),
       });
 
       await this.providerContractsRepository.save(providerContract);
@@ -375,6 +391,55 @@ export class RegisterService {
       }
 
       return { message: 'Fournisseur enregistré avec succès' };
+    }
+
+    async contractMerchant(merchant: any, imageBase64?: string): Promise<string> {
+      const doc = new PDFDocument({ margin: 50 });
+      const fileName = `contract-${merchant.merchant_id}.pdf`;
+      const filePath = `merchant/${merchant.siret}/contracts/${fileName}`;
+
+      doc.fontSize(20).text('Contrat de Services Marchand', { align: 'center' });
+      doc.moveDown();
+
+      doc.fontSize(14).text(`Entreprise: ${merchant.company_name}`);
+      doc.fontSize(14).text(`SIRET: ${merchant.siret}`);
+      doc.fontSize(14).text(`Adresse: ${merchant.address}, ${merchant.postal_code} ${merchant.city}, ${merchant.country}`);
+      doc.moveDown();
+
+      doc.fontSize(14).text(`Contact: ${merchant.last_name} ${merchant.first_name}`);
+      doc.moveDown();
+
+      doc.fontSize(14).text('Le marchand accepte les conditions générales d’utilisation de la plateforme.');
+      doc.moveDown();
+
+      if (imageBase64) {
+        const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+        const imageBuffer = Buffer.from(base64Data, 'base64');
+        doc.image(imageBuffer, {
+          fit: [100, 100],
+          align: 'right',
+          valign: 'bottom'
+        });
+      }
+
+      const now = new Date();
+      const options = { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" } as Intl.DateTimeFormatOptions;
+      const timestamp = now.toLocaleDateString('fr-FR', options);
+      doc.fontSize(12).text(`Signé électroniquement le ${timestamp}`, { align: 'right' });
+
+      const buffers: Buffer[] = [];
+      doc.on('data', buffers.push.bind(buffers));
+      new Promise<string>((resolve) => {
+        doc.on('end', async () => {
+          const pdfBuffer = Buffer.concat(buffers);
+          console.log('Uploading contract to Minio ' + filePath);
+          await this.minioService.uploadBufferToBucket('client-documents', filePath, pdfBuffer);
+          resolve(filePath);
+        });
+      });
+
+      doc.end();
+      return filePath;
     }
 
   
@@ -470,6 +535,7 @@ export class RegisterService {
         name: 'Contrat de profil livreur',
         delivery_person: savedDeliveryPerson,
         document_url: contractUrl,
+        contact : true,
       });
     
       await this.deliveryPersonDocumentRepository.save(deliveryPersonContract);

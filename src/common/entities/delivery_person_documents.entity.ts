@@ -21,4 +21,7 @@ export class DeliveryPersonDocument {
     @ManyToOne(() => DeliveryPerson, deliveryPerson => deliveryPerson.delivery_person_id, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'delivery_person_id' })
     delivery_person: DeliveryPerson;
+
+    @Column({type : 'boolean', default: false})
+    contact : boolean;
 }
