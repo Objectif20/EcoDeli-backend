@@ -7,6 +7,8 @@ import { BoxService } from "src/common/services/dataset/boxes.service";
 import { Repository } from "typeorm";
 import * as nodemailer from 'nodemailer';
 import { ExchangePoint } from "src/common/entities/exchange_points.entity";
+import { Trip } from "src/common/entities/trips.entity";
+import { Users } from "src/common/entities/user.entity";
 
 @Injectable()
 export class DeliveryScheduleService {
@@ -16,6 +18,8 @@ export class DeliveryScheduleService {
         private readonly deliveryRepository: Repository<Delivery>,
         @InjectRepository(ExchangePoint)
         private readonly exchangePointRepository: Repository<ExchangePoint>,
+        @InjectRepository(Trip)
+        private readonly tripRepo: Repository<Trip>,
         private readonly boxService: BoxService,
         @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
         
@@ -142,41 +146,81 @@ export class DeliveryScheduleService {
             }
         }
 
+        @Cron('0 20 * * *')
+        async notifyMatchingTrips() {
+        const deliveries = await this.deliveryRepository
+            .createQueryBuilder('delivery')
+            .leftJoinAndSelect('delivery.shipment', 'shipment')
+            .leftJoinAndSelect('shipment.stores', 'store')
+            .leftJoinAndSelect('store.exchangePoint', 'exchangePoint')
+            .where('delivery.send_date >= CURRENT_DATE')
+            .andWhere('delivery.delivery_person_id IS NULL')
+            .andWhere('delivery.shipment_step BETWEEN 1 AND 9999')
+            .andWhere('exchangePoint.coordinates IS NOT NULL')
+            .getMany();
 
-        @Cron("0 19 * * *")
-        async test() {
-            const closestBox = this.boxService.findNearestBox(48.423173, 2.753979);
+        if (!deliveries.length) return;
 
-            const lat = closestBox?.lat || 0;
-            const lon = closestBox?.lon || 0;
+        const trips = await this.tripRepo
+            .createQueryBuilder('trip')
+            .leftJoinAndSelect('trip.delivery_person', 'delivery_person')
+            .leftJoinAndSelect('delivery_person.user', 'user')
+            .where('(trip.date IS NULL OR trip.date >= CURRENT_DATE OR trip.weekday IS NOT NULL)')
+            .getMany();
 
-            let display_name: string | undefined;
+        if (!trips.length) return;
 
+        const matchesByUser: Map<Users['user_id'], { user: Users; deliveries: Delivery[] }> = new Map();
 
-            try {
-                const response = await axios.get('https://nominatim.openstreetmap.org/reverse', {
-                    params: {
-                        format: 'json',
-                        lat,
-                        lon,
-                    },
-                    headers: {
-                        'User-Agent': 'EcoDeli/1.0 (contact.ecodeli@gmail.com)',
-                    },
-                });
+        for (const delivery of deliveries) {
+            const relevantStore = delivery.shipment?.stores?.find(store => store.step === delivery.shipment_step);
+            const deliveryCoords = relevantStore?.exchangePoint?.coordinates;
 
-                const data = response.data;
+            if (!deliveryCoords) continue;
 
-                if (data) {
-                    display_name = data.display_name;
+            for (const trip of trips) {
+            const tripCoords = trip.departure_location;
+            const radiusKm = trip.tolerated_radius ?? 0;
+
+            if (this.isWithinRadius(deliveryCoords, tripCoords, radiusKm)) {
+                const user = trip.delivery_person.user;
+                if (!user?.email) continue;
+
+                if (!matchesByUser.has(user.user_id)) {
+                matchesByUser.set(user.user_id, { user, deliveries: [] });
                 }
 
-                console.log('Adresse récupérée depuis Nominatim:', display_name);
-            } catch (error) {
-                console.error('Erreur lors de la récupération de l’adresse depuis Nominatim:', error);
+                matchesByUser.get(user.user_id)!.deliveries.push(delivery);
             }
+            }
+        }
 
-            console.log('Closest box:', closestBox);      
+        for (const { user, deliveries } of matchesByUser.values()) {
+            console.log(`Matching deliveries for user ${user.email}:`, deliveries);
+        }
+        }
+
+        private isWithinRadius(
+            pointA: { x: number; y: number },
+            pointB: { x: number; y: number },
+            radiusKm: number,
+        ): boolean {
+            const toRad = (value: number) => (value * Math.PI) / 180;
+            const R = 6371;
+
+            const dLat = toRad(pointB.y - pointA.y);
+            const dLon = toRad(pointB.x - pointA.x);
+            const lat1 = toRad(pointA.y);
+            const lat2 = toRad(pointB.y);
+
+            const a =
+            Math.sin(dLat / 2) ** 2 +
+            Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+            const distance = R * c;
+            return distance <= radiusKm;
         }
 
 }
