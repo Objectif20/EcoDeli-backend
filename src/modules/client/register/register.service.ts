@@ -626,5 +626,25 @@ export class RegisterService {
         }));
     }
 
+
+    async isEmailUserUnique(email: string): Promise<boolean> {
+        const user = await this.userRepository.findOne({ where: { email } });
+        return !user;
+    }
+
+    async isSiretUnique(siret: string): Promise<boolean> {
+      const provider = await this.providersRepository.findOne({ where: { siret } });
+      const merchant = await this.merchantRepository.findOne({ where: { siret } });
+      const deliveryPerson = await this.deliveryPersonRepository.findOne({ where: { license: siret } });
+      return !provider && !merchant && !deliveryPerson;
+    }
+
+    async emailDeliveryPersonExists(email: string): Promise<boolean> {
+      const deliveryPerson = await this.deliveryPersonRepository.findOne({ where: { professional_email: email } });
+      return !!deliveryPerson;
+    }
+
+
+
 }
 
