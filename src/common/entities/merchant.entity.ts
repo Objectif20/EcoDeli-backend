@@ -54,4 +54,7 @@ export class Merchant {
 
     @Column({ type: 'varchar', length: 255, nullable: false })
     first_name: string;
+
+    @Column({type:"text" , nullable: true})
+    contract_url?: string | null;
 }
