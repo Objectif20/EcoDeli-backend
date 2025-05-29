@@ -4,109 +4,92 @@ import { Category } from "src/common/entities/category.entity";
 import { Repository } from "typeorm";
 import { CreateVehicleCategoryDto, UpdateVehicleCategoryDto } from "./dto/vehicles.dto";
 import { NotFoundException } from "@nestjs/common";
+import { DeliveryPerson } from "src/common/entities/delivery_persons.entity";
+import { MinioService } from "src/common/services/file/minio.service";
+import { Providers } from "src/common/entities/provider.entity";
 
 
 export class GeneralService {
 
   constructor(
     @InjectRepository(Category)
-    private readonly categoryRepository: Repository<Category>
+    private readonly categoryRepository: Repository<Category>,
+    @InjectRepository(DeliveryPerson)
+    private readonly deliveryPersonRepository: Repository<DeliveryPerson>,
+    @InjectRepository(Providers)
+    private readonly providerRepository: Repository<Providers>,
+    private readonly minioService : MinioService
   ) { }
 
-    async getContracts(type: string, page: number = 1, q : string = '') : Promise<{data : Contracts[], total: number}> {
-        
-        console.log(type, page, q);
+    async getContracts(type: string, page: number = 1, q: string = ''): Promise<{ data: Contracts[], total: number }> {
+      const pageSize = 10;
 
-        return {
-          data : [
-            {
-              id: "deliveryman-1",
-              nom: "Dupont",
-              prenom: "Jean",
-              contratUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-              dateContrat: "2023-01-15",
-            },
-            {
-              id: "deliveryman-2",
-              nom: "Martin",
-              prenom: "Marie",
-              contratUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-              dateContrat: "2023-02-20",
-            },
-            {
-              id: "deliveryman-3",
-              nom: "Bernard",
-              prenom: "Luc",
-              contratUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-              dateContrat: "2023-03-10",
-            },
-            {
-              id: "deliveryman-4",
-              nom: "Dubois",
-              prenom: "Sophie",
-              contratUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-              dateContrat: "2023-04-05",
-            },
-            {
-              id: "deliveryman-5",
-              nom: "Thomas",
-              prenom: "Pierre",
-              contratUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-              dateContrat: "2023-05-12",
-            },
-            {
-              id: "deliveryman-6",
-              nom: "Robert",
-              prenom: "Claire",
-              contratUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-              dateContrat: "2023-06-18",
-            },
-            {
-              id: "deliveryman-7",
-              nom: "Richard",
-              prenom: "Paul",
-              contratUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-              dateContrat: "2023-07-22",
-            },
-            {
-              id: "deliveryman-8",
-              nom: "Petit",
-              prenom: "Julie",
-              contratUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-              dateContrat: "2023-08-30",
-            },
-            {
-              id: "deliveryman-9",
-              nom: "Durand",
-              prenom: "Nicolas",
-              contratUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-              dateContrat: "2023-09-14",
-            },
-            {
-              id: "deliveryman-10",
-              nom: "Leroy",
-              prenom: "Camille",
-              contratUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-              dateContrat: "2023-10-25",
-            },
-            {
-              id: "deliveryman-11",
-              nom: "Moreau",
-              prenom: "Hugo",
-              contratUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-              dateContrat: "2023-11-08",
-            },
-            {
-              id: "deliveryman-12",
-              nom: "Simon",
-              prenom: "Emma",
-              contratUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-              dateContrat: "2023-12-19",
-            },
-          ], 
-          total : 12
+      if (type === 'deliveryman') {
+        const [deliveryPersons, total] = await this.deliveryPersonRepository
+          .createQueryBuilder('dp')
+          .leftJoinAndSelect('dp.user', 'user')
+          .leftJoinAndSelect('user.clients', 'client')
+          .leftJoinAndSelect('dp.DeliveryPersonDocuments', 'doc', 'doc.contact = :contact', { contact: true })
+          .where(q ? `(client.last_name ILIKE :q OR client.first_name ILIKE :q)` : '1=1', { q: `%${q}%` })
+          .skip((page - 1) * pageSize)
+          .take(pageSize)
+          .getManyAndCount();
+
+        const contracts: Contracts[] = [];
+
+        for (const dp of deliveryPersons) {
+          if (!dp.DeliveryPersonDocuments || dp.DeliveryPersonDocuments.length === 0) continue;
+
+          const client = dp.user?.clients?.[0];
+          const nom = client?.last_name ?? '';
+          const prenom = client?.first_name ?? '';
+
+          for (const doc of dp.DeliveryPersonDocuments) {
+            const contratUrl = (await this.minioService.generateImageUrl('client-documents', doc.document_url)) || '';
+            contracts.push({
+              id: dp.delivery_person_id,
+              nom,
+              prenom,
+              contratUrl,
+              dateContrat: doc.submission_date ? doc.submission_date.toISOString() : '',
+            });
+          }
         }
 
+        return { data: contracts, total };
+      }
+      if (type === 'provider') {
+        const [providers, total] = await this.providerRepository
+          .createQueryBuilder('p')
+          .leftJoinAndSelect('p.contracts', 'contract')
+          .where(q ? `(p.last_name ILIKE :q OR p.first_name ILIKE :q OR p.company_name ILIKE :q)` : '1=1', { q: `%${q}%` })
+          .skip((page - 1) * pageSize)
+          .take(pageSize)
+          .getManyAndCount();
+
+          console.log(providers);
+
+        const contracts: Contracts[] = [];
+
+        for (const p of providers) {
+          const nom = p.last_name ?? '';
+          const prenom = p.first_name ?? '';
+
+          for (const contract of p.contracts) {
+            const contratUrl = (await this.minioService.generateImageUrl('provider-documents', contract.contract_url)) || '';
+            contracts.push({
+              id: p.provider_id,
+              nom,
+              prenom,
+              contratUrl,
+              dateContrat: contract.created_at ? contract.created_at.toISOString() : '',
+            });
+          }
+        }
+        return { data: contracts, total };
+    }
+
+      return { data: [], total: 0 };
     }
 
     async getVehicleCategories(): Promise<{ data: VehicleCategory[]; total: number }> {

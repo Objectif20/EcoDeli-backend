@@ -251,12 +251,6 @@ export class ClientProfileController {
     }
   }
 
-  @Get("myDocuments")
-  @UseGuards(ClientJwtGuard)
-  async getDocuments() {
-    return this.profileService.getMyProfileDocuments();
-  }
-
   @Post('newPassword')
   @UseGuards(ClientJwtGuard)
   @ApiOperation({

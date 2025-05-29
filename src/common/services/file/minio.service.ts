@@ -153,4 +153,18 @@ export class MinioService {
       return false;
     }
   }
+
+  async fileExistsInBucket(bucketName: string, filePath: string): Promise<boolean> {
+  try {
+    const minioClient: Client = await this.minioConfigService.createMinioClient();
+    await minioClient.statObject(bucketName, filePath);
+    return true;
+  } catch (error: any) {
+    if (error.code === 'NotFound' || error.message.includes('not found')) {
+      return false;
+    }
+    console.error(`Erreur lors de la vérification de l'existence du fichier:`, error);
+    throw error;
+  }
+}
 }

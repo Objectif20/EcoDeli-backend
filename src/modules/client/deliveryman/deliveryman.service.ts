@@ -232,28 +232,25 @@ export class DeliveryManService {
 
     if (!deliveryPerson.validated) {
       return false;
-    }
-
-    // On ajoutera plus tard pour checker si les véhicules du livreur sont cohérents avec les trajets possibles
+    }    
 
     return true;
   }
 
-  async isDeliveryPersonIsAdmissibleForThisDelivery(user_id : string, deliveryId : string) : Promise<boolean> {
-
-    if (!user_id || !deliveryId) {
-      console.log("user_id or deliveryId is missing");
+  async isDeliveryPersonIsAdmissibleForThisDelivery(user_id: string, shipmentId: string): Promise<boolean> {
+    if (!user_id || !shipmentId) {
+      console.log("user_id or shipmentId is missing");
       return false;
     }
 
-    const deliveryPerson = await this.deliveryPersonRepository.findOne({ where: { user: { user_id: user_id } } });
+    const deliveryPerson = await this.deliveryPersonRepository.findOne({ where: { user: { user_id } } });
     if (!deliveryPerson) {
       console.log("Delivery person not found");
       return false;
     }
 
-    const shipment = await this.shipmentRepository.findOne({ 
-      where: { shipment_id: deliveryId },
+    const shipment = await this.shipmentRepository.findOne({
+      where: { shipment_id: shipmentId },
       relations: ['deliveries', 'stores', 'stores.exchangePoint', 'user'],
     });
     if (!shipment) {
@@ -261,20 +258,60 @@ export class DeliveryManService {
       return false;
     }
 
-    if (user_id == shipment.user.user_id) {
+    if (user_id === shipment.user.user_id) {
       console.log("User is the same as the shipment user");
       return false;
     }
 
-    if (deliveryPerson.validated == false) {
+    if (!deliveryPerson.validated) {
       console.log("Delivery person is not validated");
       return false;
     }
 
-    // Ajout à l'avenir d'un conditionnement vis-à-vis des véhicules du livreur et de la livraison
+    const shipmentWeight = shipment.weight || 0;
+    const shipmentVolume = shipment.volume || 0;
 
+    const vehicles = await this.vehicleRepository.find({ where: { deliveryPerson } });
+
+    if (!vehicles || vehicles.length === 0) {
+      console.log("No vehicle found for the delivery person");
+      return false;
+    }
+
+    let isAdmissibleVehicle = false;
+
+    for (const vehicle of vehicles) {
+      if (!vehicle.validated) continue;
+
+      const vehicleCategory = vehicle.category;
+      if (!vehicleCategory) {
+        console.log("Vehicle category not found for vehicle", vehicle.vehicle_id);
+        continue;
+      }
+
+      const category = await this.categoryRepository.findOne({ where: { category_id: vehicleCategory.category_id } });
+      if (!category) {
+        console.log("Category not found for vehicle", vehicle.vehicle_id);
+        continue;
+      }
+
+      // Vérification avec marge de sécurité de 25 %
+      const maxAllowedWeight = category.max_weight * 0.75;
+      const maxAllowedVolume = Number(category.max_dimension) * 0.75;
+
+      if (maxAllowedWeight >= shipmentWeight && maxAllowedVolume >= shipmentVolume) {
+        isAdmissibleVehicle = true;
+        break;
+      }
+    }
+
+    if (!isAdmissibleVehicle) {
+      console.log("No admissible vehicle found with margin");
+      return false;
+    }
 
     return true;
   }
+
 
 }

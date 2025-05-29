@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req, UploadedFiles, UseGuards, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, Req, UploadedFiles, UseGuards, UseInterceptors } from "@nestjs/common";
 import { ApiOperation, ApiResponse, ApiTags, ApiBody, ApiConsumes } from "@nestjs/swagger";
 import { ClientProfile } from "src/common/decorator/client-profile.decorator";
 import { ClientProfileGuard } from "src/common/guards/client-profile.guard";
@@ -117,6 +117,30 @@ export class RegisterController {
     @Get("language")
     async getLanguage() : Promise<{ language_id: string, language_name: string, iso_code: string, active: boolean }[]> {
         return this.registerService.getLanguage();
+    }
+
+    @Get("email")
+    async checkEmail(
+      @Query('email') email: string
+    ) {
+      const decodedEmail = decodeURIComponent(email);
+      return this.registerService.isEmailUserUnique(decodedEmail);
+    }
+
+    @Get("siret")
+    async checkSiret(
+      @Query('siret') siret: string
+    ) {
+      const decodedSiret = decodeURIComponent(siret);
+      return this.registerService.isSiretUnique(decodedSiret);
+    }
+
+    @Get("emailDelivery")
+    async checkEmailDelivery(
+      @Query('email') email: string
+    ) {
+      const decodedEmail = decodeURIComponent(email);
+      return this.registerService.emailDeliveryPersonExists(decodedEmail);
     }
     
 }

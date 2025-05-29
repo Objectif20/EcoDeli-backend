@@ -39,7 +39,7 @@ export class Providers {
     @Column({ length: 100 })
     country: string;
 
-    @Column({ unique: true, length: 20 })
+    @Column({ length: 20 })
     phone: string;
 
     @Column({ default: false })

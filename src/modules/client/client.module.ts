@@ -12,6 +12,7 @@ import { MessagesModule } from './message/message.module';
 import { PlanningModule } from './planning/planning.module';
 import { DeliverymanModule } from './deliveryman/deliveryman.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { DocumentModule } from './document/document.module';
 
 @Module({
     imports: [
@@ -27,7 +28,8 @@ import { DashboardModule } from './dashboard/dashboard.module';
         MessagesModule,
         PlanningModule,
         DeliverymanModule,
-        DashboardModule
+        DashboardModule,
+        DocumentModule
     ],
     providers: [],
 })

@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like } from 'typeorm';
+import { Repository, Like, In } from 'typeorm';
 
 import { ServicesList } from 'src/common/entities/services_list.entity';
 import { ServiceImage } from 'src/common/entities/services_image.entity';
@@ -18,6 +18,11 @@ import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { ProviderCommission } from 'src/common/entities/provider_commissions.entity';
 import { Users } from 'src/common/entities/user.entity';
+import { StripeService } from 'src/common/services/stripe/stripe.service';
+import { FutureAppointmentProvider } from './type';
+import { PdfService } from 'src/common/services/pdf/pdf.service';
+import * as nodemailer from 'nodemailer';
+import { Readable } from 'stream';
 
 @Injectable()
 export class ServiceService {
@@ -37,7 +42,11 @@ export class ServiceService {
     private keywordListRepo: Repository<ProviderKeywordsList>,
     @InjectRepository(ProviderKeywords)
     private keywordRepo: Repository<ProviderKeywords>,
-    private readonly minioService: MinioService
+    private readonly minioService: MinioService,
+    private readonly stripeService: StripeService, 
+    private readonly pdfService : PdfService,
+    @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
+    
   ) {}
 
   async createService(
@@ -655,7 +664,7 @@ export class ServiceService {
     }
   
     const appointments = await this.appointmentRepo.find({
-      where: { provider: { provider_id: provider.provider_id } },
+      where: { provider: { provider_id: provider.provider_id }, status: In(['completed', 'cancelled']) },
       relations: ['client', 'client.user', 'service', 'review_presta'],
       order: { service_date: 'DESC' },
     });
@@ -673,7 +682,7 @@ export class ServiceService {
             ? await this.minioService.generateImageUrl('client-images', user.profile_picture)
             : null,
           date: appointment.service_date.toISOString().split('T')[0],
-          time: appointment.service_date.toISOString().split('T')[1].slice(0,5), // HH:MM
+          time: appointment.service_date.toISOString().split('T')[1].slice(0,5), 
           serviceName: service.name,
           rating: appointment.review_presta ? appointment.review_presta.rating : null,
         };
@@ -706,7 +715,7 @@ export class ServiceService {
     }
   
     const appointments = await this.appointmentRepo.find({
-      where: { client: { client_id: client.client_id } },
+      where: { client: { client_id: client.client_id }, status: In(['completed', 'cancelled']) },
       relations: ['provider', 'provider.user', 'service', 'review_presta'],
       order: { service_date: 'DESC' },
     });
@@ -751,6 +760,173 @@ export class ServiceService {
     };
   }
 
-  
+  async startAppointment(appointment_id: string, user_id: string, code : string) {
+
+    const appointment = await this.appointmentRepo.findOne({
+      where: { appointment_id },
+      relations: ['service', 'provider', 'client'],
+    });
+
+    if (!appointment) {
+      throw new NotFoundException('Rendez-vous non trouvé');
+    }
+
+    const provider = await this.providerRepo.findOne({
+      where: { user: { user_id } },
+    });
+
+    if (!provider || provider.provider_id !== appointment.provider.provider_id) {
+      throw new NotFoundException('Prestataire non autorisé à démarrer ce rendez-vous');
+    }
+
+    if (appointment.status !== 'pending') {
+      throw new Error('Le rendez-vous n\'est pas dans un état valide pour démarrer');
+    }
+
+    if (code == appointment.code) {
+      appointment.status = 'in_progress';
+
+      const client = await this.clientRepo.findOne({
+        where: { user: { user_id: appointment.client.user.user_id } },
+        relations: ['user'],
+      });
+
+      if (!client) {
+        throw new NotFoundException('Client non trouvé');
+      }
+
+      if (!client.stripe_customer_id) {
+        throw new NotFoundException('Client n\'a pas de compte Stripe associé');
+      }
+
+      const price = Math.round(appointment.amount * 1.015 + 0.25);
+
+      const { stripePaymentIntentId } = await this.stripeService.chargeCustomer(
+          client.stripe_customer_id,
+          Math.round(price * 100),
+          `Prélèvement pour ${appointment.service.name}`,
+      );
+
+      appointment.stripe_payment_id = stripePaymentIntentId;
+
+      const pdfBuffer = await this.pdfService.generateAppointmentInvoicePdf({
+          appointmentId: appointment.appointment_id,
+          appointmentDate: appointment.service_date.toISOString().split('T')[0],
+          appointmentTime: appointment.service_date.toISOString().split('T')[1].slice(0, 5),
+          amount: appointment.amount,
+          serviceName: appointment.service.name,
+          serviceDescription: appointment.service.description,
+          providerName: `${appointment.provider.first_name} ${appointment.provider.last_name}`,
+          providerEmail: appointment.provider.user.email,
+          clientName: `${appointment.client.first_name} ${appointment.client.last_name}`,
+        });
+
+        const fromEmail = this.mailer.options.auth.user;
+        await this.mailer.sendMail({
+          from: fromEmail,
+          to: appointment.client.user.email,
+          subject: 'Votre Facture de Livraison',
+          text: 'Veuillez trouver ci-joint votre facture de livraison.',
+          attachments: [
+              {
+                  filename: `facture_${appointment.appointment_id}.pdf`,
+                  content: pdfBuffer,
+              },
+          ],
+      });
+
+        const file: Express.Multer.File = {
+            fieldname: 'file',
+            originalname: `facture_${appointment.appointment_id}.pdf`,
+            encoding: '7bit',
+            mimetype: 'application/pdf',
+            buffer: pdfBuffer,
+            size: pdfBuffer.length,
+            destination: '', 
+            filename: `facture_${appointment.appointment_id}.pdf`,
+            path: '', 
+            stream: Readable.from(pdfBuffer),
+            };
+
+          const filePath = `/services/${appointment.service.service_id}/appointments/${appointment.appointment_id}/facture_${appointment.appointment_id}.pdf`;
+          await this.minioService.uploadFileToBucket('client-documents', filePath, file);
+
+        appointment.url_file = filePath;
+        appointment.payment_date = new Date();
+        appointment.refund_date = null;
+
+        await this.appointmentRepo.save(appointment);
+    }
+
+    return this.appointmentRepo.save(appointment);
+
+  }
+
+  async finishAppointment(appointment_id: string, user_id: string) {
+    const appointment = await this.appointmentRepo.findOne({
+      where: { appointment_id },
+      relations: ['provider'],
+    }); 
+    if (!appointment) {
+      throw new NotFoundException('Rendez-vous non trouvé');
+    }
+    const provider = await this.providerRepo.findOne({
+      where: { user: { user_id } },
+    });
+    if (!provider || provider.provider_id !== appointment.provider.provider_id) {
+      throw new NotFoundException('Prestataire non autorisé à terminer ce rendez-vous');
+    }
+    if (appointment.status !== 'in_progress') {
+      throw new Error('Le rendez-vous n\'est pas dans un état valide pour terminer');
+    }
+    appointment.status = 'completed';
+    appointment.payment_date = new Date();
+    appointment.refund_date = null;
+
+    provider.balance += appointment.amount;
+
+    await this.providerRepo.save(provider);
+
+  }
+
+  async getMyFutureAppointmentsAsProvider(userId: string, page = 1, limit = 10): Promise<{data : FutureAppointmentProvider[], totalRows: number, totalPages: number, currentPage: number, limit: number}> {
+
+    const provider = await this.providerRepo.findOne({
+      where: { user: { user_id: userId } },
+      relations: ['user'],
+    });
+    if (!provider) {
+      throw new Error('Provider not found');
+    }
+    const appointments = await this.appointmentRepo.find({
+      where: { provider: { provider_id: provider.provider_id }, status: In(["pending", "in_progress"]) },
+      relations: ['client', 'client.user', 'service'],
+      order: { service_date: 'ASC' },
+    });
+    const formattedAppointments = await Promise.all(appointments.map(async appointment => ({
+      id: appointment.appointment_id,
+      clientName: `${appointment.client.first_name} ${appointment.client.last_name}`,
+      clientImage: appointment.client.user.profile_picture
+        ? await this.minioService.generateImageUrl('client-images', appointment.client.user.profile_picture)
+        : null,
+      date: appointment.service_date.toISOString().split('T')[0],
+      time: appointment.service_date.toISOString().split('T')[1].slice(0, 5),
+      serviceName: appointment.service.name,
+      status: appointment.status,
+    })));
+
+    const totalRows = formattedAppointments.length;
+    const totalPages = Math.ceil(totalRows / limit);
+    const startIndex = (page - 1) * limit;
+    const paginatedAppointments = formattedAppointments.slice(startIndex, startIndex + limit);
+    return {
+      data: paginatedAppointments,
+      totalRows,
+      totalPages,
+      currentPage: page,
+      limit,
+    };
+  }
+
 }
 

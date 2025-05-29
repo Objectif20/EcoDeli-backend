@@ -19,7 +19,7 @@ export class DashboardController {
     @Get('last-delivery')
     @UseGuards(ClientJwtGuard)
     async getLastDelivery(@Body('user_id') userId: string): Promise<LastDelivery> {
-        return this.dashboardService.getLastDelivery(userId);
+        return this.dashboardService.getLastShipment(userId);
     }
 
     @Get('finished-delivery')
@@ -98,12 +98,6 @@ export class DashboardController {
     @UseGuards(ClientJwtGuard)
     async getClientStats(@Body('user_id') userId: string): Promise<clientStats[]> {
         return this.dashboardService.getClientStats(userId);
-    }
-
-    @Get('package-location')
-    @UseGuards(ClientJwtGuard)
-    async getPackageLocation(@Body('user_id') userId: string): Promise<PackageLocation[]> {
-        return this.dashboardService.getPackageLocation(userId);
     }
 
     @Get('my-next-event')

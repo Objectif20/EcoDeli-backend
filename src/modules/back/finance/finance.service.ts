@@ -2,9 +2,21 @@ import { Injectable } from "@nestjs/common";
 import { DashboardStats, StripeStats, Transaction, TransactionCategory, TransactionType } from "./type";
 import * as fs from "fs";
 import * as path from "path";
-import Stripe from "stripe";
-
-export const allTransactions: Transaction[] = [
+import { InjectRepository } from "@nestjs/typeorm";
+import { In, MoreThanOrEqual, Repository } from "typeorm";
+import { Appointments } from "src/common/entities/appointments.entity";
+import { DeliveryTransfer } from "src/common/entities/delivery_transfer.entity";
+import { TransferProvider } from "src/common/entities/transfers_provider.entity";
+import { Transfer } from "src/common/entities/transfers.entity";
+import { SubscriptionTransaction } from "src/common/entities/subscription_transaction.entity";
+import { MinioService } from "src/common/services/file/minio.service";
+import { StripeService } from "src/common/services/stripe/stripe.service";
+import { Shipment } from "src/common/entities/shipment.entity";
+import { Subscription } from "src/common/entities/subscription.entity";
+import { format, formatISO, startOfMonth, subMonths } from "date-fns";
+import { fr } from 'date-fns/locale';
+import { Delivery } from "src/common/entities/delivery.entity";
+export const Test: Transaction[] = [
     {
       id: "TR-001",
       name: "Jean Dupont",
@@ -107,118 +119,315 @@ export const allTransactions: Transaction[] = [
 
 @Injectable()
 export class FinanceService {
-    constructor() {}
+      constructor(
+    @InjectRepository(Appointments)
+    private readonly appointmentsRepo: Repository<Appointments>,
+    @InjectRepository(DeliveryTransfer)
+    private readonly deliveryTransferRepo: Repository<DeliveryTransfer>,
+    @InjectRepository(TransferProvider)
+    private readonly transferProviderRepo: Repository<TransferProvider>,
+    @InjectRepository(Transfer)
+    private readonly transferRepo: Repository<Transfer>,
+    @InjectRepository(SubscriptionTransaction)
+    private readonly subscriptionTransactionRepo: Repository<SubscriptionTransaction>,
+    @InjectRepository(Shipment)
+    private readonly shipmentsRepository: Repository<Shipment>,
+    @InjectRepository(Subscription)
+    private readonly subscriptionRepository: Repository<Subscription>,
+    @InjectRepository(Delivery)
+    private readonly deliveryRepository: Repository<Delivery>,
+    private readonly minioService : MinioService,
+    private readonly stripeService : StripeService
+  ) {}
 
-    getTransactions(params: {
+    async _fetchTransactions(params: {
+        name?: string;
+        type?: TransactionType;
+        year?: string;
+        month?: string;
+      }): Promise<Transaction[]> {
+        let allTransactions: Transaction[] = [];
+
+        if (!params.type || params.type === 'in') {
+          const appointments = await this.appointmentsRepo.find({
+            relations: ['client', 'service'],
+            where: { status: In(["completed", "in_progress"]) }
+          });
+
+          const filteredAppointments = appointments.filter((appointment) => {
+            const date = appointment.payment_date || appointment.service_date;
+            const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
+            const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
+            const fullName = `${appointment.client?.first_name || ''} ${appointment.client?.last_name || ''}`.trim();
+            const matchesName = params.name ? fullName.toLowerCase().includes(params.name.toLowerCase()) : true;
+
+            return matchesYear && matchesMonth && matchesName;
+          });
+
+          const mappedAppointments = await Promise.all(filteredAppointments.map(async (appointment) => ({
+            id: appointment.appointment_id,
+            name: `${appointment.client?.first_name || ''} ${appointment.client?.last_name || ''}`.trim(),
+            type: 'in' as TransactionType,
+            category: 'service' as TransactionCategory,
+            date: (appointment.payment_date || appointment.service_date).toISOString().split('T')[0],
+            invoiceUrl: appointment.url_file
+              ? await this.minioService.generatePresignedUrl('client-documents', appointment.url_file)
+              : '',
+          })));
+
+          allTransactions.push(...mappedAppointments);
+        }
+
+        if (!params.type || params.type === 'in') {
+          const deliveries = await this.deliveryTransferRepo.find({
+            relations: [
+              'delivery',
+              'delivery.shipment',
+              'delivery.shipment.user',
+              'delivery.shipment.user.clients',
+              'delivery.shipment.user.merchant',
+            ],
+          });
+
+          const filteredDeliveries = deliveries.filter((delivery) => {
+            const date = delivery.date;
+            const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
+            const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
+
+            const user = delivery.delivery.shipment?.user;
+            let name = '';
+            if (user?.clients?.length > 0) {
+              name = `${user.clients[0]?.first_name || ''} ${user.clients[0]?.last_name || ''}`.trim();
+            } else if (user?.merchant) {
+              name = `${user.merchant?.first_name || ''} ${user.merchant?.last_name || ''}`.trim();
+            }
+
+            const matchesName = params.name ? name.toLowerCase().includes(params.name.toLowerCase()) : true;
+
+            return matchesYear && matchesMonth && matchesName;
+          });
+
+          const mappedDeliveries = await Promise.all(filteredDeliveries.map(async (delivery) => {
+            const user = delivery.delivery.shipment?.user;
+            let name = '';
+            if (user?.clients?.length > 0) {
+              name = `${user.clients[0]?.first_name || ''} ${user.clients[0]?.last_name || ''}`.trim();
+            } else if (user?.merchant) {
+              name = `${user.merchant?.first_name || ''} ${user.merchant?.last_name || ''}`.trim();
+            }
+
+            return {
+              id: delivery.delivery_transfer_id,
+              name,
+              type: 'in' as TransactionType,
+              category: 'delivery' as TransactionCategory,
+              date: delivery.date.toISOString().split('T')[0],
+              invoiceUrl: delivery.url
+                ? await this.minioService.generatePresignedUrl('client-documents', delivery.url)
+                : '',
+            };
+          }));
+
+          allTransactions.push(...mappedDeliveries);
+        }
+
+        if (!params.type || params.type === 'out') {
+          const transfersProvider = await this.transferProviderRepo.find({
+            relations: ['provider'],
+          });
+
+          const filtered = transfersProvider.filter((transfer) => {
+            const date = transfer.date;
+            const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
+            const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
+            const fullName = `${transfer.provider?.first_name || ''} ${transfer.provider?.last_name || ''}`.trim();
+            const matchesName = params.name ? fullName.toLowerCase().includes(params.name.toLowerCase()) : true;
+
+            return matchesYear && matchesMonth && matchesName;
+          });
+
+          const mapped = await Promise.all(filtered.map(async (transfer) => ({
+            id: transfer.transfer_id,
+            name: `${transfer.provider?.first_name || ''} ${transfer.provider?.last_name || ''}`.trim(),
+            type: 'out' as TransactionType,
+            category: 'service' as TransactionCategory,
+            date: transfer.date.toISOString().split('T')[0],
+            invoiceUrl: transfer.url
+              ? await this.minioService.generatePresignedUrl('client-documents', transfer.url)
+              : '',
+          })));
+
+          allTransactions.push(...mapped);
+        }
+
+        if (!params.type || params.type === 'out') {
+          const transfers = await this.transferRepo.find({
+            relations: ['delivery_person', 'delivery_person.user', 'delivery_person.user.clients'],
+          });
+
+          const filtered = transfers.filter((transfer) => {
+            const date = transfer.date;
+            const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
+            const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
+            const fullName = `${transfer.delivery_person?.user.clients[0].first_name || ''} ${transfer.delivery_person?.user.clients[0].last_name || ''}`.trim();
+            const matchesName = params.name ? fullName.toLowerCase().includes(params.name.toLowerCase()) : true;
+
+            return matchesYear && matchesMonth && matchesName;
+          });
+
+          const mapped = await Promise.all(filtered.map(async (transfer) => ({
+            id: transfer.transfer_id,
+            name: `${transfer.delivery_person?.user.clients[0].first_name || ''} ${transfer.delivery_person?.user.clients[0].last_name || ''}`.trim(),
+            type: 'out' as TransactionType,
+            category: 'delivery' as TransactionCategory,
+            date: transfer.date.toISOString().split('T')[0],
+            invoiceUrl: transfer.url
+              ? await this.minioService.generatePresignedUrl('client-documents', transfer.url)
+              : '',
+          })));
+
+          allTransactions.push(...mapped);
+        }
+
+        if (!params.type || params.type === 'sub') {
+          const subscriptions = await this.subscriptionTransactionRepo.find({
+            relations: ['subscription', 'subscription.user', 'subscription.user.clients', 'subscription.user.merchant'],
+          });
+
+          const filtered = subscriptions.filter((subscription) => {
+            const date = subscription.created_at;
+            const matchesYear = params.year ? date.getFullYear().toString() === params.year : true;
+            const matchesMonth = params.month ? (date.getMonth() + 1).toString() === params.month : true;
+
+            let fullName = '';
+            if (subscription.subscription?.user.clients.length > 0) {
+              fullName = `${subscription.subscription.user.clients[0].first_name || ''} ${subscription.subscription.user.clients[0].last_name || ''}`.trim();
+            } else if (subscription.subscription?.user.merchant) {
+              fullName = `${subscription.subscription.user.merchant.first_name || ''} ${subscription.subscription.user.merchant.last_name || ''}`.trim();
+            }
+
+            const matchesName = params.name ? fullName.toLowerCase().includes(params.name.toLowerCase()) : true;
+
+            return matchesYear && matchesMonth && matchesName;
+          });
+
+          const mapped = await Promise.all(filtered.map(async (subscription) => {
+            let name = '';
+            if (subscription.subscription?.user.clients.length > 0) {
+              name = `${subscription.subscription.user.clients[0].first_name || ''} ${subscription.subscription.user.clients[0].last_name || ''}`.trim();
+            } else if (subscription.subscription?.user.merchant) {
+              name = `${subscription.subscription.user.merchant.first_name || ''} ${subscription.subscription.user.merchant.last_name || ''}`.trim();
+            }
+
+            return {
+              id: subscription.transaction_id,
+              name,
+              type: 'sub' as TransactionType,
+              category: 'sub' as TransactionCategory,
+              date: subscription.created_at.toISOString().split('T')[0],
+              invoiceUrl: subscription.invoice_url
+                ? await this.minioService.generatePresignedUrl('client-documents', subscription.invoice_url)
+                : '',
+            };
+          }));
+
+          allTransactions.push(...mapped);
+        }
+
+        allTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        return allTransactions;
+      }
+
+      async getTransactions(params: {
         name?: string;
         type?: TransactionType;
         year?: string;
         month?: string;
         pageIndex: number;
         pageSize: number;
-    }): Promise<{data : Transaction[], totalRows: number}> {
-        let transactions = [...allTransactions];
-
-        if (params.name) {
-            transactions = transactions.filter(t => params.name && t.name.includes(params.name));
-        }
-
-        if (params.type) {
-            transactions = transactions.filter(t => t.type === params.type);
-        }
-
-        if (params.year) {
-            transactions = transactions.filter(t => {
-                const date = new Date(t.date);
-                return date.getFullYear().toString() === params.year;
-            });
-        }
-
-        if (params.month) {
-            transactions = transactions.filter(t => {
-                const date = new Date(t.date);
-                return (date.getMonth() + 1).toString() === params.month;
-            });
-        }
+      }): Promise<{ data: Transaction[]; totalRows: number }> {
+        const allTransactions = await this._fetchTransactions(params);
 
         const startIndex = params.pageIndex * params.pageSize;
-        return Promise.resolve({
-            data: transactions.slice(startIndex, startIndex + params.pageSize),
-            totalRows: transactions.length
+        const paginatedData = allTransactions.slice(startIndex, startIndex + params.pageSize);
+
+        return {
+          data: paginatedData,
+          totalRows: allTransactions.length,
+        };
+      }
+
+    getCsvFile = async (res: any, params: {
+      startMonth?: string;
+      startYear?: string;
+      endMonth?: string;
+      endYear?: string;
+      categories?: TransactionCategory[];
+      name?: string;
+      type?: TransactionType;
+    }): Promise<void> => {
+      const allTransactions = await this._fetchTransactions({
+        name: params.name,
+        type: params.type,
+        year: undefined,
+        month: undefined,
+      });
+
+      let filtered = allTransactions;
+      if (params.startYear || params.startMonth || params.endYear || params.endMonth) {
+        filtered = filtered.filter((t) => {
+          const date = new Date(t.date);
+          const year = date.getFullYear();
+          const month = date.getMonth() + 1;
+
+          const afterStart =
+            !params.startYear || year > +params.startYear ||
+            (year === +params.startYear && (!params.startMonth || month >= +params.startMonth));
+
+          const beforeEnd =
+            !params.endYear || year < +params.endYear ||
+            (year === +params.endYear && (!params.endMonth || month <= +params.endMonth));
+
+          return afterStart && beforeEnd;
         });
-    }
+      }
 
-    generateCsv(params: {
-        startMonth?: string;
-        startYear?: string;
-        endMonth?: string;
-        endYear?: string;
-        categories?: TransactionCategory[];
-    }): string {
-        let transactions = [...allTransactions];
+      if (params.categories?.length) {
+        filtered = filtered.filter(t => params.categories!.includes(t.category));
+      }
 
-        if (params.startYear || params.startMonth) {
-            transactions = transactions.filter(t => {
-                const date = new Date(t.date);
-                const year = date.getFullYear().toString();
-                const month = (date.getMonth() + 1).toString();
+      const csvContent = [
+        ['id', 'name', 'type', 'category', 'date', 'invoiceUrl'].join(','), // header
+        ...filtered.map(t =>
+          [t.id, t.name, t.type, t.category, t.date, t.invoiceUrl].join(',')
+        )
+      ].join('\n');
 
-                const startYearMatch = params.startYear ? year === params.startYear : true;
-                const startMonthMatch = params.startMonth ? month === params.startMonth : true;
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=transactions.csv');
+      res.send(csvContent);
+    };
 
-                return startYearMatch && startMonthMatch;
-            });
+    async getStripeStats(period?: string): Promise<StripeStats> {
+      (async () => {
+        const now = Math.floor(Date.now() / 1000);
+        const thirtyDaysAgo = now - 30 * 24 * 60 * 60;
+
+        try {
+          await Promise.all([
+            this.stripeService.getTotalRevenue(thirtyDaysAgo, now),
+            this.stripeService.getCustomerStats(),
+            this.stripeService.getActiveSubscribers(),
+            this.stripeService.getPaymentStats(),
+          ]);
+
+          await this.stripeService.getTotalRevenue(thirtyDaysAgo - 30 * 24 * 60 * 60, thirtyDaysAgo);
+        } catch (err) {
+          console.warn("Background Stripe data fetch failed", err);
         }
+      })();
 
-        if (params.endYear || params.endMonth) {
-            transactions = transactions.filter(t => {
-                const date = new Date(t.date);
-                const year = date.getFullYear().toString();
-                const month = (date.getMonth() + 1).toString();
-
-                const endYearMatch = params.endYear ? year === params.endYear : true;
-                const endMonthMatch = params.endMonth ? month === params.endMonth : true;
-
-                return endYearMatch && endMonthMatch;
-            });
-        }
-
-        if (params.categories && params.categories.length > 0) {
-            transactions = transactions.filter(t => params.categories?.includes(t.category));
-        }
-
-        const csvContent = [
-            ['id', 'name', 'type', 'category', 'date', 'invoiceUrl'].join(','),
-            ...transactions.map(t =>
-                [t.id, t.name, t.type, t.category, t.date, t.invoiceUrl].join(',')
-            )
-        ].join('\n');
-
-        const filePath = path.join(__dirname, '..', 'transactions.csv');
-        fs.writeFileSync(filePath, csvContent);
-
-        return filePath;
-    }
-
-    getCsvFile(res: any, params: {
-        startMonth?: string;
-        startYear?: string;
-        endMonth?: string;
-        endYear?: string;
-        categories?: TransactionCategory[];
-    }): void {
-        const filePath = this.generateCsv(params);
-        if (fs.existsSync(filePath)) {
-            res.setHeader('Content-Type', 'text/csv');
-            res.setHeader('Content-Disposition', 'attachment; filename=transactions.csv');
-            fs.createReadStream(filePath).pipe(res);
-        } else {
-            res.status(404).send('File not found');
-        }
-    }
-
-    async getStripeStats(period ?: string): Promise<StripeStats> {
-      console.log("getStripeStats", period);
       return {
         revenue: {
           total: 48250,
@@ -230,12 +439,12 @@ export class FinanceService {
             { date: "Mar", revenue: 5000, profit: 3000, margin: 60 },
             { date: "Avr", revenue: 4800, profit: 2880, margin: 60 },
             { date: "Mai", revenue: 5200, profit: 3120, margin: 60 },
-            { date: "Juin", revenue: 5800, profit: 3480, margin: 60 },
-            { date: "Juil", revenue: 6200, profit: 3720, margin: 60 },
+            { date: "Juin", revenue: 5800, profit: 3480, margin: 47 },
+            { date: "Juil", revenue: 6200, profit: 3720, margin: 52 },
             { date: "Août", revenue: 6800, profit: 4080, margin: 60 },
-            { date: "Sep", revenue: 7200, profit: 4320, margin: 60 },
+            { date: "Sep", revenue: 7200, profit: 4320, margin: 23 },
             { date: "Oct", revenue: 7800, profit: 4680, margin: 60 },
-            { date: "Nov", revenue: 8200, profit: 4920, margin: 60 },
+            { date: "Nov", revenue: 8200, profit: 4920, margin: 78 },
             { date: "Déc", revenue: 8500, profit: 5100, margin: 60 },
           ],
         },
@@ -257,149 +466,183 @@ export class FinanceService {
           ],
         },
         transactions: [
-          {
-            method: "CB",
-            number: 850,
-          },
-          {
-            method: "Apple",
-            number: 320,
-          },
-          {
-            method: "Google",
-            number: 120,
-          },
-          {
-            method: "Cash",
-            number: 30,
-          },
-          {
-            method: "Check",
-            number: 15,
-          },
-        ]
+          { method: "CB", number: 850 },
+          { method: "Apple", number: 320 },
+          { method: "Google", number: 120 },
+          { method: "Cash", number: 30 },
+          { method: "Check", number: 15 },
+        ],
       };
-
     }
 
 
     async getDashboardStats(): Promise<DashboardStats> {
 
-      return {
-        plan: [
-          { plan: "free", number: 275, fill: "var(--color-free)" },
-          { plan: "starter", number: 200, fill: "var(--color-starter)" },
-          { plan: "premium", number: 187, fill: "var(--color-premium)" },
-        ],
-        parcels: [
-          { taille: "Petit colis (S)", nombre: 120 },
-          { taille: "Moyen colis (M)", nombre: 200 },
-          { taille: "Grand colis (L)", nombre: 150 },
-          { taille: "Très grand colis (XL)", nombre: 80 },
-        ],
-        area: [
-          { date: "2024-04-01", provider: 222, delivery: 150 },
-          { date: "2024-04-02", provider: 97, delivery: 180 },
-          { date: "2024-04-03", provider: 167, delivery: 120 },
-          { date: "2024-04-04", provider: 242, delivery: 260 },
-          { date: "2024-04-05", provider: 373, delivery: 290 },
-          { date: "2024-04-06", provider: 301, delivery: 340 },
-          { date: "2024-04-07", provider: 245, delivery: 180 },
-          { date: "2024-04-08", provider: 409, delivery: 320 },
-          { date: "2024-04-09", provider: 59, delivery: 110 },
-          { date: "2024-04-10", provider: 261, delivery: 190 },
-          { date: "2024-04-11", provider: 327, delivery: 350 },
-          { date: "2024-04-12", provider: 292, delivery: 210 },
-          { date: "2024-04-13", provider: 342, delivery: 380 },
-          { date: "2024-04-14", provider: 137, delivery: 220 },
-          { date: "2024-04-15", provider: 120, delivery: 170 },
-          { date: "2024-04-16", provider: 138, delivery: 190 },
-          { date: "2024-04-17", provider: 446, delivery: 360 },
-          { date: "2024-04-18", provider: 364, delivery: 410 },
-          { date: "2024-04-19", provider: 243, delivery: 180 },
-          { date: "2024-04-20", provider: 89, delivery: 150 },
-          { date: "2024-04-21", provider: 137, delivery: 200 },
-          { date: "2024-04-22", provider: 224, delivery: 170 },
-          { date: "2024-04-23", provider: 138, delivery: 230 },
-          { date: "2024-04-24", provider: 387, delivery: 290 },
-          { date: "2024-04-25", provider: 215, delivery: 250 },
-          { date: "2024-04-26", provider: 75, delivery: 130 },
-          { date: "2024-04-27", provider: 383, delivery: 420 },
-          { date: "2024-04-28", provider: 122, delivery: 180 },
-          { date: "2024-04-29", provider: 315, delivery: 240 },
-          { date: "2024-04-30", provider: 454, delivery: 380 },
-          { date: "2024-05-01", provider: 165, delivery: 220 },
-          { date: "2024-05-02", provider: 293, delivery: 310 },
-          { date: "2024-05-03", provider: 247, delivery: 190 },
-          { date: "2024-05-04", provider: 385, delivery: 420 },
-          { date: "2024-05-05", provider: 481, delivery: 390 },
-          { date: "2024-05-06", provider: 498, delivery: 520 },
-          { date: "2024-05-07", provider: 388, delivery: 300 },
-          { date: "2024-05-08", provider: 149, delivery: 210 },
-          { date: "2024-05-09", provider: 227, delivery: 180 },
-          { date: "2024-05-10", provider: 293, delivery: 330 },
-          { date: "2024-05-11", provider: 335, delivery: 270 },
-          { date: "2024-05-12", provider: 197, delivery: 240 },
-          { date: "2024-05-13", provider: 197, delivery: 160 },
-          { date: "2024-05-14", provider: 448, delivery: 490 },
-          { date: "2024-05-15", provider: 473, delivery: 380 },
-          { date: "2024-05-16", provider: 338, delivery: 400 },
-          { date: "2024-05-17", provider: 499, delivery: 420 },
-          { date: "2024-05-18", provider: 315, delivery: 350 },
-          { date: "2024-05-19", provider: 235, delivery: 180 },
-          { date: "2024-05-20", provider: 177, delivery: 230 },
-          { date: "2024-05-21", provider: 82, delivery: 140 },
-          { date: "2024-05-22", provider: 81, delivery: 120 },
-          { date: "2024-05-23", provider: 252, delivery: 290 },
-          { date: "2024-05-24", provider: 294, delivery: 220 },
-          { date: "2024-05-25", provider: 201, delivery: 250 },
-          { date: "2024-05-26", provider: 213, delivery: 170 },
-          { date: "2024-05-27", provider: 420, delivery: 460 },
-          { date: "2024-05-28", provider: 233, delivery: 190 },
-          { date: "2024-05-29", provider: 78, delivery: 130 },
-          { date: "2024-05-30", provider: 340, delivery: 280 },
-          { date: "2024-05-31", provider: 178, delivery: 230 },
-          { date: "2024-06-01", provider: 178, delivery: 200 },
-          { date: "2024-06-02", provider: 470, delivery: 410 },
-          { date: "2024-06-03", provider: 103, delivery: 160 },
-          { date: "2024-06-04", provider: 439, delivery: 380 },
-          { date: "2024-06-05", provider: 88, delivery: 140 },
-          { date: "2024-06-06", provider: 294, delivery: 250 },
-          { date: "2024-06-07", provider: 323, delivery: 370 },
-          { date: "2024-06-08", provider: 385, delivery: 320 },
-          { date: "2024-06-09", provider: 438, delivery: 480 },
-          { date: "2024-06-10", provider: 155, delivery: 200 },
-          { date: "2024-06-11", provider: 92, delivery: 150 },
-          { date: "2024-06-12", provider: 492, delivery: 420 },
-          { date: "2024-06-13", provider: 81, delivery: 130 },
-          { date: "2024-06-14", provider: 426, delivery: 380 },
-          { date: "2024-06-15", provider: 307, delivery: 350 },
-          { date: "2024-06-16", provider: 371, delivery: 310 },
-          { date: "2024-06-17", provider: 475, delivery: 520 },
-          { date: "2024-06-18", provider: 107, delivery: 170 },
-          { date: "2024-06-19", provider: 341, delivery: 290 },
-          { date: "2024-06-20", provider: 408, delivery: 450 },
-          { date: "2024-06-21", provider: 169, delivery: 210 },
-          { date: "2024-06-22", provider: 317, delivery: 270 },
-          { date: "2024-06-23", provider: 480, delivery: 530 },
-          { date: "2024-06-24", provider: 132, delivery: 180 },
-          { date: "2024-06-25", provider: 141, delivery: 190 },
-          { date: "2024-06-26", provider: 434, delivery: 380 },
-          { date: "2024-06-27", provider: 448, delivery: 490 },
-          { date: "2024-06-28", provider: 149, delivery: 200 },
-          { date: "2024-06-29", provider: 103, delivery: 160 },
-          { date: "2024-06-30", provider: 446, delivery: 400 },
-        ],
-        subscription: [
-          { month: "Janvier", subscription: 186 },
-          { month: "Février", subscription: 305 },
-          { month: "Mars", subscription: 237 },
-          { month: "Avril", subscription: 273 },
-          { month: "Mai", subscription: 209 },
-          { month: "Juin", subscription: 214 },
-        ],
-      };
+        const parcelStats = await this.getParcelSizeStats();
+        const plans = await this.getSubscriptionRepartition();
+        const subscriptionMonths = await this.getMonthlySubscriptionCount();
+        const stats = await this.activityByDay();
+        return {
+          plan: plans,
+          parcels: parcelStats,
+          area: stats,
+          subscription: subscriptionMonths,
+        };
 
     }
 
+      async getParcelSizeStats() {
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+        const shipments = await this.shipmentsRepository.find({
+          where: {
+            deadline_date: MoreThanOrEqual(sixMonthsAgo),
+          },
+          relations: ['parcels'],
+        });
+
+        const sizeCounts = {
+          S: 0,
+          M: 0,
+          L: 0,
+          XL: 0,
+          XXL: 0,
+        };
+
+        shipments.forEach(shipment => {
+          shipment.parcels.forEach(parcel => {
+            const weight = parcel.weight ?? 0;
+
+            if (weight < 5) sizeCounts.S += 1;
+            else if (weight <= 30) sizeCounts.M += 1;
+            else if (weight <= 50) sizeCounts.L += 1;
+            else if (weight <= 100) sizeCounts.XL += 1;
+            else sizeCounts.XXL += 1;
+          });
+        });
+
+        return Object.entries(sizeCounts)
+          .filter(([_, nombre]) => nombre > 0)
+          .map(([taille, nombre]) => ({
+            taille: getLabelFromSize(taille),
+            nombre,
+          }));
+      }
+
+      async getSubscriptionRepartition() {
+        const repartition = await this.subscriptionRepository
+          .createQueryBuilder("subscription")
+          .leftJoin("subscription.plan", "plan")
+          .select("plan.name", "plan")
+          .addSelect("COUNT(*)", "number")
+          .groupBy("plan.name")
+          .orderBy("plan.name", "ASC")
+          .getRawMany();
+
+        return repartition.map((row, index) => ({
+          plan: row.plan,
+          number: parseInt(row.number, 10),
+          colorIndex: index + 1,
+        }));
+      }
+
+      async getMonthlySubscriptionCount() {
+        const today = new Date();
+        const months: { key: string; label: string; count: number }[] = [];
+
+        for (let i = 6; i >= 1; i--) {
+          const date = subMonths(today, i);
+          const key = format(date, 'yyyy-MM');
+          months.push({ key, label: format(date, 'MMMM', { locale: fr }), count: 0 });
+        }
+
+        const rawData = await this.subscriptionRepository
+          .createQueryBuilder('subscription')
+          .select("TO_CHAR(subscription.start_date, 'YYYY-MM')", 'month')
+          .addSelect('COUNT(*)', 'count')
+          .where('subscription.start_date >= :fromDate', { fromDate: startOfMonth(subMonths(today, 6)) })
+          .andWhere('subscription.start_date < :toDate', { toDate: startOfMonth(today) })
+          .groupBy('month')
+          .orderBy('month', 'ASC')
+          .getRawMany();
+
+        return months.map(month => {
+          const found = rawData.find(row => row.month === month.key);
+          return {
+            month: month.label.charAt(0).toUpperCase() + month.label.slice(1),
+            subscription: found ? parseInt(found.count, 10) : 0,
+          };
+        });
+      }
+
+      async activityByDay(): Promise<{ date: string; provider: number; delivery: number }[]> {
+
+          const today = new Date();
+          const startDate = new Date(today);
+          startDate.setDate(today.getDate() - 30);
+
+
+          const appointments = await this.appointmentsRepo.createQueryBuilder('appointment')
+            .select([
+              "DATE_TRUNC('day', appointment.service_date) as day",
+              'COUNT(DISTINCT appointment.provider_id) as provider_count',
+              'COUNT(appointment.appointment_id) as appointment_count'
+            ])
+            .where('appointment.service_date BETWEEN :start AND :end', { start: startDate, end: today })
+            .groupBy('day')
+            .orderBy('day')
+            .getRawMany();
+
+          const deliveries = await this.deliveryRepository.createQueryBuilder('delivery')
+            .select([
+              "DATE_TRUNC('day', delivery.send_date) as day",
+              'COUNT(DISTINCT delivery.delivery_person_id) as delivery_person_count',
+              'COUNT(delivery.delivery_id) as delivery_count'
+            ])
+            .where('delivery.send_date BETWEEN :start AND :end', { start: startDate, end: today })
+            .groupBy('day')
+            .orderBy('day')
+            .getRawMany();
+
+          const appointmentsMap = new Map<string, { provider: number; appointmentCount: number }>();
+          for (const a of appointments) {
+            const day = formatISO(new Date(a.day), { representation: 'date' });
+            appointmentsMap.set(day, { provider: Number(a.provider_count), appointmentCount: Number(a.appointment_count) });
+          }
+
+          const deliveriesMap = new Map<string, { deliveryPerson: number; deliveryCount: number }>();
+          for (const d of deliveries) {
+            const day = formatISO(new Date(d.day), { representation: 'date' });
+            deliveriesMap.set(day, { deliveryPerson: Number(d.delivery_person_count), deliveryCount: Number(d.delivery_count) });
+          }
+
+          const results: { date: string; provider: number; delivery: number }[] = [];
+          for (let d = new Date(startDate); d <= today; d.setDate(d.getDate() + 1)) {
+            const dayStr = formatISO(d, { representation: 'date' });
+            const app = appointmentsMap.get(dayStr);
+            const del = deliveriesMap.get(dayStr);
+
+            results.push({
+              date: dayStr,
+              provider: app?.provider ?? 1,
+              delivery: del?.deliveryCount ?? 1,
+            });
+          }
+
+          return results;
+      }
+
+
+}
+
+function getLabelFromSize(size: string): string {
+  switch (size) {
+    case 'S': return 'Petit colis (S)';
+    case 'M': return 'Moyen colis (M)';
+    case 'L': return 'Grand colis (L)';
+    case 'XL': return 'Très grand colis (XL)';
+    case 'XXL': return 'Colis XXL';
+    default: return 'Inconnu';
+  }
 }

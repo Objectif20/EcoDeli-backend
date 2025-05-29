@@ -33,7 +33,7 @@ export class Merchant {
     @Column({ length: 100 })
     country: string;
 
-    @Column({ length: 20, unique: true })
+    @Column({ length: 20 })
     phone: string;
 
     @ManyToOne(() => Users, user => user.providers, { onDelete: 'CASCADE' })

@@ -1,12 +1,15 @@
 import { InjectRepository } from "@nestjs/typeorm";
 import { Appointments } from "src/common/entities/appointments.entity";
 import { Client } from "src/common/entities/client.entity";
+import { Delivery } from "src/common/entities/delivery.entity";
 import { DeliveryPerson } from "src/common/entities/delivery_persons.entity";
 import { Merchant } from "src/common/entities/merchant.entity";
 import { Providers } from "src/common/entities/provider.entity";
 import { ServicesList } from "src/common/entities/services_list.entity";
+import { Shipment } from "src/common/entities/shipment.entity";
 import { Users } from "src/common/entities/user.entity";
-import { Repository } from "typeorm";
+import { In, Repository } from "typeorm";
+import { CalendarEvent } from "./types";
 
 
 
@@ -27,95 +30,159 @@ export class PlanningService {
         private readonly appointmentRepo: Repository<Appointments>,
         @InjectRepository(ServicesList)
         private readonly serviceListRepository: Repository<ServicesList>,
+        @InjectRepository(Delivery)
+        private readonly deliveryRepository: Repository<Delivery>,
+        @InjectRepository(Shipment)
+        private readonly shipmentRepository: Repository<Shipment>,
     ) {}
 
 
     async getMyPlanning(user_id: string): Promise<CalendarEvent[]> {
       const user = await this.userRepository.findOne({
         where: { user_id },
-        relations: ['language', 'subscriptions', 'subscriptions.plan'],
+        relations: ['language', 'subscriptions', 'subscriptions.plan', 'clients', 'merchant', 'deliveryPerson'],
       });
-    
+
       if (!user) {
         throw new Error('User not found');
       }
-    
-      const [client, deliverymanCount, merchant, provider] = await Promise.all([
-        this.clientRepository.findOne({ where: { user: { user_id } } }),
-        this.deliveryPersonRepository.count({ where: { user: { user_id } } }),
-        this.merchantRepository.findOne({ where: { user: { user_id } } }),
-        this.providerRepository.findOne({ where: { user: { user_id } } }),
-      ]);
-    
+
+      const client = user.clients?.[0] ?? null;
+      const merchant = user.merchant ?? null;
+      const deliveryPerson = user.deliveryPerson ?? null;
+
       const profile: string[] = [];
       if (client) profile.push('CLIENT');
       if (merchant) profile.push('MERCHANT');
+      if (deliveryPerson) profile.push('DELIVERYMAN');
+
+      const provider = await this.providerRepository.findOne({ where: { user: { user_id } } });
       if (provider) profile.push('PROVIDER');
-      if (deliverymanCount > 0) profile.push('DELIVERYMAN');
-    
+
       const eventTable: CalendarEvent[] = [];
-    
-      if (profile.includes('PROVIDER') && provider) {
+
+      if (profile.includes('PROVIDER')) {
         const appointments = await this.appointmentRepo.find({
-          where: { provider: { provider_id: provider.provider_id } },
+          where: { provider: { provider_id: provider!.provider_id } },
           relations: ['client', 'service'],
         });
-    
+
         for (const appointment of appointments) {
-          const startDate = appointment.service_date;
-          const durationInMinutes = appointment.duration ?? 60;
-          const endDate = new Date(startDate.getTime() + durationInMinutes * 60000);
-    
-          const serviceName = appointment.service?.name ?? 'Service non défini';
-          const serviceCity = appointment.service?.city ?? 'Ville non définie';
+          const start = appointment.service_date;
+          const end = new Date(start.getTime() + (appointment.duration ?? 60) * 60000);
           const clientName = appointment.client
             ? `${appointment.client.first_name} ${appointment.client.last_name}`
             : 'Client non défini';
-    
+
+          const serviceName = `Prestation : ${appointment.service?.name}` || 'Service non défini';
+
           eventTable.push({
             id: `appointment-${appointment.appointment_id}`,
             title: serviceName,
             description: `Rendez-vous avec ${clientName}`,
-            location: serviceCity,
-            start: startDate,
-            end: endDate,
+            location: appointment.service?.city ?? 'Ville non définie',
+            start,
+            end,
             allDay: false,
+            color: 'sky',
           });
         }
-      } else {
-        const defaultEvent: CalendarEvent = {
-          id: 'event-1',
-          title: '',
-          description: '',
-          location: '',
-          start: new Date(),
-          end: new Date(Date.now() + 2 * 60 * 60 * 1000),
-          allDay: false,
-        };
-    
-        if (profile.includes('MERCHANT')) {
-          Object.assign(defaultEvent, {
-            title: 'Merchant Special Event',
-            description: 'Événement exclusif pour les commerçants.',
-            location: 'Magasin principal',
-          });
-        } else if (profile.includes('DELIVERYMAN')) {
-          Object.assign(defaultEvent, {
-            title: 'Delivery Shift',
-            description: 'Plage horaire de livraison.',
-            location: 'Entrepôt de livraison',
-          });
-        } else {
-          Object.assign(defaultEvent, {
-            title: 'Client Appointment',
-            description: 'Rendez-vous pour les clients.',
-            location: 'Bureau de service client',
-          });
-        }
-    
-        eventTable.push(defaultEvent);
       }
-    
+
+      if (profile.includes('CLIENT')) {
+        const appointments = await this.appointmentRepo.find({
+          where: { client: { client_id: client!.client_id } },
+          relations: ['service', 'provider'],
+        });
+
+        for (const appointment of appointments) {
+          const start = appointment.service_date;
+          const end = new Date(start.getTime() + (appointment.duration ?? 60) * 60000);
+          const providerName = appointment.provider
+            ? `${appointment.provider.first_name ?? ''} ${appointment.provider.last_name ?? ''}`.trim()
+            : 'Fournisseur non défini';
+
+          const serviceName = `Prestation : ${appointment.service?.name}` || 'Service non défini';
+
+          eventTable.push({
+            id: `appointment-${appointment.appointment_id}`,
+            title: serviceName,
+            description: `Prestation avec ${providerName}`,
+            location: appointment.service?.city ?? 'Ville non définie',
+            start,
+            end,
+            allDay: false,
+            color: 'amber',
+          });
+        }
+      }
+
+      if (profile.includes('DELIVERYMAN')) {
+        const deliveries = await this.deliveryRepository.find({
+          where: {
+            delivery_person: { delivery_person_id: deliveryPerson!.delivery_person_id },
+            status: In(['pending', 'taken', 'finished']),
+          },
+          relations: ['shipment', 'shipment.user', 'shipment.user.clients', 'shipment.user.merchant'],
+        });
+
+        for (const delivery of deliveries) {
+          const start = delivery.send_date;
+          const end = delivery.delivery_date ?? new Date(start.getTime() + 2 * 60 * 60 * 1000);
+          const shipmentUser = delivery.shipment.user;
+
+          const userName =
+            shipmentUser.clients?.[0]
+              ? `${shipmentUser.clients[0].first_name} ${shipmentUser.clients[0].last_name}`
+              : shipmentUser.merchant
+              ? `${shipmentUser.merchant.first_name} ${shipmentUser.merchant.last_name}`
+              : 'Expéditeur inconnu';
+
+          eventTable.push({
+            id: `delivery-${delivery.delivery_id}`,
+            title: `Livraison pour ${userName}`,
+            description: `Statut: ${delivery.status}`,
+            location: 'Lieu de livraison',
+            start,
+            end,
+            allDay: false,
+            color: 'violet',
+          });
+        }
+      }
+
+      if (profile.includes('CLIENT') || profile.includes('MERCHANT')) {
+        const shipments = await this.shipmentRepository.find({
+          where: {
+            user: { user_id },
+          },
+          relations: ['stores', 'stores.exchangePoint', 'deliveries'],
+        });
+
+        for (const shipment of shipments) {
+          for (const delivery of shipment.deliveries ?? []) {
+            if (!['pending', 'taken', 'finished'].includes(delivery.status)) continue;
+            if (delivery.shipment_step !== 0 && delivery.shipment_step !== 1) continue;
+            const shipmentName = `Préparation de la livraison : ${shipment.description}` || 'Préparation de livraison';
+
+            const start = delivery.send_date;
+            const end = delivery.delivery_date ?? new Date(start.getTime() + 60 * 60 * 1000);
+
+            eventTable.push({
+              id: `delivery-${delivery.delivery_id}`,
+              title: shipmentName,
+              description: `Préparez votre colis - Statut: ${delivery.status}`,
+              location: 'Point de collecte',
+              start,
+              end,
+              allDay: false,
+              color: 'rose',
+            });
+          }
+        }
+      }
+
       return eventTable;
     }
+
 }

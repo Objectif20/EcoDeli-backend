@@ -3,6 +3,7 @@ import { Shipment } from './shipment.entity';
 import { DeliveryCommission } from './delivery_commission.entity';
 import { DeliveryPerson } from './delivery_persons.entity';
 import { DeliveryReview } from './delivery_reviews.entity';
+import { DeliveryTransfer } from './delivery_transfer.entity';
 
 @Entity('deliveries')
 export class Delivery {
@@ -65,5 +66,7 @@ export class Delivery {
 
     @Column({ type : "varchar", length: 255, nullable: true })
     end_code: string ;
-
+    
+    @OneToMany(() => DeliveryTransfer, (transfer) => transfer.delivery)
+    transfers: DeliveryTransfer[];
 }

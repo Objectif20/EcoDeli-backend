@@ -1,4 +1,4 @@
-interface CalendarEvent {
+export interface CalendarEvent {
     id: string;
     title: string;
     description?: string;
@@ -6,4 +6,13 @@ interface CalendarEvent {
     end: Date;
     allDay?: boolean;
     location?: string;
+    color?: EventColor
   }
+
+export type EventColor =
+  | "sky"
+  | "amber"
+  | "violet"
+  | "rose"
+  | "emerald"
+  | "orange"

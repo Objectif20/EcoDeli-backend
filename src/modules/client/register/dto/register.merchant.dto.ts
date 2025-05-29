@@ -10,6 +10,20 @@ export class RegisterMerchantDTO {
     email: string;
 
     @ApiProperty({
+        description: 'The first name of the merchant',
+        example: 'John',
+    })
+    @IsString()
+    firstName: string;
+
+    @ApiProperty({
+        description: 'The last name of the merchant',
+        example: 'Doe',
+    })
+    @IsString()
+    lastName: string;
+
+    @ApiProperty({
         description: 'The password of the merchant',
         example: 'securepassword123',
     })

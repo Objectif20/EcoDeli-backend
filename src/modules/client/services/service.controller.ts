@@ -3,6 +3,7 @@ import { ServiceService } from './service.service';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { ClientJwtGuard } from 'src/common/guards/user-jwt.guard';
+import { FutureAppointmentProvider } from './type';
 
 @Controller('client/service')
 export class ServiceController {
@@ -78,6 +79,36 @@ export class ServiceController {
     return this.serviceService.getReviewsByUserId(user_id, page, limit);
   }
 
+  @Get('futureAppointments')
+  @UseGuards(ClientJwtGuard)
+  async getFutureAppointments(
+    @Body() body: { user_id: string },
+    @Query('page') page = 1,
+    @Query('limit') limit = 10,
+  ): Promise<{data : FutureAppointmentProvider[], totalRows: number, totalPages: number, currentPage: number, limit: number}> {
+    const { user_id } = body;
+    return this.serviceService.getMyFutureAppointmentsAsProvider(user_id, page, limit);
+  }
+
+  @Post("appointments/:appointment_id/start")
+  @UseGuards(ClientJwtGuard)
+  async startAppointment(
+    @Param('appointment_id') appointment_id: string,
+    @Body() body: { user_id: string, code : string } 
+  ) {
+    const { user_id, code } = body;
+    return this.serviceService.startAppointment(appointment_id, user_id, code);
+  }
+
+  @Post("appointments/:appointment_id/finish")
+  @UseGuards(ClientJwtGuard)
+  async finishAppointment(
+    @Param('appointment_id') appointment_id: string,
+    @Body() body: { user_id: string }
+  ) {
+    const { user_id } = body;
+    return this.serviceService.finishAppointment(appointment_id, user_id);
+  }
 
   @Get('myReviews')
   @UseGuards(ClientJwtGuard)

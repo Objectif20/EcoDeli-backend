@@ -53,6 +53,7 @@ import { Availability } from './availibities.entity';
 import { OneSignalDevice } from './onesignal-device.entity';
 import { TransferProvider } from './transfers_provider.entity';
 import { SubscriptionTransaction } from './subscription_transaction.entity';
+import { DeliveryTransfer } from './delivery_transfer.entity';
 
 export const entities = [
   Admin,
@@ -109,5 +110,6 @@ export const entities = [
   Availability,
   OneSignalDevice,
   TransferProvider,
-  SubscriptionTransaction
+  SubscriptionTransaction,
+  DeliveryTransfer
 ];
