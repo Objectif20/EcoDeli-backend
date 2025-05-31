@@ -9,12 +9,14 @@ import { DeliveriesService } from "./deliveries.service";
 import { Users } from "src/common/entities/user.entity";
 import { Shipment } from "src/common/entities/shipment.entity";
 import { Delivery } from "src/common/entities/delivery.entity";
+import { DeliveryTransfer } from "src/common/entities/delivery_transfer.entity";
+import { Subscription } from "src/common/entities/subscription.entity";
 
 
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Users, Shipment, Delivery]),
+        TypeOrmModule.forFeature([Users, Shipment, Delivery, DeliveryTransfer, Subscription]),
         JwtModule.register({}),
         SharedModule,
     ],
