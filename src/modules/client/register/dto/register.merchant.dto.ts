@@ -120,4 +120,11 @@ export class RegisterMerchantDTO {
     @IsOptional()
     @IsNumber()
     plan_id?: number;
+
+    @ApiProperty({
+    description: 'The signature of the provider',
+    example: 'John Doe, CEO',
+    })
+    @IsString()
+    signature: string;
 }

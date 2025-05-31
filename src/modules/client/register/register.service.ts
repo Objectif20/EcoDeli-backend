@@ -228,7 +228,7 @@ export class RegisterService {
         last_name: merchantDto.lastName,
         first_name: merchantDto.firstName,
         user: savedUser,
-      });
+      }, merchantDto.signature);
     
       const newMerchant = this.merchantRepository.create({
         company_name,
@@ -243,6 +243,7 @@ export class RegisterService {
         last_name: merchantDto.lastName,
         stripe_customer_id: stripeCustomerId ?? null,
         user: savedUser,
+        contract_url: contratUrl,
       });
     
       await this.merchantRepository.save(newMerchant);

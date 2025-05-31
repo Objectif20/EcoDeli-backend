@@ -7,6 +7,7 @@ import { NotFoundException } from "@nestjs/common";
 import { DeliveryPerson } from "src/common/entities/delivery_persons.entity";
 import { MinioService } from "src/common/services/file/minio.service";
 import { Providers } from "src/common/entities/provider.entity";
+import { Merchant } from "src/common/entities/merchant.entity";
 
 
 export class GeneralService {
@@ -18,6 +19,8 @@ export class GeneralService {
     private readonly deliveryPersonRepository: Repository<DeliveryPerson>,
     @InjectRepository(Providers)
     private readonly providerRepository: Repository<Providers>,
+    @InjectRepository(Merchant)
+    private readonly merchantRepository: Repository<Merchant>,
     private readonly minioService : MinioService
   ) { }
 
@@ -87,7 +90,34 @@ export class GeneralService {
           }
         }
         return { data: contracts, total };
-    }
+      }
+      if (type === 'merchant') {
+        const [merchants, total] = await this.merchantRepository
+          .createQueryBuilder('m')
+          .where(q ? `(m.last_name ILIKE :q OR m.first_name ILIKE :q OR m.company_name ILIKE :q)` : '1=1', { q: `%${q}%` })
+          .andWhere('m.contract_url IS NOT NULL') 
+          .skip((page - 1) * pageSize)
+          .take(pageSize)
+          .getManyAndCount();
+
+        const contracts: Contracts[] = [];
+
+        for (const m of merchants) {
+          const nom = m.last_name ?? '';
+          const prenom = m.first_name ?? '';
+          const contratUrl = m.contract_url ? (await this.minioService.generateImageUrl('client-documents', m.contract_url)) : '';
+
+          contracts.push({
+            id: m.merchant_id,
+            nom,
+            prenom,
+            contratUrl,
+            dateContrat: '',
+          });
+        }
+
+        return { data: contracts, total };
+      }
 
       return { data: [], total: 0 };
     }

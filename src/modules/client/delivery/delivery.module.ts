@@ -40,6 +40,7 @@ import { DeliveryStateService } from "./delivery-state.service";
 import { ShipmentService } from "./shipment.service";
 import { DeliveryUtilsService } from "./delivery-utils.service";
 import { DeliveryScheduleService } from "./delivery-schedule.service";
+import { Trip } from "src/common/entities/trips.entity";
 
 
 @Module({
@@ -48,7 +49,7 @@ import { DeliveryScheduleService } from "./delivery-schedule.service";
         TypeOrmModule.forFeature([Users, Client, DeliveryPerson, Merchant, Plan, Subscription, Merchant, 
             ProviderContracts, ProviderDocuments, DeliveryPerson, DeliveryPersonDocument, Category, Delivery,
             Shipment, Keyword, DeliveryKeyword, Parcel, ParcelImage, Favorite, Store, ExchangePoint, Warehouse, DeliveryCommission, DeliveryReview, DeliveryReviewResponse, Client, DeliveryCommission,
-            DeliveryTransfer]),
+            DeliveryTransfer, Trip]),
         JwtModule.register({}),
         SharedModule,
         MongooseModule.forFeature([{ name: Message.name, schema: MessageSchema }]),
