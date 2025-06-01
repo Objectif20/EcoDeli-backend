@@ -200,11 +200,10 @@ import { OneSignalService } from "src/common/services/notification/oneSignal.ser
 
     async updateProfile(
       user_id: string,
-      first_name: string,
-      last_name: string,
-      file: Express.Multer.File
+      first_name?: string,
+      last_name?: string,
+      file?: Express.Multer.File
     ): Promise<ProfileClient> {
-
       const client = await this.clientRepository.findOne({
         where: { user: { user_id } },
         relations: ['user'],
@@ -214,24 +213,31 @@ import { OneSignalService } from "src/common/services/notification/oneSignal.ser
         throw new NotFoundException('Client not found');
       }
 
-      client.first_name = first_name;
-      client.last_name = last_name;
+      if (first_name !== undefined && first_name !== "") {
+        client.first_name = first_name;
+      }
+
+      if (last_name !== undefined && last_name !== "") {
+        client.last_name = last_name;
+      }
 
       await this.clientRepository.save(client);
 
-      const oldPath = client.user.profile_picture;
-      const filename = `${user_id}/image-${uuidv4()}.${file.originalname.split('.').pop()}`;
-      const bucket = 'client-images';
-  
-      const uploaded = await this.minioService.uploadFileToBucket(bucket, filename, file);
-      if (!uploaded) throw new Error("Erreur lors de l'upload");
-  
-      if (oldPath) {
-        await this.minioService.deleteFileFromBucket(bucket, oldPath);
+      if (file) {
+        const oldPath = client.user.profile_picture;
+        const filename = `${user_id}/image-${uuidv4()}.${file.originalname.split('.').pop()}`;
+        const bucket = 'client-images';
+
+        const uploaded = await this.minioService.uploadFileToBucket(bucket, filename, file);
+        if (!uploaded) throw new Error("Erreur lors de l'upload");
+
+        if (oldPath) {
+          await this.minioService.deleteFileFromBucket(bucket, oldPath);
+        }
+
+        client.user.profile_picture = filename;
+        await this.userRepository.save(client.user);
       }
-  
-      client.user.profile_picture = filename;
-      await this.userRepository.save(client.user);
 
       return this.getMyProfile(user_id);
     }

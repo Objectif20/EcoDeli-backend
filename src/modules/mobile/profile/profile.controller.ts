@@ -1,8 +1,9 @@
-import { Body, Controller, Get,  Post,  UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get,  Patch,  Post,  Req,  UploadedFile,  UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags} from '@nestjs/swagger';
 import { ProfileService } from './profile.service';
 import {  CalendarEvent, ProfileClient } from './type';
 import { ClientJwtGuard } from 'src/common/guards/user-jwt.guard';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 
 
@@ -91,4 +92,21 @@ export class ClientProfileController {
     const result = await this.profileService.registerNewDevice(user_id, player_id);
     return { message: 'Device registered for notifications successfully' };
   }
+
+    @Patch('me')
+    @UseGuards(ClientJwtGuard)
+    @UseInterceptors(FileInterceptor('file'))
+    async updateProfile(
+      @Req() req: { user: { user_id: string }; body: any },
+      @UploadedFile() file: Express.Multer.File,
+    ): Promise<ProfileClient> {
+      const userId = req.user?.user_id;
+      if (!userId) {
+        throw new BadRequestException('User ID not found in token');
+      }
+
+      const { first_name, last_name } = req.body;
+
+      return this.profileService.updateProfile(userId, first_name, last_name, file);
+    }
 }
