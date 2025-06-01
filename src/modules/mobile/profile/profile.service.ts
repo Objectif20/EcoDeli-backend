@@ -1,4 +1,4 @@
-import {  Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {  Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Client } from "src/common/entities/client.entity";
 import { DeliveryPerson } from "src/common/entities/delivery_persons.entity";
@@ -10,6 +10,8 @@ import { MinioService } from "src/common/services/file/minio.service";
 import { MoreThan, Repository } from "typeorm";
 import { CalendarEvent, ProfileClient } from "./type";
 import { Report } from "src/common/entities/report.entity";
+import { v4 as uuidv4 } from 'uuid';
+import { OneSignalService } from "src/common/services/notification/oneSignal.service";
 
 
   @Injectable()
@@ -29,6 +31,7 @@ import { Report } from "src/common/entities/report.entity";
       private readonly planRepository: Repository<Plan>,
       @InjectRepository(Report)
       private readonly reportRepository: Repository<Report>,
+      private readonly onesignalService: OneSignalService,
       private readonly minioService: MinioService,
     ) {}
   
@@ -172,6 +175,79 @@ import { Report } from "src/common/entities/report.entity";
           location: 'Salle de conférence A',
         }
       ];
+    }
+
+    async getNewNfcCode(user_id: string): Promise<{ nfc_code: string }> {
+
+      const deliveryPerson = await this.deliveryPersonRepository.findOne({
+        where: { user: { user_id } },
+      });
+
+      console.log('Delivery Person:', deliveryPerson);
+
+      const nfcCode = `NFC-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+      if (deliveryPerson) {
+        deliveryPerson.nfc_code = nfcCode;
+        await this.deliveryPersonRepository.save(deliveryPerson);
+      } else {
+        throw new NotFoundException('Delivery person not found');
+      }
+
+      return { nfc_code: nfcCode};
+
+    }
+
+    async updateProfile(
+      user_id: string,
+      first_name: string,
+      last_name: string,
+      file: Express.Multer.File
+    ): Promise<ProfileClient> {
+
+      const client = await this.clientRepository.findOne({
+        where: { user: { user_id } },
+        relations: ['user'],
+      });
+
+      if (!client) {
+        throw new NotFoundException('Client not found');
+      }
+
+      client.first_name = first_name;
+      client.last_name = last_name;
+
+      await this.clientRepository.save(client);
+
+      const oldPath = client.user.profile_picture;
+      const filename = `${user_id}/image-${uuidv4()}.${file.originalname.split('.').pop()}`;
+      const bucket = 'client-images';
+  
+      const uploaded = await this.minioService.uploadFileToBucket(bucket, filename, file);
+      if (!uploaded) throw new Error("Erreur lors de l'upload");
+  
+      if (oldPath) {
+        await this.minioService.deleteFileFromBucket(bucket, oldPath);
+      }
+  
+      client.user.profile_picture = filename;
+      await this.userRepository.save(client.user);
+
+      return this.getMyProfile(user_id);
+    }
+
+    async registerNewDevice(userId: string, playerId: string): Promise<void> {
+      const user = await this.userRepository.findOne({ where: { user_id: userId } });
+      if (!user) {
+        throw new Error('User not found');
+      }
+    
+      const existingDevice = await this.onesignalService.getPlayerIdsForUser(userId);
+      if (existingDevice.some(device => device.player_id === playerId)) {
+        return;
+      }
+    
+      await this.onesignalService.registerDevice(userId, playerId, "mobile");
     }
 
 

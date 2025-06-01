@@ -22,7 +22,6 @@ import { BoxService } from '../services/dataset/boxes.service';
     TypeOrmModule.forFeature([Admin, Role, RoleList, Users, Client, Merchant, Providers, DeliveryPerson, OneSignalDevice]),
     AdminAuthModule, 
     DatasetModule,
-
   ],
   providers: [
     MinioService,

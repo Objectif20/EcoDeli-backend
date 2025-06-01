@@ -20,5 +20,8 @@ import { Users } from './user.entity';
     @ManyToOne(() => Users, (user) => user.devices, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'user_id' })
     user: Users;
+
+    @Column({type : "varchar" , length : 25 , default : null})
+    platform: string | null; 
   }
   

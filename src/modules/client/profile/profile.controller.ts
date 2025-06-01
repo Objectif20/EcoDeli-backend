@@ -270,6 +270,7 @@ export class ClientProfileController {
   }
 
   @Post("createNotification")
+  @UseGuards(ClientJwtGuard)
   async createNotification(@Body() body: { user_id: string; title: string; content: string }) {
     const { user_id, title, content } = body;
     return this.profileService.createNotification(user_id, title, content);

@@ -60,4 +60,35 @@ export class ClientProfileController {
     return planning;
   }
 
+  @Get('nfc')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({
+    summary: 'Get My NFC Code',
+    operationId: 'getMyNfcCode',
+  })
+  @ApiResponse({ status: 200, description: 'Client NFC code retrieved successfully' })
+  async getMyNfcCode(@Body() body: { user_id: string }): Promise<{ nfc_code: string }> {
+    const { user_id } = body;
+    const nfcCode = await this.profileService.getNewNfcCode(user_id);
+    if (!nfcCode) {
+      throw new Error('NFC code not found');
+    }
+    return nfcCode;
+  }
+
+
+  @Post('notification')
+  @UseGuards(ClientJwtGuard)
+  @ApiOperation({
+    summary: 'Register Device for Notifications',
+    operationId: 'registerDevice',
+  })
+  @ApiResponse({ status: 200, description: 'Device registered for notifications successfully' })
+  async registerDevice(
+    @Body() body: { user_id: string, player_id: string }
+  ): Promise<{ message: string }> {
+    const { user_id, player_id } = body;
+    const result = await this.profileService.registerNewDevice(user_id, player_id);
+    return { message: 'Device registered for notifications successfully' };
+  }
 }
