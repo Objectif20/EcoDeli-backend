@@ -1,6 +1,6 @@
 import { ApiTags } from "@nestjs/swagger";
 import { DeliveriesService } from "./deliveries.service";
-import { Body, Controller, Get, Param, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { ClientJwtGuard } from "src/common/guards/user-jwt.guard";
 import { ActiveDeliveryAsClient } from "./type";
 
@@ -25,5 +25,17 @@ export class DeliveriesController {
   ) {
       return this.deliveriesService.getDeliveryDetails(user_id, delivery_id);
   }
+
+
+  @Post(":id/takenWithNfc")
+  @UseGuards(ClientJwtGuard)
+  async takeDeliveryWithNfc(
+      @Param("id") delivery_id : string,
+      @Body("user_id") user_id : string,
+      @Body("nfc_code") nfc_code : string,
+  ) {
+      return this.deliveriesService.takeDeliveryPackage(delivery_id,user_id, nfc_code);
+  }
+
 
 }

@@ -1031,20 +1031,15 @@ import { Readable } from "stream";
       }
     
       const existingDevice = await this.onesignalService.getPlayerIdsForUser(userId);
-      if (existingDevice.includes(playerId)) {
+      if (existingDevice.some(device => device.player_id === playerId)) {
         return;
       }
     
-      await this.onesignalService.registerDevice(userId, playerId);
+      await this.onesignalService.registerDevice(userId, playerId, "web");
     }
 
     async createNotification(userId: string, title: string, content: string): Promise<void> {
-      const subscriptionIds = await this.onesignalService.getPlayerIdsForUser(userId);
-      if (subscriptionIds.length === 0) {
-        throw new Error('No devices registered for this user');
-      }
-    
-      await this.onesignalService.sendNotification(subscriptionIds, title, content);
+      await this.onesignalService.sendNotification(userId, title, content);
     }
 
     async getCommonData(userId: string): Promise<CommonSettingsForm> {

@@ -63,7 +63,6 @@ export class RegisterService {
         private readonly vehicleDocumentRepository: Repository<VehicleDocument>,
         @InjectRepository(Category)
         private readonly categoryRepository: Repository<Category>,
-        @Inject("ONESIGNAL_CLIENT") private readonly oneSignalClient: OneSignalClient,
         @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
         private readonly minioService: MinioService,
         private readonly stripeService: StripeService,
