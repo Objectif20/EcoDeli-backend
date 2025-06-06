@@ -16,7 +16,7 @@ export class OneSignalConfigService {
     const userAuthKey = await this.secretsService.loadSecret('ONESIGNAL_USER_AUTH_KEY');
 
     const restApiKeyWeb = await this.secretsService.loadSecret('ONESIGNAL_REST_API_KEY');
-    const restApiKeyMobile = await this.secretsService.loadSecret('ONESIGNAL_API_KEY_MOBILE');
+    const restApiKeyMobile = process.env.ONESIGNAL_API_KEY_MOBILE;
 
     if (!userAuthKey || !restApiKeyWeb || !restApiKeyMobile) {
       throw new Error('Les clés OneSignal sont manquantes.');
