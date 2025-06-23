@@ -39,6 +39,7 @@
     "@onesignal/node-onesignal": "^5.0.0-alpha-02",
     "axios": "^1.8.4",
     "bcrypt": "^5.1.1",
+    "body-parser": "^2.2.0",
     "bottleneck": "^2.19.5",
     "cache-manager": "^6.4.1",
     "class-transformer": "^0.5.1",

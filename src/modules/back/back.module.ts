@@ -14,6 +14,7 @@ import { ReportModule } from './reports/report.module';
 import { GeneralModule } from './general/general.module';
 import { ClientModule } from './client/client.module';
 import { FinanceModule } from './finance/finance.module';
+import { StripeWebhookModule } from './stripe-webhook/stripe-webhook.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { FinanceModule } from './finance/finance.module';
     GeneralModule,
     ClientModule,
     FinanceModule,
+    StripeWebhookModule
   ],
   providers: [],
 })
