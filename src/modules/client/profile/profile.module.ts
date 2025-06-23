@@ -21,6 +21,8 @@ import { Transfer } from "src/common/entities/transfers.entity";
 import { TransferProvider } from "src/common/entities/transfers_provider.entity";
 import { SubscriptionTransaction } from "src/common/entities/subscription_transaction.entity";
 import { Languages } from "src/common/entities/languages.entity";
+import { MongooseModule } from "@nestjs/mongoose";
+import { Message, MessageSchema } from "src/common/schemas/message.schema";
 
 
 @Module({
@@ -28,6 +30,7 @@ import { Languages } from "src/common/entities/languages.entity";
     imports: [
         TypeOrmModule.forFeature([Users, Client, Providers, DeliveryPerson, Merchant, Subscription, Plan, ProviderDocuments,Languages, Blocked, Report, Availability, OneSignalDevice, Transfer, TransferProvider, SubscriptionTransaction, Subscription]),
         JwtModule.register({}),
+        MongooseModule.forFeature([{ name: Message.name, schema: MessageSchema }]),
         SharedModule,
     ],
     controllers: [ClientProfileController],

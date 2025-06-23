@@ -61,6 +61,20 @@ export class ClientProfileController {
     return this.profileService.deleteBlocked(userId, blocked_user_id);
   }
 
+  @Post('blocked/:blocked_user_id')
+  @UseGuards(ClientJwtGuard)
+  async blockUser(@Body () body: { user_id: string }, @Param('blocked_user_id') blocked_user_id: string) {
+    const userId = body.user_id;
+    return this.profileService.addBlocked(userId, blocked_user_id);
+  }
+
+  @Delete('chat/:other_user_id')
+  @UseGuards(ClientJwtGuard)
+  async deleteChat(@Body () body: { user_id: string }, @Param('other_user_id') other_user_id: string) {
+    const userId = body.user_id;
+    return this.profileService.deleteChat(userId, other_user_id);
+  }
+
   @Put('picture')
   @UseGuards(ClientJwtGuard)
   @UseInterceptors(FileInterceptor('image'))

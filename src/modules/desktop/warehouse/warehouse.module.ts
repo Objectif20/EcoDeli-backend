@@ -4,12 +4,13 @@ import { SharedModule } from 'src/common/shared/shared.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WarehouseService } from './warehouse.service';
 import { WarehouseController } from './warehouse.controller';
+import { Warehouse } from 'src/common/entities/warehouses.entity';
 
 
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([]),
+        TypeOrmModule.forFeature([Warehouse]),
         JwtModule.register({}),
         SharedModule,
     ],
