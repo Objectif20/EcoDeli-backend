@@ -4,6 +4,8 @@ import {
   MessageBody,
   ConnectedSocket,
   WebSocketServer,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { InjectModel } from '@nestjs/mongoose';
@@ -11,21 +13,20 @@ import { Model } from 'mongoose';
 import { Message } from 'src/common/schemas/message.schema';
 import { ProfileService } from '../profile/profile.service';
 import { MinioService } from 'src/common/services/file/minio.service';
+import { OneSignalService } from 'src/common/services/notification/oneSignal.service';
 import { Readable } from 'stream';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { OneSignalService } from 'src/common/services/notification/oneSignal.service';
 
 @WebSocketGateway({
   cors: {
     origin: '*',
   },
 })
-export class MessagesGateway {
+export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
-  private connectedUsers = new Map<string, Socket>();
-  private typingUsers = new Map<string, string>();
+  private connectedUsers = new Map<string, Set<Socket>>();
 
   constructor(
     @InjectModel(Message.name) private messageModel: Model<Message>,
@@ -34,11 +35,45 @@ export class MessagesGateway {
     private oneSignalService: OneSignalService,
   ) {}
 
+  async handleConnection(client: Socket) {
+    console.log('New client connected:', client.id);
+  }
+
+  handleDisconnect(client: Socket) {
+    const userId = client.data.userId;
+    console.log('Client disconnected:', client.id, 'UserId:', userId);
+    
+    if (userId && this.connectedUsers.has(userId)) {
+      const userSockets = this.connectedUsers.get(userId);
+      if (userSockets) {
+        userSockets.delete(client);
+        console.log(`Removed socket for user ${userId}. Remaining sockets: ${userSockets.size}`);
+        
+        if (userSockets.size === 0) {
+          this.connectedUsers.delete(userId);
+          console.log(`User ${userId} completely disconnected`);
+        }
+      }
+    }
+  }
+
   @SubscribeMessage('clientConnected')
   async handleConnect(@ConnectedSocket() client: Socket, @MessageBody() userId: string) {
-    this.connectedUsers.set(userId, client);
+    console.log(`User ${userId} connecting with socket ${client.id}`);
+    
+    if (!this.connectedUsers.has(userId)) {
+      this.connectedUsers.set(userId, new Set<Socket>());
+    }
+    
+    const userSockets = this.connectedUsers.get(userId);
+    if (userSockets) {
+      userSockets.add(client);
+      console.log(`User ${userId} now has ${userSockets.size} connected device(s)`);
+    }
+    
     client.data.userId = userId;
-    this.sendUserMessages(userId);
+    
+    await this.sendUserMessages(userId);
     await this.sendContacts(userId, client);
   }
 
@@ -54,22 +89,14 @@ export class MessagesGateway {
     await this.sendContacts(userId, client);
   }
 
-  @SubscribeMessage('disconnect')
-  handleDisconnect(@ConnectedSocket() client: Socket) {
-    this.connectedUsers.forEach((socket, userId) => {
-      if (socket.id === client.id) {
-        this.connectedUsers.delete(userId);
-        this.typingUsers.delete(userId);
-      }
-    });
-  }
-
   @SubscribeMessage('sendMessage')
   async handleSendMessage(
     @MessageBody() data: { receiverId: string; content: string; fileUrl?: string },
     @ConnectedSocket() client: Socket,
   ) {
     const senderId = client.data.userId;
+    console.log(`Message from ${senderId} to ${data.receiverId}:`, data.content);
+    
     if (!data.content && !data.fileUrl) {
       return;
     }
@@ -92,22 +119,36 @@ export class MessagesGateway {
       }
     }
 
-    const receiverSocket = this.connectedUsers.get(data.receiverId);
-    if (receiverSocket) {
-      receiverSocket.emit('receiveMessage', newMessage);
+    const receiverSockets = this.connectedUsers.get(data.receiverId);
+    if (receiverSockets && receiverSockets.size > 0) {
+      console.log(`Sending message to ${receiverSockets.size} device(s) of receiver ${data.receiverId}`);
+      receiverSockets.forEach(socket => {
+        socket.emit('receiveMessage', newMessage);
+      });
     } else {
-      const senderProfile = await this.userService.getMyProfile(senderId);
-      const title = `${senderProfile.first_name} ${senderProfile.last_name}`;
-      const content = data.content;
+      console.log(`Receiver ${data.receiverId} not connected, sending push notification`);
+      try {
+        const senderProfile = await this.userService.getMyProfile(senderId);
+        const title = `${senderProfile.first_name} ${senderProfile.last_name}`;
+        const content = data.content || 'Nouveau fichier';
 
-      await this.oneSignalService.sendNotification(
-        data.receiverId,
-        title,
-        "Nouveau message :" + content,
-      );
+        await this.oneSignalService.sendNotification(
+          data.receiverId,
+          title,
+          "Nouveau message : " + content,
+        );
+      } catch (error) {
+        console.error('Error sending push notification:', error);
+      }
     }
 
-    client.emit('receiveMessage', newMessage);
+    const senderSockets = this.connectedUsers.get(senderId);
+    if (senderSockets && senderSockets.size > 0) {
+      console.log(`Sending message to ${senderSockets.size} device(s) of sender ${senderId}`);
+      senderSockets.forEach(socket => {
+        socket.emit('receiveMessage', newMessage);
+      });
+    }
   }
 
   @SubscribeMessage('getMessages')
@@ -116,8 +157,7 @@ export class MessagesGateway {
     @ConnectedSocket() client: Socket,
   ) {
     const userId = client.data.userId;
-
-    console.log("Sending messages to user:", userId);
+    console.log("Sending messages to user:", userId, "for conversation with:", data.receiverId);
 
     const messages = await this.messageModel
       .find({
@@ -140,7 +180,6 @@ export class MessagesGateway {
             return plainMsg;
           }
         }
-
         return plainMsg;
       })
     );
@@ -172,9 +211,8 @@ export class MessagesGateway {
     @ConnectedSocket() client: Socket,
   ) {
     const senderId = client.data.userId;
+    console.log('File upload from:', senderId, 'to:', data.receiverId);
 
-    console.log('Sender ID:', senderId);
-    console.log('Receiver ID:', data.receiverId);
     try {
       const base64Content = data.base64Data.split(',')[1];
       const buffer = Buffer.from(base64Content, 'base64');
@@ -190,28 +228,33 @@ export class MessagesGateway {
         filename: '',
         path: '',
       };
+
       const fileExt = path.extname(simulatedFile.originalname);
       const fileName = `${uuidv4()}${fileExt}`;
       const filePath = `/user/${senderId}/chat/${data.receiverId}/${fileName}`;
+      
       const success = await this.minioService.uploadFileToBucket(
         'user-chat',
         filePath,
         simulatedFile
       );
+
       if (!success) {
         client.emit('uploadFailed', { message: 'Upload failed' });
         console.error('Upload failed');
         return;
       }
-      const fileUrl = filePath;
+
       const newMessage = new this.messageModel({
         senderId,
         receiverId: data.receiverId,
         content: 'File uploaded',
-        fileUrl: fileUrl,
+        fileUrl: filePath,
       });
+
       await newMessage.save();
-      console.log('Message saved:', newMessage);
+      console.log('File message saved:', newMessage._id);
+
       if (newMessage.fileUrl) {
         try {
           const updatedFileUrl = await this.minioService.generateImageUrl('user-chat', newMessage.fileUrl);
@@ -220,20 +263,37 @@ export class MessagesGateway {
           console.error('Error generating fileUrl for message:', newMessage._id, error);
         }
       }
-      const receiverSocket = this.connectedUsers.get(data.receiverId);
-      if (receiverSocket) {
-        receiverSocket.emit('receiveMessage', newMessage);
-      } else {
-        const senderProfile = await this.userService.getMyProfile(senderId);
-        const title = `${senderProfile.first_name} ${senderProfile.last_name}`;
 
-        await this.oneSignalService.sendNotification(
-          data.receiverId,
-          title,
-          `You have received a new file from ${title}`,
-        );
+      const receiverSockets = this.connectedUsers.get(data.receiverId);
+      if (receiverSockets && receiverSockets.size > 0) {
+        console.log(`Sending file message to ${receiverSockets.size} device(s) of receiver ${data.receiverId}`);
+        receiverSockets.forEach(socket => {
+          socket.emit('receiveMessage', newMessage);
+        });
+      } else {
+        try {
+          const senderProfile = await this.userService.getMyProfile(senderId);
+          const title = `${senderProfile.first_name} ${senderProfile.last_name}`;
+
+          await this.oneSignalService.sendNotification(
+            data.receiverId,
+            title,
+            `You have received a new file from ${title}`,
+          );
+        } catch (error) {
+          console.error('Error sending push notification for file:', error);
+        }
       }
-      client.emit('receiveMessage', newMessage);
+
+      const senderSockets = this.connectedUsers.get(senderId);
+      if (senderSockets && senderSockets.size > 0) {
+        console.log(`Sending file message to ${senderSockets.size} device(s) of sender ${senderId}`);
+        senderSockets.forEach(socket => {
+          socket.emit('receiveMessage', newMessage);
+        });
+      }
+
+      console.log('File upload completed successfully');
     } catch (error) {
       console.error('Error in handleFileUpload:', error);
       client.emit('uploadFailed', { message: 'Server error during upload' });
@@ -244,9 +304,13 @@ export class MessagesGateway {
     const unreadMessages = await this.messageModel
       .find({ receiverId: userId, isRead: false })
       .sort({ timestamp: 1 });
-    const clientSocket = this.connectedUsers.get(userId);
-    if (clientSocket) {
-      clientSocket.emit('receiveUnreadMessages', unreadMessages);
+    
+    const userSockets = this.connectedUsers.get(userId);
+    if (userSockets && userSockets.size > 0) {
+      console.log(`Sending ${unreadMessages.length} unread messages to ${userSockets.size} device(s) of user ${userId}`);
+      userSockets.forEach(socket => {
+        socket.emit('receiveUnreadMessages', unreadMessages);
+      });
     }
   }
 
@@ -256,8 +320,23 @@ export class MessagesGateway {
         { $match: { $or: [{ senderId: userId }, { receiverId: userId }] } },
         { $group: { _id: { $cond: [{ $eq: ['$senderId', userId] }, '$receiverId', '$senderId'] } } },
       ]);
+    
     const userIds = conversations.map(conv => conv._id);
     const contacts = await Promise.all(userIds.map(id => this.userService.getMyProfile(id)));
     client.emit('contacts', contacts);
+  }
+
+  @SubscribeMessage('debugConnections')
+  handleDebugConnections(@ConnectedSocket() client: Socket) {
+    const userId = client.data.userId;
+    const userSockets = this.connectedUsers.get(userId);
+    const socketCount = userSockets ? userSockets.size : 0;
+    
+    console.log(`Debug - User ${userId} has ${socketCount} connected device(s)`);
+    client.emit('debugInfo', {
+      userId,
+      socketCount,
+      currentSocketId: client.id
+    });
   }
 }
