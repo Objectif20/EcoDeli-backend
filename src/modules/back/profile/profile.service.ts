@@ -287,12 +287,24 @@ export class AdminProfileService {
     
         try {
             const fromEmail = this.mailer.options.auth.user;
-            await this.mailer.sendMail({
-                from: fromEmail,
-                to: email,
-                subject: 'Création d\'un compte administrateur',
-                text: `Bonjour ${first_name},\n\nVotre compte a été créé avec succès.\n\nPour définir votre mot de passe, utilisez le code suivant : ${passwordCode}\n\nMerci !`,
-            });
+                    await this.mailer.sendMail({
+                        from: fromEmail,
+                        to: email,
+                        subject: 'Création d\'un compte administrateur',
+                        html: `
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border-radius: 8px;">
+                            <h2>Bienvenue sur Écodeli !</h2>
+                            <p>Bonjour ${first_name},</p>
+                            <p>Votre compte administrateur a été créé avec succès.</p>
+                            <p>Pour définir votre mot de passe, cliquez sur le bouton ci-dessous :</p>
+                            <a href="https://admin.ecodeli.remythibaut.fr/auth/new-password/${passwordCode}" style="display: inline-block; padding: 12px 24px; background-color: #2a9d8f; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 10px;">
+                            Créer mon mot de passe
+                            </a>
+                            <p style="margin-top: 20px;">Ce lien est personnel et ne doit pas être partagé.</p>
+                            <p style="color: #555;">Merci,<br>L'équipe Écodeli</p>
+                        </div>
+                        `
+                    });
         } catch (error) {
             throw new Error(`Error sending the email: ${error.message}`);
         }

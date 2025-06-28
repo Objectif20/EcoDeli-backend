@@ -91,6 +91,18 @@ export class LanguagesService {
     };
   }
 
+  async getLanguageById(id: string): Promise<Languages & { fileUrl: string }> {
+    const language = await this.languagesRepository.findOneBy({ language_id: id });
+    if (!language) {
+      throw new Error('Language not found');
+    }
+
+    const fileName = `${language.iso_code}.json`;
+    const fileUrl = await this.minioService.generateImageUrl('languages', fileName);
+
+    return { ...language, fileUrl };
+  }
+
   async getDefaultLanguage(id : string): Promise<any> {
 
     const language = await this.languagesRepository.findOneBy({ language_id : id });

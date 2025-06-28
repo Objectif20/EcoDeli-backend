@@ -16,106 +16,6 @@ import { Subscription } from "src/common/entities/subscription.entity";
 import { format, formatISO, startOfMonth, subMonths } from "date-fns";
 import { fr } from 'date-fns/locale';
 import { Delivery } from "src/common/entities/delivery.entity";
-export const Test: Transaction[] = [
-    {
-      id: "TR-001",
-      name: "Jean Dupont",
-      type: "sub",
-      category: "sub",
-      date: "01/2024",
-      invoiceUrl: "https://example.com/invoice/TR-001.pdf",
-    },
-    {
-      id: "TR-002",
-      name: "Marie Martin",
-      type: "in",
-      category: "service",
-      date: "2024-02-15",
-      invoiceUrl: "https://example.com/invoice/TR-002.pdf",
-    },
-    {
-      id: "TR-003",
-      name: "Pierre Durand",
-      type: "out",
-      category: "delivery",
-      date: "2024-03-22",
-      invoiceUrl: "https://example.com/invoice/TR-003.pdf",
-    },
-    {
-      id: "TR-004",
-      name: "Sophie Bernard",
-      type: "sub",
-      category: "sub",
-      date: "02/2024",
-      invoiceUrl: "https://example.com/invoice/TR-004.pdf",
-    },
-    {
-      id: "TR-005",
-      name: "Lucas Petit",
-      type: "in",
-      category: "service",
-      date: "2024-01-10",
-      invoiceUrl: "https://example.com/invoice/TR-005.pdf",
-    },
-    {
-      id: "TR-006",
-      name: "Emma Leroy",
-      type: "out",
-      category: "delivery",
-      date: "2023-12-05",
-      invoiceUrl: "https://example.com/invoice/TR-006.pdf",
-    },
-    {
-      id: "TR-007",
-      name: "Thomas Moreau",
-      type: "sub",
-      category: "sub",
-      date: "03/2024",
-      invoiceUrl: "https://example.com/invoice/TR-007.pdf",
-    },
-    {
-      id: "TR-008",
-      name: "Camille Roux",
-      type: "in",
-      category: "service",
-      date: "2024-04-18",
-      invoiceUrl: "https://example.com/invoice/TR-008.pdf",
-    },
-    {
-      id: "TR-009",
-      name: "Antoine Girard",
-      type: "out",
-      category: "delivery",
-      date: "2023-11-30",
-      invoiceUrl: "https://example.com/invoice/TR-009.pdf",
-    },
-    {
-      id: "TR-010",
-      name: "Julie Fournier",
-      type: "sub",
-      category: "sub",
-      date: "04/2024",
-      invoiceUrl: "https://example.com/invoice/TR-010.pdf",
-    },
-    {
-      id: "TR-011",
-      name: "Nicolas Lambert",
-      type: "in",
-      category: "service",
-      date: "2024-05-02",
-      invoiceUrl: "https://example.com/invoice/TR-011.pdf",
-    },
-    {
-      id: "TR-012",
-      name: "Léa Bonnet",
-      type: "out",
-      category: "delivery",
-      date: "2023-10-15",
-      invoiceUrl: "https://example.com/invoice/TR-012.pdf",
-    }
-  ];
-
-
 
 @Injectable()
 export class FinanceService {
@@ -171,7 +71,7 @@ export class FinanceService {
             category: 'service' as TransactionCategory,
             date: (appointment.payment_date || appointment.service_date).toISOString().split('T')[0],
             invoiceUrl: appointment.url_file
-              ? await this.minioService.generatePresignedUrl('client-documents', appointment.url_file)
+              ? await this.minioService.generateImageUrl('client-documents', appointment.url_file)
               : '',
           })));
 
@@ -223,7 +123,7 @@ export class FinanceService {
               category: 'delivery' as TransactionCategory,
               date: delivery.date.toISOString().split('T')[0],
               invoiceUrl: delivery.url
-                ? await this.minioService.generatePresignedUrl('client-documents', delivery.url)
+                ? await this.minioService.generateImageUrl('client-documents', delivery.url)
                 : '',
             };
           }));
@@ -253,7 +153,7 @@ export class FinanceService {
             category: 'service' as TransactionCategory,
             date: transfer.date.toISOString().split('T')[0],
             invoiceUrl: transfer.url
-              ? await this.minioService.generatePresignedUrl('client-documents', transfer.url)
+              ? await this.minioService.generateImageUrl('client-documents', transfer.url)
               : '',
           })));
 
@@ -282,7 +182,7 @@ export class FinanceService {
             category: 'delivery' as TransactionCategory,
             date: transfer.date.toISOString().split('T')[0],
             invoiceUrl: transfer.url
-              ? await this.minioService.generatePresignedUrl('client-documents', transfer.url)
+              ? await this.minioService.generateImageUrl('client-documents', transfer.url)
               : '',
           })));
 
@@ -326,7 +226,7 @@ export class FinanceService {
               category: 'sub' as TransactionCategory,
               date: subscription.created_at.toISOString().split('T')[0],
               invoiceUrl: subscription.invoice_url
-                ? await this.minioService.generatePresignedUrl('client-documents', subscription.invoice_url)
+                ? await this.minioService.generateImageUrl('client-documents', subscription.invoice_url)
                 : '',
             };
           }));
