@@ -73,6 +73,20 @@ export class LanguagesController {
     return this.languagesService.getAllLanguages(page, limit);
   }
 
+  @Get(':id/details')
+  @UseGuards(AdminJwtGuard)
+  @ApiOperation({
+    summary: 'Get a Language by ID',
+    operationId: 'getLanguageById',
+  })
+  @ApiParam({ name: 'id', description: 'The ID of the language'
+  })
+  @ApiResponse({ status: 200, description: 'Language retrieved successfully' })
+  async getDetailsLanguageById(@Param('id') id: string): Promise<Languages>
+  {
+    return this.languagesService.getLanguageById(id);
+  }
+
   @Get("french")
   @UseGuards(AdminJwtGuard)
   @ApiOperation({

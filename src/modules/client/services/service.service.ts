@@ -396,7 +396,6 @@ export class ServiceService {
       throw new NotFoundException('Erreur lors de la création du rendez-vous');
     }
 
-    
   }
   
   async getServiceAppointments(service_id: string) {
@@ -848,7 +847,7 @@ export class ServiceService {
             stream: Readable.from(pdfBuffer),
             };
 
-          const filePath = `/services/${appointment.service.service_id}/appointments/${appointment.appointment_id}/facture_${appointment.appointment_id}.pdf`;
+          const filePath = `services/${appointment.service.service_id}/appointments/${appointment.appointment_id}/facture_${appointment.appointment_id}.pdf`;
           await this.minioService.uploadFileToBucket('client-documents', filePath, file);
 
         appointment.url_file = filePath;

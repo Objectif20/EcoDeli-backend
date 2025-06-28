@@ -2,6 +2,7 @@ export interface Contracts {
     id: string
     nom: string
     prenom: string
+    profilePicture ?: string | null
     contratUrl: string
     dateContrat: string
 }

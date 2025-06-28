@@ -1,0 +1,20 @@
+import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
+import { SharedModule } from 'src/common/shared/shared.module';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { WarehouseService } from './warehouse.service';
+import { WarehouseController } from './warehouse.controller';
+import { Warehouse } from 'src/common/entities/warehouses.entity';
+
+
+
+@Module({
+    imports: [
+        TypeOrmModule.forFeature([Warehouse]),
+        JwtModule.register({}),
+        SharedModule,
+    ],
+    providers: [WarehouseService],
+    controllers: [WarehouseController],
+})
+export class WarehouseModule {}

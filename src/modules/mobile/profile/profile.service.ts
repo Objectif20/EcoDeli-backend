@@ -7,11 +7,13 @@ import { Plan } from "src/common/entities/plan.entity";
 import { Providers } from "src/common/entities/provider.entity";
 import { Users } from "src/common/entities/user.entity";
 import { MinioService } from "src/common/services/file/minio.service";
-import { MoreThan, Repository } from "typeorm";
+import { In, MoreThan, Repository } from "typeorm";
 import { CalendarEvent, ProfileClient } from "./type";
 import { Report } from "src/common/entities/report.entity";
 import { v4 as uuidv4 } from 'uuid';
 import { OneSignalService } from "src/common/services/notification/oneSignal.service";
+import { Appointments } from "src/common/entities/appointments.entity";
+import { Delivery } from "src/common/entities/delivery.entity";
 
 
   @Injectable()
@@ -31,6 +33,10 @@ import { OneSignalService } from "src/common/services/notification/oneSignal.ser
       private readonly planRepository: Repository<Plan>,
       @InjectRepository(Report)
       private readonly reportRepository: Repository<Report>,
+      @InjectRepository(Appointments)
+      private readonly appointmentRepo: Repository<Appointments>,
+      @InjectRepository(Delivery)
+      private readonly deliveryRepository: Repository<Delivery>,
       private readonly onesignalService: OneSignalService,
       private readonly minioService: MinioService,
     ) {}
@@ -130,51 +136,76 @@ import { OneSignalService } from "src/common/services/notification/oneSignal.ser
     }
 
     async getPlanning(user_id: string): Promise<CalendarEvent[]> {
-      const user = await this.userRepository.findOne({
-        where: { user_id },
-      });
+        const client = await this.clientRepository.findOne({
+          where: { user: { user_id } },
+        });
 
-      if (!user) {
-        throw new NotFoundException('Utilisateur introuvable');
-      }
-
-      return [
-        {
-          id: '1',
-          title: 'Réunion d\'équipe',
-          description: 'Réunion hebdomadaire avec l\'équipe projet.',
-          start: new Date('2025-05-20T10:00:00'),
-          end: new Date('2025-05-20T11:00:00'),
-          allDay: false,
-          location: 'Salle de réunion 2B',
-        },
-        {
-          id: '2',
-          title: 'Déjeuner client',
-          description: 'Déjeuner avec le client pour discuter des nouvelles fonctionnalités.',
-          start: new Date('2025-05-20T12:30:00'),
-          end: new Date('2025-05-20T14:00:00'),
-          allDay: false,
-          location: 'Le Bistro Parisien',
-        },
-        {
-          id: '3',
-          title: 'Journée Télétravail',
-          start: new Date('2025-05-22T00:00:00'),
-          end: new Date('2025-05-22T23:59:59'),
-          allDay: true,
-          location: 'Domicile',
-        },
-        {
-          id: '4',
-          title: 'Sprint Planning',
-          description: 'Planification du sprint avec l\'équipe Agile.',
-          start: new Date('2025-05-23T09:00:00'),
-          end: new Date('2025-05-23T10:30:00'),
-          allDay: false,
-          location: 'Salle de conférence A',
+        if (!client) {
+          throw new Error('Client not found');
         }
-      ];
+
+        const deliveryPerson = await this.deliveryPersonRepository.findOne({
+          where: { user: { user_id } },
+        });
+
+        const eventTable: CalendarEvent[] = [];
+
+        const appointments = await this.appointmentRepo.find({
+          where: { client: { client_id: client.client_id } },
+          relations: ['service', 'provider'],
+        });
+
+        for (const appointment of appointments) {
+          const start = appointment.service_date;
+          const end = new Date(start.getTime() + (appointment.duration ?? 60) * 60000);
+          const providerName = appointment.provider
+            ? `${appointment.provider.first_name ?? ''} ${appointment.provider.last_name ?? ''}`.trim()
+            : 'Fournisseur non défini';
+
+          const serviceName = `Prestation : ${appointment.service?.name}` || 'Service non défini';
+
+          eventTable.push({
+            id: `appointment-${appointment.appointment_id}`,
+            title: serviceName,
+            description: `Prestation avec ${providerName}`,
+            location: appointment.service?.city ?? 'Ville non définie',
+            start,
+            end,
+            allDay: false,
+          });
+        }
+
+        if (deliveryPerson) {
+          const deliveries = await this.deliveryRepository.find({
+            where: {
+              delivery_person: { delivery_person_id: deliveryPerson.delivery_person_id },
+              status: In(['pending', 'taken', 'finished']),
+            },
+            relations: ['shipment', 'shipment.user', 'shipment.user.clients'],
+          });
+
+          for (const delivery of deliveries) {
+            const start = delivery.send_date;
+            const end = delivery.delivery_date ?? new Date(start.getTime() + 2 * 60 * 60 * 1000);
+            const shipmentUser = delivery.shipment.user;
+
+            const userName = shipmentUser.clients?.[0]
+              ? `${shipmentUser.clients[0].first_name} ${shipmentUser.clients[0].last_name}`
+              : 'Expéditeur inconnu';
+
+            eventTable.push({
+              id: `delivery-${delivery.delivery_id}`,
+              title: `Livraison pour ${userName}`,
+              description: `Statut: ${delivery.status}`,
+              location: 'Lieu de livraison',
+              start,
+              end,
+              allDay: false,
+            });
+          }
+        }
+
+        return eventTable;
     }
 
     async getNewNfcCode(user_id: string): Promise<{ nfc_code: string }> {

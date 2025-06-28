@@ -28,6 +28,9 @@ import { CommonSettingsDto } from "./dto/common-settings.dto";
 import { Languages } from "src/common/entities/languages.entity";
 import { PdfService } from "src/common/services/pdf/pdf.service";
 import { Readable } from "stream";
+import { InjectModel } from "@nestjs/mongoose";
+import { Message } from "src/common/schemas/message.schema";
+import { Model } from 'mongoose';
 
   @Injectable()
   export class ProfileService {
@@ -64,6 +67,7 @@ import { Readable } from "stream";
       private readonly languageRepository: Repository<Languages>,
       private readonly minioService: MinioService,
       private readonly stripeService: StripeService,
+      @InjectModel(Message.name) private readonly messageModel: Model<Message>,
       @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
       private readonly onesignalService: OneSignalService,
       private readonly pdfService: PdfService,
@@ -321,6 +325,51 @@ import { Readable } from "stream";
   
       await this.blockedRepository.remove(block);
       return { message: 'Utilisateur débloqué avec succès' };
+    }
+
+    async addBlocked(user_id: string, blocked_user_id: string): Promise<{ message: string }> {
+
+      const user = await this.userRepository.findOne({ where: { user_id } });
+      if (!user) throw new NotFoundException('Utilisateur introuvable');
+  
+      const blockedUser = await this.userRepository.findOne({ where: { user_id: blocked_user_id } });
+      if (!blockedUser) throw new NotFoundException('Utilisateur bloqué introuvable');
+  
+      const existingBlock = await this.blockedRepository.findOne({
+        where: { user_id, user_id_blocked: blocked_user_id },
+      });
+  
+      if (existingBlock) {
+        throw new Error('L\'utilisateur est déjà bloqué');
+      }
+  
+      const block = this.blockedRepository.create({
+        user_id,
+        user_id_blocked: blocked_user_id,
+      });
+  
+      await this.blockedRepository.save(block);
+
+      await this.messageModel.deleteMany({
+        $or: [
+          { senderId: user_id, receiverId: blocked_user_id },
+          { senderId: blocked_user_id, receiverId: user_id },
+        ],
+      });
+  
+      return { message: 'Utilisateur bloqué avec succès' };
+
+    }
+
+    async deleteChat(user_id: string, other_user_id: string): Promise<{ message: string }> {
+      await this.messageModel.deleteMany({
+        $or: [
+          { senderId: user_id, receiverId: other_user_id },
+          { senderId: other_user_id, receiverId: user_id },
+        ],
+      });
+
+      return { message: 'Chat successfully deleted.' };
     }
   
     async updateProfilePicture(user_id: string, file: Express.Multer.File): Promise<{ url: string }> {

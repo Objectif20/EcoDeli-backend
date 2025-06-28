@@ -6,6 +6,7 @@ import * as cookieParser from 'cookie-parser';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import * as tracer from 'dd-trace';
 import { Request } from 'express';
+import * as bodyParser from 'body-parser';
 
 tracer.init({
   service: 'ecodeli-backend',
@@ -54,6 +55,9 @@ async function bootstrap() {
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     next();
   });
+
+  app.use('/webhooks/stripe', bodyParser.raw({ type: 'application/json' }));
+
 
   const config = new DocumentBuilder()
     .setTitle('Documentation API EcoDeli')
