@@ -44,6 +44,7 @@ export class GeneralService {
           if (!dp.DeliveryPersonDocuments || dp.DeliveryPersonDocuments.length === 0) continue;
 
           const client = dp.user?.clients?.[0];
+          const profilePicture = dp.user?.profile_picture ? (await this.minioService.generateImageUrl('client-images', dp.user?.profile_picture)) : null;
           const nom = client?.last_name ?? '';
           const prenom = client?.first_name ?? '';
 
@@ -53,6 +54,7 @@ export class GeneralService {
               id: dp.delivery_person_id,
               nom,
               prenom,
+              profilePicture,
               contratUrl,
               dateContrat: doc.submission_date ? doc.submission_date.toISOString() : '',
             });
@@ -77,6 +79,7 @@ export class GeneralService {
         for (const p of providers) {
           const nom = p.last_name ?? '';
           const prenom = p.first_name ?? '';
+          const profilePicture = p.user?.profile_picture ? (await this.minioService.generateImageUrl('client-images', p.user?.profile_picture)) : null;
 
           for (const contract of p.contracts) {
             const contratUrl = (await this.minioService.generateImageUrl('provider-documents', contract.contract_url)) || '';
@@ -84,6 +87,7 @@ export class GeneralService {
               id: p.provider_id,
               nom,
               prenom,
+              profilePicture,
               contratUrl,
               dateContrat: contract.created_at ? contract.created_at.toISOString() : '',
             });
@@ -104,6 +108,7 @@ export class GeneralService {
 
         for (const m of merchants) {
           const nom = m.last_name ?? '';
+          const profilePicture = m.user?.profile_picture ? (await this.minioService.generateImageUrl('client-images', m.user?.profile_picture)) : null;
           const prenom = m.first_name ?? '';
           const contratUrl = m.contract_url ? (await this.minioService.generateImageUrl('client-documents', m.contract_url)) : '';
 
@@ -111,6 +116,7 @@ export class GeneralService {
             id: m.merchant_id,
             nom,
             prenom,
+            profilePicture,
             contratUrl,
             dateContrat: '',
           });
