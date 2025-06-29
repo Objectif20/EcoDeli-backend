@@ -201,7 +201,7 @@ export class DeliveryService {
                 stream: Readable.from(pdfBuffer),
                 };
 
-                const filePath = `/shipments/${shipment.shipment_id}/bordereau_${shipment.shipment_id}.pdf`;
+                const filePath = `shipments/${shipment.shipment_id}/bordereau_${shipment.shipment_id}.pdf`;
                 await this.minioService.uploadFileToBucket('client-images', filePath, file);
         }
 
@@ -379,7 +379,7 @@ export class DeliveryService {
                 stream: Readable.from(pdfBuffer),
                 };
 
-                const filePath = `/shipments/${shipment.shipment_id}/bordereau_${shipment.shipment_id}.pdf`;
+                const filePath = `shipments/${shipment.shipment_id}/bordereau_${shipment.shipment_id}.pdf`;
                 await this.minioService.uploadFileToBucket('client-images', filePath, file);
         }
 

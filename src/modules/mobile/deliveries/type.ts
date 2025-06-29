@@ -23,13 +23,15 @@
   departure_date: string;
   arrival_date: string;
   status: "pending" | "taken" | "finished" | "validated";
-  total_price: number;
+  total_price: string;
   cart_dropped: boolean;
+  deliveryPersonName: string;
+  deliveryPersonPhoto: string;
   packages: {
     id: string;
     name: string;
     fragility: boolean;
-    estimated_price: number;
+    estimated_price: string;
     weight: number;
     volume: number;
     picture: string[];
