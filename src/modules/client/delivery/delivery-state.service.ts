@@ -315,7 +315,7 @@ export class DeliveryStateService {
                 stream: Readable.from(pdfBuffer),
                 };
     
-                const filePath = `/shipments/${delivery.shipment.shipment_id}/delivery/${delivery.delivery_id}/facture_${delivery.delivery_id}.pdf`;
+                const filePath = `shipments/${delivery.shipment.shipment_id}/delivery/${delivery.delivery_id}/facture_${delivery.delivery_id}.pdf`;
                 await this.minioService.uploadFileToBucket('client-documents', filePath, file);
     
     

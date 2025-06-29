@@ -101,6 +101,7 @@ export class DeliveriesService {
                 relations: [
                     'delivery_person',
                     'delivery_person.user',
+                    'delivery_person.user.clients',
                     'shipment',
                     'shipment.user',
                     'shipment.stores',
@@ -134,7 +135,11 @@ export class DeliveriesService {
             let arrivalCoords: [number, number] | undefined;
         
             const step = delivery.shipment_step;
-        
+
+            const deliveryPersonUser = delivery.delivery_person?.user.clients[0].first_name + ' ' + delivery.delivery_person?.user.clients[0].last_name ;
+            const deliveryPersonPhoto = delivery.delivery_person?.user.profile_picture
+
+            console.log("Delivery Person User:", delivery.delivery_person);
             if (step === 0) {
                 departureCity = shipment.departure_city || "";
                 departureCoords = shipment.departure_location?.coordinates?.slice().reverse() as [number, number];
@@ -175,19 +180,21 @@ export class DeliveriesService {
                     city: arrivalCity || '',
                     coordinates: arrivalCoords ?? [0, 0],
                 },
+                deliveryPersonName : deliveryPersonUser,
+                deliveryPersonPhoto : deliveryPersonPhoto ? await this.minioService.generateImageUrl("client-images", deliveryPersonPhoto) : '',
                 departure_date: delivery.send_date?.toISOString().split('T')[0] || '',
                 arrival_date: delivery.delivery_date?.toISOString().split('T')[0] || '',
                 status: (['pending', 'taken', 'finished', 'validated'].includes(delivery.status)
                     ? delivery.status
                     : 'pending') as 'pending' | 'taken' | 'finished' | 'validated',
-                total_price: Number(delivery.delivery_price ?? delivery.amount),
+                total_price: Number(delivery.delivery_price ?? delivery.amount).toString(),
                 cart_dropped: shipment.trolleydrop,
                 packages: await Promise.all(
                     (shipment.parcels || []).map(async (parcel: any) => ({
                         id: parcel.parcel_id,
                         name: parcel.name,
                         fragility: parcel.fragility,
-                        estimated_price: Number(parcel.estimate_price),
+                        estimated_price: Number(parcel.estimate_price).toString(),
                         weight: Number(parcel.weight),
                         volume: Number(parcel.volume),
                         picture: await Promise.all(
@@ -203,6 +210,8 @@ export class DeliveriesService {
         }
 
     async takeDeliveryPackage(deliveryId: string, user_id: string, nfc: string): Promise<{ message: string }> {
+
+        console.log("Taking delivery with ID:", deliveryId, "for user ID:", user_id, "with NFC code:", nfc);
         const delivery = await this.deliveryRepository.findOne({
             where: { delivery_id: deliveryId },
             relations: [
@@ -451,7 +460,7 @@ export class DeliveriesService {
             stream: Readable.from(pdfBuffer),
             };
 
-            const filePath = `/shipments/${delivery.shipment.shipment_id}/delivery/${delivery.delivery_id}/facture_${delivery.delivery_id}.pdf`;
+            const filePath = `shipments/${delivery.shipment.shipment_id}/delivery/${delivery.delivery_id}/facture_${delivery.delivery_id}.pdf`;
             await this.minioService.uploadFileToBucket('client-documents', filePath, file);
 
 
