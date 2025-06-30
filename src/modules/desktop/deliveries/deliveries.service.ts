@@ -34,7 +34,7 @@ export class DeliveriesService {
                     'shipment',
                     'shipment.stores',
                     'shipment.stores.exchangePoint',
-                    'shipment.parcels', // ⬅️ pour compter les colis
+                    'shipment.parcels',
                 ],
             });
 

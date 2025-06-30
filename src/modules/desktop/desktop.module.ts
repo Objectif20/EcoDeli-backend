@@ -4,6 +4,7 @@ import { WarehouseModule } from './warehouse/warehouse.module';
 import { ClientModule } from './client/client.module';
 import { MerchantModule } from './merchant/merchant.module';
 import { DeliveriesModule } from './deliveries/deliveries.module';
+import { ServicesModule } from './services/services.module';
 
 @Module({
     imports: [
@@ -11,7 +12,8 @@ import { DeliveriesModule } from './deliveries/deliveries.module';
         WarehouseModule,
         ClientModule,
         MerchantModule,
-        DeliveriesModule
+        DeliveriesModule,
+        ServicesModule
     ],
     providers: [],
 })
