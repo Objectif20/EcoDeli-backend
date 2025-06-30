@@ -38,18 +38,4 @@ export class MerchantController {
     async getMerchantById(@Param('id') id: string) : Promise<MerchantDetails> {
         return this.merchantService.getMerchantById(id);
     }
-
-    @Patch(':id')
-    @AdminRole('MERCHANT')
-    @UseGuards(AdminJwtGuard, AdminRoleGuard)
-    @ApiOperation({
-        summary: 'Update Merchant',
-        operationId: 'updateMerchant',
-    })
-    @ApiParam({ name: 'id', description: 'The ID of the merchant' })
-    @ApiBody({ description: 'Updated merchant data' })
-    @ApiResponse({ status: 200, description: 'Merchant updated successfully' })
-    async updateMerchant(@Param('id') id: string, @Body() updateMerchantDto: any) {
-        return this.merchantService.updateMerchant(id, updateMerchantDto);
-    }
 }
