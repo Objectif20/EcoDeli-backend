@@ -33,7 +33,7 @@ export class ClientService {
         const skip = (page - 1) * limit;
     
         const [clients, total]: [Client[], number] = await this.clientRepository.findAndCount({
-            relations: ['user', 'user.subscriptions', 'user'],
+            relations: ['user', 'user.subscriptions', 'user', 'user.deliveryPerson'],
             skip,
             take: limit,
         });
@@ -73,6 +73,7 @@ export class ClientService {
                     nbDemandeDeLivraison: shipmentCount,
                     nbSignalements: reportCount,
                     nomAbonnement: activeSubscription?.plan?.name || 'Free',
+                    profilTransporteur: client.user.deliveryPerson?.delivery_person_id ? true : false,
                 };
             })
         );

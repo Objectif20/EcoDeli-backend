@@ -16,6 +16,7 @@ export interface MyService {
   available: boolean;
   status: string;
   validated: boolean;
+  rate: number;
 }
 
 export interface ServiceDetails {

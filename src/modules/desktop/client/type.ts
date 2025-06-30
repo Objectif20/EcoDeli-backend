@@ -7,6 +7,7 @@ export interface AllClient {
     nbDemandeDeLivraison: number;
     nbSignalements: number;
     nomAbonnement: string;
+    profilTransporteur: boolean;
 }
 
 
