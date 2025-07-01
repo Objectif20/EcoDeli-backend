@@ -106,6 +106,8 @@ export class MerchantService {
             const imageName = merchant.user.profile_picture;
             photoUrl = await this.minioService.generateImageUrl(bucketName, imageName);
         }
+
+        let contractUrl = await this.minioService.generateImageUrl("client-documents", merchant.contract_url || '');
     
         return {
             info: {
@@ -121,6 +123,7 @@ export class MerchantService {
                 entreprise: merchant.company_name || '',
                 siret: merchant.siret || '',
                 pays: merchant.country || '',
+                contractUrl : contractUrl || ""
             }
         };
     }

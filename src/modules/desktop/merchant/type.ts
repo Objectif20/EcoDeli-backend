@@ -12,6 +12,7 @@ export interface MerchantDetails {
       entreprise: string
       siret: string
       pays: string
+      contractUrl : string
     }
   }
 
