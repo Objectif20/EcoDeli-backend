@@ -956,30 +956,30 @@ import { Model } from 'mongoose';
 
     async getMyDocuments(user_id: string): Promise<any[]> {
       const provider = await this.providerRepository.findOne({
-        where: { user: { user_id } },
-        relations: ['user'],
+      where: { user: { user_id } },
+      relations: ['user'],
       });
-  
+
       if (!provider) {
-        throw new Error('Provider not found for this user.');
+      throw new Error('Provider not found for this user.');
       }
-  
+
       const documents = await this.providerDocumentsRepository.find({
-        where: { provider: { provider_id: provider.provider_id } },
+      where: { provider: { provider_id: provider.provider_id } },
       });
-  
+
       const bucketName = 'provider-documents';
-  
+
       const result = await Promise.all(
-        documents.map(async (doc) => {
-          const url = await this.minioService.generateImageUrl(bucketName, `${provider.provider_id}/documents/${doc.name}`);
-          return {
-            ...doc,
-            download_url: url,
-          };
-        }),
+      documents.map(async (doc) => {
+        const url = await this.minioService.generateImageUrl(bucketName, doc.provider_document_url);
+        return {
+        ...doc,
+        download_url: url,
+        };
+      }),
       );
-  
+
       return result;
     }
   

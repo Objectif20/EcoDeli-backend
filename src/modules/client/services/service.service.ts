@@ -589,6 +589,8 @@ export class ServiceService {
       const response = await this.reviewResponseRepo.findOne({
         where: { review: { review_presta_id: review.review_presta_id } },
       });
+
+      const clientPhotoUrl = user.profile_picture ? await this.minioService.generateImageUrl('client-images', user.profile_picture) : null;
   
       return {
         id: review.review_presta_id,
@@ -596,7 +598,7 @@ export class ServiceService {
         author: {
           id: user.user_id,
           name: `${client.first_name} ${client.last_name}`,
-          photo: user.profile_picture || null,
+          photo: clientPhotoUrl,
         },
         reply: !!response,
         reply_content: response?.comment || null,
