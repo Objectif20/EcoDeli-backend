@@ -112,7 +112,7 @@ export class AuthService {
       const accessSecret = this.configService.getJwtAccessSecret();
       const accessToken = this.jwtService.sign(
         { admin_id: admin.admin_id, roles: admin.super_admin ? ['SUPER_ADMIN'] : ['ADMIN'] },
-        { secret: accessSecret, expiresIn: '1d' }
+        { secret: accessSecret, expiresIn: '15m' }
       );
   
       return { access_token: accessToken };
@@ -127,7 +127,7 @@ export class AuthService {
   
     const accessToken = this.jwtService.sign(
       { admin_id: admin.admin_id, roles: admin.super_admin ? ['SUPER_ADMIN'] : ['ADMIN'] },
-      { secret: accessSecret, expiresIn: '1d' },
+      { secret: accessSecret, expiresIn: '15m' },
     );
   
     const refreshToken = this.jwtService.sign(
