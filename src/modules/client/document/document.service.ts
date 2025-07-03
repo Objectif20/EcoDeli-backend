@@ -204,7 +204,7 @@ export class DocumentService {
             });
 
             const providerDocumentsNodes = await Promise.all(providerDocuments.map(async (doc) => {
-                const url = await this.minioService.generateImageUrl('client-documents', doc.provider_document_url);
+                const url = await this.minioService.generateImageUrl('provider-documents', doc.provider_document_url);
                 return url ? { name: doc.provider_document_url.split('/').pop(), url } : null;
             })).then(nodes => nodes.filter(node => node !== null));
 
@@ -213,7 +213,7 @@ export class DocumentService {
             });
 
             const providerContractsNodes = await Promise.all(providerContracts.map(async (contract) => {
-                const url = await this.minioService.generateImageUrl('client-documents', contract.contract_url);
+                const url = await this.minioService.generateImageUrl('provider-documents', contract.contract_url);
                 return url ? { name: contract.contract_url.split('/').pop(), url } : null;
             })).then(nodes => nodes.filter(node => node !== null));
 

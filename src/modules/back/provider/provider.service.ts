@@ -231,6 +231,7 @@ export class ProvidersService {
 
     service.validated = true;
     service.admin = admin;
+    service.status = "active"
     if (price_admin && price_admin > 0) {
     service.price = price_admin;
     }
