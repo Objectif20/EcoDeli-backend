@@ -323,7 +323,7 @@ export class PdfService {
             .text(`N° Rendez-vous : ${data.appointmentId}`)
             .text(`Date : ${data.appointmentDate}`)
             .text(`Heure : ${data.appointmentTime}`)
-            .text(`Montant total : ${data.amount.toFixed(2)} €`)
+            .text(`Montant total : ${Number(data.amount).toFixed(2)} €`)
             .moveDown();
 
             doc

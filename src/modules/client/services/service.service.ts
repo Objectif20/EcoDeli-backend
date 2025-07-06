@@ -767,7 +767,7 @@ export class ServiceService {
 
     const appointment = await this.appointmentRepo.findOne({
       where: { appointment_id },
-      relations: ['service', 'provider', 'client'],
+      relations: ['service', 'provider', 'client', 'client.user', 'provider.user'],
     });
 
     if (!appointment) {
@@ -811,6 +811,7 @@ export class ServiceService {
       );
 
       appointment.stripe_payment_id = stripePaymentIntentId;
+
 
       const pdfBuffer = await this.pdfService.generateAppointmentInvoicePdf({
           appointmentId: appointment.appointment_id,

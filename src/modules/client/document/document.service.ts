@@ -112,7 +112,7 @@ export class DocumentService {
 
                 const vehicleNodes = await Promise.all(
                     vehicleList.map(async (vehicle) => ({
-                    name: vehicle.registration_number,
+                    name: vehicle.model + " - " + vehicle.registration_number,
                     nodes: await Promise.all(
                         vehicle.vehicleDocuments.map(async (doc) => {
                         const url = await this.minioService.generateImageUrl('client-documents', doc.vehicle_document_url);
@@ -149,48 +149,53 @@ export class DocumentService {
                 });
                 }
 
-        if (profile.includes('CLIENT')) {
-            const shipments = await this.shipmentRepository.find({
-                where: { user: { user_id: client.user.user_id } },
-                relations: ['deliveries', 'deliveries.transfers'],
-            });
+                if (profile.includes('CLIENT')) {
+                    const shipments = await this.shipmentRepository.find({
+                        where: { user: { user_id: client.user.user_id } },
+                        relations: ['deliveries', 'deliveries.transfers'],
+                    });
 
-            const clientDeliveryTransfers = await Promise.all(
-                shipments.flatMap(shipment =>
-                    shipment.deliveries.flatMap(delivery =>
-                        delivery.transfers.map(async transfer => {
-                            const url = transfer.url ? await this.minioService.generateImageUrl('client-documents', transfer.url) : null;
-                            return url && transfer.url ? { name: transfer.url.split('/').pop(), url } : null;
+                    const clientDeliveryTransfers = await Promise.all(
+                        shipments.flatMap(shipment =>
+                            shipment.deliveries.flatMap(delivery =>
+                                delivery.transfers.map(async transfer => {
+                                    const url = transfer.url ? await this.minioService.generateImageUrl('client-documents', transfer.url) : null;
+                                    return url && transfer.url ? { name: transfer.url.split('/').pop(), url } : null;
+                                })
+                            )
+                        )
+                    ).then(nodes => nodes.filter(node => node !== null));
+
+                    const appointments = await this.appointmentRepository.find({
+                        where: { client: { client_id: client.client_id }, status: In(['in_progress', 'completed']) },
+                    });
+
+                    const appointmentNodes = await Promise.all(
+                        appointments.map(async appointment => {
+                            const url = appointment.url_file ? await this.minioService.generateImageUrl('client-documents', appointment.url_file) : null;
+                            return url && appointment.url_file ? { name: appointment.url_file.split('/').pop(), url } : null;
                         })
-                    )
-                )
-            ).then(nodes => nodes.filter(node => node !== null));
+                    ).then(nodes => nodes.filter(node => node !== null));
 
-            const appointments = await this.appointmentRepository.find({
-                where: { client: { client_id: client.client_id }, status: In(['in_progress', 'completed']) },
-            });
-
-            const appointmentNodes = await Promise.all(
-                appointments.map(async appointment => {
-                    const url = appointment.url_file ? await this.minioService.generateImageUrl('client-documents', appointment.url_file) : null;
-                    return url && appointment.url_file ? { name: appointment.url_file.split('/').pop(), url } : null;
-                })
-            ).then(nodes => nodes.filter(node => node !== null));
-
-            nodes.push({
-                name: 'Profil Particulier',
-                nodes: [
-                    {
-                        name: 'Factures/Livraisons',
-                        nodes: clientDeliveryTransfers,
-                    },
-                    {
-                        name: 'Prestations',
-                        nodes: appointmentNodes,
-                    },
-                ],
-            });
-        }
+                    nodes.push({
+                        name: 'Profil Particulier',
+                        nodes: [
+                            {
+                                name: 'Factures',
+                                nodes: [
+                                    {
+                                        name: 'Livraisons',
+                                        nodes: clientDeliveryTransfers,
+                                    },
+                                    {
+                                        name: 'Prestations',
+                                        nodes: appointmentNodes,
+                                    },
+                                ],
+                            },
+                        ],
+                    });
+                }
 
         if (profile.includes('MERCHANT')) {
         const shipments = await this.shipmentRepository.find({

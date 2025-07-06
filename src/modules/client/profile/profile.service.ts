@@ -526,18 +526,20 @@ import { Model } from 'mongoose';
           order: { date: 'DESC' },
         });
     
-        billings = transfers.map((transfer) => {
-          if (!transfer.stripe_id) {
-            throw new Error('Transfer ID is undefined');
-          }
-          return {
-            id: transfer.stripe_id,
-            date: transfer.date.toISOString().split('T')[0],
-            type: transfer.type as 'auto' | 'not-auto',
-            amount: transfer.amount,
-            invoiceLink: transfer.url || `https://example.com/invoice/${transfer.stripe_id}`,
-          };
-        });
+        billings = await Promise.all(
+          transfers.map(async (transfer) => {
+            if (!transfer.stripe_id) {
+              throw new Error('Transfer ID is undefined');
+            }
+            return {
+              id: transfer.stripe_id,
+              date: transfer.date.toISOString().split('T')[0],
+              type: transfer.type as 'auto' | 'not-auto',
+              amount: transfer.amount,
+              invoiceLink: await this.minioService.generateImageUrl('client-documents', transfer.url || ''),
+            };
+          })
+        );
       }
     
       if (isDelivery) {
@@ -549,18 +551,20 @@ import { Model } from 'mongoose';
           order: { date: 'DESC' },
         });
     
-        billings = transfers.map((transfer) => {
-          if (!transfer.stripe_id) {
-            throw new Error('Transfer ID is undefined');
-          }
-          return {
-            id: transfer.stripe_id,
-            date: transfer.date.toISOString().split('T')[0],
-            type: transfer.type as 'auto' | 'not-auto',
-            amount: transfer.amount,
-            invoiceLink: transfer.url || `https://example.com/invoice/${transfer.stripe_id}`,
-          };
-        });
+        billings = await Promise.all(
+          transfers.map(async (transfer) => {
+            if (!transfer.stripe_id) {
+              throw new Error('Transfer ID is undefined');
+            }
+            return {
+              id: transfer.stripe_id,
+              date: transfer.date.toISOString().split('T')[0],
+              type: transfer.type as 'auto' | 'not-auto',
+              amount: transfer.amount,
+              invoiceLink: await this.minioService.generateImageUrl('client-documents', transfer.url || ''),
+            };
+          })
+        );
       }
     
       return {
