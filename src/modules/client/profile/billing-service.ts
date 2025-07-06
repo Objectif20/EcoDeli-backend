@@ -27,10 +27,9 @@ export class BillingService {
   ) {}
 
   async generateMonthlyInvoices(): Promise<void> {
-    
     const today = new Date();
     const currentDay = today.getDate();
-    
+
     const subscriptionsToProcess = await this.subscriptionRepository
       .createQueryBuilder('subscription')
       .leftJoinAndSelect('subscription.user', 'user')
@@ -44,14 +43,11 @@ export class BillingService {
       .andWhere('subscription.end_date > :today', { today })
       .getMany();
 
-
     for (const subscription of subscriptionsToProcess) {
       try {
         await this.processSubscriptionInvoice(subscription);
-      } catch (error) {
-      }
+      } catch (error) {}
     }
-
   }
 
   private async processSubscriptionInvoice(subscription: Subscription): Promise<void> {
@@ -67,8 +63,6 @@ export class BillingService {
       },
     });
 
-    
-
     if (existingTransaction) {
       return;
     }
@@ -78,7 +72,7 @@ export class BillingService {
 
     const fileName = `facture_${subscription.subscription_id}_${year}_${month.toString().padStart(2, '0')}.pdf`;
     const filePath = `subscriptions/${subscription.subscription_id}/invoices/${year}/${fileName}`;
-    
+
     const file: Express.Multer.File = {
       fieldname: 'file',
       originalname: fileName,
@@ -105,13 +99,12 @@ export class BillingService {
     await this.subscriptionTransactionRepository.save(transaction);
 
     await this.sendInvoiceEmail(subscription, pdfBuffer, fileName);
-
   }
 
   private prepareInvoiceData(subscription: Subscription, month: number, year: number): any {
     const user = subscription.user;
     const plan = subscription.plan;
-    
+
     let customerInfo = {
       name: '',
       email: user.email,
@@ -127,8 +120,18 @@ export class BillingService {
     }
 
     const monthNames = [
-      'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
-      'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+      'Janvier',
+      'Février',
+      'Mars',
+      'Avril',
+      'Mai',
+      'Juin',
+      'Juillet',
+      'Août',
+      'Septembre',
+      'Octobre',
+      'Novembre',
+      'Décembre',
     ];
 
     return {
@@ -149,9 +152,13 @@ export class BillingService {
     };
   }
 
-  private async sendInvoiceEmail(subscription: Subscription, pdfBuffer: Buffer, fileName: string): Promise<void> {
+  private async sendInvoiceEmail(
+    subscription: Subscription,
+    pdfBuffer: Buffer,
+    fileName: string,
+  ): Promise<void> {
     const user = subscription.user;
-    
+
     let customerName = '';
     if (user.clients && user.clients.length > 0) {
       customerName = `${user.clients[0].first_name} ${user.clients[0].last_name}`;
@@ -160,10 +167,20 @@ export class BillingService {
     }
 
     const monthNames = [
-      'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
-      'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'
+      'janvier',
+      'février',
+      'mars',
+      'avril',
+      'mai',
+      'juin',
+      'juillet',
+      'août',
+      'septembre',
+      'octobre',
+      'novembre',
+      'décembre',
     ];
-    
+
     const now = new Date();
     const monthName = monthNames[now.getMonth()];
     const year = now.getFullYear();
@@ -212,7 +229,11 @@ export class BillingService {
       throw new Error(`Subscription ${subscriptionId} not found`);
     }
 
-    if (!subscription.plan || subscription.plan.price === undefined || subscription.plan.price <= 0) {
+    if (
+      !subscription.plan ||
+      subscription.plan.price === undefined ||
+      subscription.plan.price <= 0
+    ) {
       throw new Error(`Cannot generate invoice for free plan`);
     }
 

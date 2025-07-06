@@ -297,7 +297,7 @@ export class AdminProfileService {
                             <p>Bonjour ${first_name},</p>
                             <p>Votre compte administrateur a été créé avec succès.</p>
                             <p>Pour définir votre mot de passe, cliquez sur le bouton ci-dessous :</p>
-                            <a href="${process.env.OFFICIAL_WEBSITE}/auth/new-password/${passwordCode}" style="display: inline-block; padding: 12px 24px; background-color: #2a9d8f; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 10px;">
+                            <a href="${process.env.OFFICIAL_BACKOFFICE_WEBSITE}/auth/new-password/${passwordCode}" style="display: inline-block; padding: 12px 24px; background-color: #2a9d8f; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 10px;">
                             Créer mon mot de passe
                             </a>
                             <p style="margin-top: 20px;">Ce lien est personnel et ne doit pas être partagé.</p>
@@ -323,15 +323,27 @@ export class AdminProfileService {
         await this.adminRepository.save(admin);
       
         try {
-          const fromEmail = this.mailer.options.auth.user;
-          const info = await this.mailer.sendMail({
-            from: fromEmail,
-            to: admin.email,
-            subject: 'Réinitialisation de mot de passe',
-            text: 'Voici votre code temporaire pour réinitialiser votre mot de passe: ' + passwordCode,
-          });
+            const fromEmail = this.mailer.options.auth.user;
+            await this.mailer.sendMail({
+                from: fromEmail,
+                to: admin.email,
+                subject: 'Réinitialisation de votre mot de passe administrateur',
+                html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border-radius: 8px;">
+                <h2>Réinitialisation de mot de passe</h2>
+                <p>Bonjour ${admin.first_name},</p>
+                <p>Vous avez demandé à réinitialiser votre mot de passe administrateur.</p>
+                <p>Pour définir un nouveau mot de passe, cliquez sur le bouton ci-dessous :</p>
+                <a href="${process.env.OFFICIAL_BACKOFFICE_WEBSITE}/auth/new-password/${passwordCode}" style="display: inline-block; padding: 12px 24px; background-color: #e76f51; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 10px;">
+                    Réinitialiser mon mot de passe
+                </a>
+                <p style="margin-top: 20px;">Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet e-mail.</p>
+                <p style="color: #555;">Merci,<br>L'équipe Écodeli</p>
+                </div>
+                `
+            });
         } catch (error) {
-          throw new Error(`Erreur lors de l'envoi de l'email: ${error.message}`);
+            throw new Error(`Erreur lors de l'envoi de l'email: ${error.message}`);
         }
     
         return { message: 'Email sent' };
