@@ -9,6 +9,7 @@ import * as nodemailer from 'nodemailer';
 import { ExchangePoint } from 'src/common/entities/exchange_points.entity';
 import { Trip } from 'src/common/entities/trips.entity';
 import { Users } from 'src/common/entities/user.entity';
+import { Shipment } from 'src/common/entities/shipment.entity';
 
 @Injectable()
 export class DeliveryScheduleService {
@@ -181,6 +182,11 @@ export class DeliveryScheduleService {
 
     if (!trips.length) return;
 
+    const canceledDeliveries = await this.deliveryRepository.find({
+      where: { status: 'canceled' },
+      relations: ['shipment', 'shipment.stores', 'shipment.stores.exchangePoint'],
+    });
+
     const matchesByUser: Map<Users['user_id'], { user: Users; deliveries: Delivery[] }> = new Map();
 
     for (const delivery of deliveries) {
@@ -188,7 +194,6 @@ export class DeliveryScheduleService {
         (store) => store.step === delivery.shipment_step,
       );
       const deliveryCoords = relevantStore?.exchangePoint?.coordinates;
-
       if (!deliveryCoords) continue;
 
       for (const trip of trips) {
@@ -202,14 +207,125 @@ export class DeliveryScheduleService {
           if (!matchesByUser.has(user.user_id)) {
             matchesByUser.set(user.user_id, { user, deliveries: [] });
           }
-
           matchesByUser.get(user.user_id)!.deliveries.push(delivery);
         }
       }
     }
 
+    const getAvailableSteps = (
+      shipment: Shipment,
+      deliveries: Delivery[],
+      canceledDeliveries: Delivery[],
+    ) => {
+      const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
+      const coveredSteps = new Set(
+        deliveries.filter((d) => d.status !== 'canceled').map((d) => d.shipment_step),
+      );
+
+      const shipmentCanceledDeliveries = canceledDeliveries.filter(
+        (d) => d.shipment.shipment_id === shipment.shipment_id,
+      );
+      const mergedCanceledSteps = new Set<number>();
+
+      shipmentCanceledDeliveries.forEach((canceledDelivery) => {
+        const step = canceledDelivery.shipment_step;
+        if (coveredSteps.has(step)) return;
+
+        let nextDelivery = shipmentCanceledDeliveries.find((d) => d.shipment_step === step + 1);
+        if (!nextDelivery || nextDelivery.status !== 'canceled') {
+          mergedCanceledSteps.add(step);
+        } else {
+          let endStep = step;
+          while (
+            nextDelivery &&
+            nextDelivery.status === 'canceled' &&
+            !mergedCanceledSteps.has(nextDelivery.shipment_step)
+          ) {
+            endStep = nextDelivery.shipment_step;
+            mergedCanceledSteps.add(endStep);
+            const nextNextDelivery = shipmentCanceledDeliveries.find(
+              (d) => d.shipment_step === endStep + 1,
+            );
+            if (!nextNextDelivery || nextNextDelivery.status !== 'canceled') break;
+            nextDelivery = nextNextDelivery;
+          }
+        }
+      });
+
+      const allTakenSteps = new Set([...coveredSteps, ...mergedCanceledSteps]);
+
+      const allSteps = storesByStep.map((s) => s.step);
+
+      const availableSteps = allSteps.filter(
+        (step) => !allTakenSteps.has(step) && step !== 0 && step !== 1000,
+      );
+
+      return availableSteps.map((step) => {
+        const store = storesByStep.find((s) => s.step === step);
+        return {
+          step,
+          city: store?.exchangePoint?.city || 'Ville inconnue',
+          coordinates: store?.exchangePoint?.coordinates || null,
+        };
+      });
+    };
+
     for (const { user, deliveries } of matchesByUser.values()) {
-      console.log(`Matching deliveries for user ${user.email}:`, deliveries);
+      const fromEmail = this.mailer.options.auth.user;
+
+      const shipmentsMap = new Map<string, { shipment: Shipment; deliveries: Delivery[] }>();
+      for (const delivery of deliveries) {
+        if (!delivery.shipment) continue;
+        if (!shipmentsMap.has(delivery.shipment.shipment_id)) {
+          shipmentsMap.set(delivery.shipment.shipment_id, {
+            shipment: delivery.shipment,
+            deliveries: [],
+          });
+        }
+        shipmentsMap.get(delivery.shipment.shipment_id)!.deliveries.push(delivery);
+      }
+
+      // Préparation du contenu des livraisons par shipment avec étapes dispo
+      let deliveriesList = '';
+      for (const { shipment, deliveries: shipmentDeliveries } of shipmentsMap.values()) {
+        // Étapes disponibles dans ce shipment
+        const availableSteps = getAvailableSteps(shipment, shipmentDeliveries, canceledDeliveries);
+
+        // Formatage des étapes disponibles
+        const stepsText = availableSteps.length
+          ? availableSteps.map((s) => `Étape ${s.step} - Ville: ${s.city}`).join('\n')
+          : 'Aucune étape disponible';
+
+        deliveriesList += `
+        <h3>Shipment ID: ${shipment.shipment_id} - ${shipment.description || ''}</h3>
+        <ul>
+          ${shipmentDeliveries.map((d) => `<li>Livraison ID: ${d.delivery_id}, Étape: ${d.shipment_step}</li>`).join('')}
+        </ul>
+        <p>Étapes disponibles :<br><pre style="background:#f9f9f9;padding:10px;border-radius:4px;">${stepsText}</pre></p>
+      `;
+      }
+
+      const mailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border-radius: 8px;">
+        <h2>Livraisons correspondant à votre trajet</h2>
+        <p>Bonjour ${user.clients?.[0]?.first_name || ''},</p>
+        <p>Voici la liste des livraisons qui correspondent à votre trajet :</p>
+        ${deliveriesList}
+        <p>Merci de vérifier et de prendre contact si vous souhaitez prendre en charge une ou plusieurs de ces livraisons.</p>
+        <p>Cordialement,<br>L'équipe EcoDeli</p>
+      </div>
+    `;
+
+      try {
+        await this.mailer.sendMail({
+          from: fromEmail,
+          to: user.email,
+          subject: 'Livraisons correspondantes à votre trajet',
+          html: mailHtml,
+        });
+      } catch (error) {
+        console.error(`Erreur lors de l'envoi de l'email à ${user.email}:`, error);
+      }
     }
   }
 
