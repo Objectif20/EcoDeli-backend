@@ -262,6 +262,8 @@ export class ServiceService {
         };
     }));
 
+    console.log("services", services);
+
     return { data: services, meta: { total, page, limit } };
 }
 

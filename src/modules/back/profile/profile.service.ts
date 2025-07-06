@@ -297,7 +297,7 @@ export class AdminProfileService {
                             <p>Bonjour ${first_name},</p>
                             <p>Votre compte administrateur a été créé avec succès.</p>
                             <p>Pour définir votre mot de passe, cliquez sur le bouton ci-dessous :</p>
-                            <a href="https://admin.ecodeli.remythibaut.fr/auth/new-password/${passwordCode}" style="display: inline-block; padding: 12px 24px; background-color: #2a9d8f; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 10px;">
+                            <a href="${process.env.OFFICIAL_WEBSITE}/auth/new-password/${passwordCode}" style="display: inline-block; padding: 12px 24px; background-color: #2a9d8f; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 10px;">
                             Créer mon mot de passe
                             </a>
                             <p style="margin-top: 20px;">Ce lien est personnel et ne doit pas être partagé.</p>

@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, Response, Inject, Res } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Response, Inject, Res, BadRequestException } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { JwtService as NestJwtService } from '@nestjs/jwt';
 import { Repository } from 'typeorm';
@@ -35,7 +35,7 @@ export class AuthService {
     @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
   ) {}
 
-  async login(email: string, password: string, @Res() res): Promise<loginResponse | { two_factor_required: boolean } | { message: string }> {
+  async login(email: string, password: string, @Res() res): Promise<loginResponse | { two_factor_required: boolean } | { message: string } | { confirmed : boolean}> {
       const user = await this.userRepository.findOne({
           where: { email },
           relations: ['clients', 'providers', 'subscriptions'],
@@ -46,8 +46,29 @@ export class AuthService {
       }
 
       if (!user.confirmed) {
-          user.confirmed = true;
-          await this.userRepository.save(user);
+        const validateCode = uuidv4();
+
+        user.validate_code = validateCode;
+        const savedUser = await this.userRepository.save(user);
+        if (!savedUser) {
+          throw new BadRequestException('Erreur lors de la génération du code de validation');
+        }
+        const urlWithCode = `${process.env.OFFICIAL_WEBSITE}/auth/validate/${validateCode}`;
+
+        try {
+          const fromEmail = this.mailer.options.auth.user;
+          await this.mailer.sendMail({
+            from: fromEmail,
+            to: email,
+            subject: 'Valider votre compte',
+            text: `Voici le code pour valider votre compte : ${urlWithCode}`,
+          });
+        } catch (error) {
+          console.error("Erreur lors de l'envoi de l'email:", error);
+          throw new Error(`Erreur lors de l'envoi de l'email: ${error.message}`);
+        }
+
+        return res.json({ message: 'User not confirmed', confirmed: false });
       }
 
       if (user.banned) {
@@ -249,14 +270,14 @@ export class AuthService {
   
     user.password_code = passwordCode;
     await this.userRepository.save(user);
-  
+    const urlWithCode = `${process.env.OFFICIAL_WEBSITE}/auth/new-password/${passwordCode}`;
     try {
       const fromEmail = this.mailer.options.auth.user;
       const info = await this.mailer.sendMail({
         from: fromEmail,
         to: email,
         subject: 'Réinitialisation de mot de passe',
-        text: 'Voici votre code temporaire pour réinitialiser votre mot de passe: ' + passwordCode,
+        text: 'Voici votre code temporaire pour réinitialiser votre mot de passe: ' + urlWithCode,
       });
     } catch (error) {
       throw new Error(`Erreur lors de l'envoi de l'email: ${error.message}`);

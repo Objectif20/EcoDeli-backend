@@ -155,7 +155,7 @@ export class AuthService {
             <h2 >Réinitialisation de votre mot de passe</h2>
             <p>Bonjour,</p>
             <p>Vous avez demandé à réinitialiser votre mot de passe. Cliquez sur le bouton ci-dessous pour procéder :</p>
-            <a href="https://admin.ecodeli.remythibaut.fr/auth/new-password/${passwordCode}" style="display: inline-block; padding: 12px 24px; background-color: #2a9d8f; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 10px;">
+            <a href="${process.env.OFFICIAL_WEBSITE}/auth/new-password/${passwordCode}" style="display: inline-block; padding: 12px 24px; background-color: #2a9d8f; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 10px;">
               Réinitialiser mon mot de passe
             </a>
             <p style="margin-top: 20px;">Si vous n'avez pas fait cette demande, vous pouvez ignorer cet email.</p>

@@ -78,49 +78,76 @@ export class DocumentService {
 
         const nodes: any[] = [];
 
-        if (profile.includes('DELIVERYMAN')) {
-            const deliveryDocuments = await this.deliveryPersonDocumentRepository.find({
-                where: { delivery_person: { delivery_person_id: deliveryPerson.delivery_person_id } },
-            });
+                if (profile.includes('DELIVERYMAN')) {
+                const deliveryDocuments = await this.deliveryPersonDocumentRepository.find({
+                    where: { delivery_person: { delivery_person_id: deliveryPerson.delivery_person_id } },
+                });
 
-            const deliveryNodes = await Promise.all(deliveryDocuments.map(async (doc) => {
-                const url = await this.minioService.generateImageUrl('client-documents', doc.document_url);
-                return url ? { name: doc.document_url.split('/').pop(), url } : null;
-            })).then(nodes => nodes.filter(node => node !== null));
+                const contractDocs = deliveryDocuments.filter(doc =>
+                    doc.document_url && doc.document_url.includes('/contracts/')
+                );
 
-            const vehicleList = await this.vehicleRepository.find({
-                where: { deliveryPerson: { delivery_person_id: deliveryPerson.delivery_person_id } },
-                relations: ['vehicleDocuments'],
-            });
+                const justificatifDocs = deliveryDocuments.filter(doc =>
+                    !doc.document_url || !doc.document_url.includes('/contracts/')
+                );
 
-            const vehicleNodes = await Promise.all(
-                vehicleList.map(async (vehicle) => ({
+                const contractNodes = await Promise.all(
+                    contractDocs.map(async (doc) => {
+                    const url = await this.minioService.generateImageUrl('client-documents', doc.document_url);
+                    return url ? { name: doc.document_url.split('/').pop(), url } : null;
+                    })
+                ).then(nodes => nodes.filter(node => node !== null));
+
+                const deliveryNodes = await Promise.all(
+                    justificatifDocs.map(async (doc) => {
+                    const url = await this.minioService.generateImageUrl('client-documents', doc.document_url);
+                    return url ? { name: doc.document_url.split('/').pop(), url } : null;
+                    })
+                ).then(nodes => nodes.filter(node => node !== null));
+
+                const vehicleList = await this.vehicleRepository.find({
+                    where: { deliveryPerson: { delivery_person_id: deliveryPerson.delivery_person_id } },
+                    relations: ['vehicleDocuments'],
+                });
+
+                const vehicleNodes = await Promise.all(
+                    vehicleList.map(async (vehicle) => ({
                     name: vehicle.registration_number,
-                    nodes: await Promise.all(vehicle.vehicleDocuments.map(async (doc) => {
+                    nodes: await Promise.all(
+                        vehicle.vehicleDocuments.map(async (doc) => {
                         const url = await this.minioService.generateImageUrl('client-documents', doc.vehicle_document_url);
                         return url ? { name: doc.vehicle_document_url.split('/').pop(), url } : null;
-                    })).then(nodes => nodes.filter(node => node !== null)),
-                }))
-            );
+                        })
+                    ).then(nodes => nodes.filter(node => node !== null)),
+                    }))
+                );
 
-            const transfers = await this.transferRepository.find({
-                where: { delivery_person: { delivery_person_id: deliveryPerson.delivery_person_id } },
-            });
+                const transfers = await this.transferRepository.find({
+                    where: { delivery_person: { delivery_person_id: deliveryPerson.delivery_person_id } },
+                });
 
-            const transferNodes = await Promise.all(transfers.map(async (transfer) => {
-                const url = transfer.url ? await this.minioService.generateImageUrl('client-documents', transfer.url) : null;
-                return url && transfer.url ? { name: transfer.url.split('/').pop(), url } : null;
-            })).then(nodes => nodes.filter(node => node !== null));
+                const transferNodes = await Promise.all(
+                    transfers.map(async (transfer) => {
+                    const url = transfer.url ? await this.minioService.generateImageUrl('client-documents', transfer.url) : null;
+                    return url && transfer.url ? { name: transfer.url.split('/').pop(), url } : null;
+                    })
+                ).then(nodes => nodes.filter(node => node !== null));
 
-            nodes.push({
-                name: 'Profil Transporteur',
-                nodes: [
+                const profilTransporteurNodes = [
                     { name: 'Mes justificatifs', nodes: deliveryNodes },
                     { name: 'Mes véhicules', nodes: vehicleNodes },
                     { name: 'Mes transferts', nodes: transferNodes },
-                ],
-            });
-        }
+                ];
+
+                if (contractNodes.length > 0) {
+                    profilTransporteurNodes.unshift({ name: 'Mon contrat', nodes: contractNodes });
+                }
+
+                nodes.push({
+                    name: 'Profil Transporteur',
+                    nodes: profilTransporteurNodes,
+                });
+                }
 
         if (profile.includes('CLIENT')) {
             const shipments = await this.shipmentRepository.find({
@@ -166,36 +193,52 @@ export class DocumentService {
         }
 
         if (profile.includes('MERCHANT')) {
-            const shipments = await this.shipmentRepository.find({
-                where: { user: { user_id: merchant.user.user_id } },
-                relations: ['deliveries', 'deliveries.transfers'],
-            });
+        const shipments = await this.shipmentRepository.find({
+            where: { user: { user_id: merchant.user.user_id } },
+            relations: ['deliveries', 'deliveries.transfers'],
+        });
 
-            const merchantDeliveryTransfers = await Promise.all(
-                shipments.flatMap(shipment =>
-                    shipment.deliveries.flatMap(delivery =>
-                        delivery.transfers.map(async transfer => {
-                            const url = transfer.url ? await this.minioService.generateImageUrl('client-documents', transfer.url) : null;
-                            return url && transfer.url ? { name: transfer.url.split('/').pop(), url } : null;
-                        })
-                    )
-                )
-            ).then(nodes => nodes.filter(node => node !== null));
+        const merchantDeliveryTransfers = await Promise.all(
+            shipments.flatMap(shipment =>
+            shipment.deliveries.flatMap(delivery =>
+                delivery.transfers.map(async transfer => {
+                const url = transfer.url ? await this.minioService.generateImageUrl('client-documents', transfer.url) : null;
+                return url && transfer.url ? { name: transfer.url.split('/').pop(), url } : null;
+                })
+            )
+            )
+        ).then(nodes => nodes.filter(node => node !== null));
 
-            nodes.push({
-                name: 'Profil Commerçant',
-                nodes: [
-                    {
-                        name: 'Mes documents',
-                        nodes: [
-                            {
-                                name: 'Factures/Livraisons',
-                                nodes: merchantDeliveryTransfers,
-                            },
-                        ],
-                    },
-                ],
+        const contractNodes = merchant.contract_url
+            ? [{
+                name: merchant.contract_url.split('/').pop(),
+                url: await this.minioService.generateImageUrl('client-documents', merchant.contract_url),
+            }]
+            : [];
+
+        const profilCommercantNodes: { name: string; nodes: any[] }[] = [];
+
+        if (contractNodes.length > 0) {
+            profilCommercantNodes.push({
+            name: 'Contrats',
+            nodes: contractNodes,
             });
+        }
+
+        profilCommercantNodes.push({
+            name: 'Mes documents',
+            nodes: [
+            {
+                name: 'Factures/Livraisons',
+                nodes: merchantDeliveryTransfers,
+            },
+            ],
+        });
+
+        nodes.push({
+            name: 'Profil Commerçant',
+            nodes: profilCommercantNodes,
+        });
         }
 
         if (profile.includes('PROVIDER') && provider) {

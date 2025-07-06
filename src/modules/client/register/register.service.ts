@@ -155,14 +155,14 @@ export class RegisterService {
       if (!savedValidateCode) {
         throw new BadRequestException('Erreur lors de la génération du code de validation');
       }
-    
+      const urlWithCode = `${process.env.OFFICIAL_WEBSITE}/auth/validate/${validateCode}`;
       try {
         const fromEmail = this.mailer.options.auth.user;
         await this.mailer.sendMail({
           from: fromEmail,
           to: email,
           subject: 'Valider votre compte',
-          text: 'Voici le code pour valider votre compte ' + validateCode,
+          text: 'Voici le lien pour valider votre compte :' + urlWithCode,
         });
       } catch (error) {
         throw new Error(`Erreur lors de l'envoi de l'email: ${error.message}`);
@@ -174,24 +174,24 @@ export class RegisterService {
 
     async registerMerchant(merchantDto: RegisterMerchantDTO): Promise<{ message: string }> {
       const { email, password, company_name, siret, address, description, postal_code, city, country, phone, newsletter, stripe_temp_key, language_id, plan_id } = merchantDto;
-    
+
       const existingUser = await this.userRepository.findOne({ where: { email } });
       if (existingUser) {
         throw new ConflictException('Cet email est déjà utilisé');
       }
-    
+
       const language = await this.languageRepository.findOne({ where: { language_id } });
       if (!language) {
         throw new BadRequestException('Langue non valide');
       }
-    
+
       const hashedPassword = await bcrypt.hash(password, 10);
-    
+
       const defaultTheme = await this.themeRepository.findOne({ where: { theme_id: 1 } });
       if (!defaultTheme) {
         throw new BadRequestException("Le thème par défaut (id=1) est introuvable.");
       }
-    
+
       const newUser = this.userRepository.create({
         email,
         password: hashedPassword,
@@ -200,11 +200,11 @@ export class RegisterService {
         language,
         theme: defaultTheme,
       });
-    
+
       const savedUser = await this.userRepository.save(newUser);
-    
+
       let stripeCustomerId: string | null = null;
-    
+
       if (stripe_temp_key) {
         try {
           const customer = await this.stripeService.createCustomer(email, `Commerçant: ${company_name}`);
@@ -216,19 +216,6 @@ export class RegisterService {
         }
       }
 
-      const contratUrl = await this.contractMerchant({
-        company_name,
-        siret,
-        address,
-        postal_code,
-        city,
-        country,
-        phone,
-        last_name: merchantDto.lastName,
-        first_name: merchantDto.firstName,
-        user: savedUser,
-      }, merchantDto.signature);
-    
       const newMerchant = this.merchantRepository.create({
         company_name,
         siret,
@@ -242,17 +229,38 @@ export class RegisterService {
         last_name: merchantDto.lastName,
         stripe_customer_id: stripeCustomerId ?? null,
         user: savedUser,
-        contract_url: contratUrl,
+        contract_url: null,
       });
-    
-      await this.merchantRepository.save(newMerchant);
-    
+
+      const savedMerchant = await this.merchantRepository.save(newMerchant);
+
+      try {
+        const contratUrl = await this.contractMerchant({
+          company_name,
+          siret,
+          address,
+          postal_code,
+          city,
+          country,
+          phone,
+          last_name: merchantDto.lastName,
+          first_name: merchantDto.firstName,
+          user: savedUser,
+        }, merchantDto.signature);
+
+        savedMerchant.contract_url = contratUrl;
+        await this.merchantRepository.save(savedMerchant);
+      } catch (error) {
+        console.log('Erreur lors de la génération du contrat:', error);
+        throw new BadRequestException('Erreur lors de la génération du contrat PDF');
+      }
+
       if (plan_id && stripeCustomerId) {
         const plan = await this.planRepository.findOne({ where: { plan_id } });
         if (plan && plan.stripe_product_id && plan.stripe_price_id && (plan.price ?? 0) > 0) {
           try {
             const subscription = await this.stripeService.createSubscription(stripeCustomerId, plan.stripe_price_id);
-    
+
             const newSubscription = this.subscriptionRepository.create({
               stripe_customer_id: stripeCustomerId,
               stripe_subscription_id: subscription.id,
@@ -262,7 +270,7 @@ export class RegisterService {
               user: savedUser,
               plan,
             });
-    
+
             await this.subscriptionRepository.save(newSubscription);
           } catch (error) {
             console.log(error);
@@ -270,30 +278,31 @@ export class RegisterService {
           }
         }
       }
-    
+
       const validateCode = uuidv4();
-    
+
       const savedValidateCode = await this.userRepository.save({
         user_id: savedUser.user_id,
         validate_code: validateCode,
       });
-    
+
       if (!savedValidateCode) {
         throw new BadRequestException('Erreur lors de la génération du code de validation');
       }
-    
+      const urlWithCode = `${process.env.OFFICIAL_WEBSITE}/auth/validate/${validateCode}`;
+
       try {
         const fromEmail = this.mailer.options.auth.user;
         await this.mailer.sendMail({
           from: fromEmail,
           to: email,
           subject: 'Valider votre compte',
-          text: 'Voici le code pour valider votre compte ' + validateCode,
+          text: 'Voici le lien pour valider votre compte : ' + urlWithCode,
         });
       } catch (error) {
         throw new Error(`Erreur lors de l'envoi de l'email: ${error.message}`);
       }
-    
+
       return { message: 'Commerçant inscrit avec succès' };
     }
 
@@ -376,15 +385,15 @@ export class RegisterService {
         throw new BadRequestException('Erreur lors de la génération du code de validation');
       }
 
-      // Envoi par email du code de validation
+      const urlWithCode = `${process.env.OFFICIAL_WEBSITE}/auth/validate/${validateCode}`;
 
       try {
         const fromEmail = this.mailer.options.auth.user;
-        const info = await this.mailer.sendMail({
+        await this.mailer.sendMail({
           from: fromEmail,
           to: email,
           subject: 'Valider votre compte',
-          text: 'Voici le code pour valider votre compte ' + validateCode,
+          text: 'Voici le lien pour valider votre compte :' + urlWithCode,
         });
       } catch (error) {
         throw new Error(`Erreur lors de l'envoi de l'email: ${error.message}`);

@@ -43,3 +43,24 @@ export interface TransferDetails {
     recipientFirstName: string;
     description: string;
 }
+
+export interface BillingData {
+  invoiceNumber: string;
+  invoiceDate: Date;
+  periodLabel: string;
+  customer: {
+    name: string;
+    email: string;
+    address: string;
+  };
+  plan: {
+    name: string;
+    price: number;
+    description: string;
+  };
+  subscription: {
+    id: string;
+    startDate: Date;
+    endDate: Date;
+  };
+}

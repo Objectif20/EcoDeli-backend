@@ -26,7 +26,7 @@ export class AuthController {
     status: 401,
     description: 'Unauthorized, invalid credentials.',
   })
-  async login(@Body() loginDto: LoginDto, @Res() res: Response): Promise<loginResponse | { two_factor_required: boolean } | { message: string }> {
+  async login(@Body() loginDto: LoginDto, @Res() res: Response): Promise<loginResponse | { two_factor_required: boolean } | { message: string } | { confirmed : boolean}> {
     const message = this.authService.login(loginDto.email, loginDto.password, res);
     return message;
   }
@@ -90,8 +90,9 @@ export class AuthController {
       }
     }
   })
-  async validateAccount(validate_code: string): Promise<{ message: string }> {
-    return this.authService.validateAccount(validate_code);
+  async validateAccount(@Body() body: { secretCode: string }): Promise<{ message: string }> {
+    const { secretCode } = body;
+    return this.authService.validateAccount(secretCode);
   }
 
   @Post('2fa/enable')

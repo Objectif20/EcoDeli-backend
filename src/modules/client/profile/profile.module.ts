@@ -23,6 +23,8 @@ import { SubscriptionTransaction } from "src/common/entities/subscription_transa
 import { Languages } from "src/common/entities/languages.entity";
 import { MongooseModule } from "@nestjs/mongoose";
 import { Message, MessageSchema } from "src/common/schemas/message.schema";
+import { BillingCronService } from "./billing-cron-service";
+import { BillingService } from "./billing-service";
 
 
 @Module({
@@ -34,7 +36,7 @@ import { Message, MessageSchema } from "src/common/schemas/message.schema";
         SharedModule,
     ],
     controllers: [ClientProfileController],
-    providers: [JwtService, ClientProfileController, ProfileService],
+    providers: [JwtService, ClientProfileController, ProfileService, BillingCronService, BillingService],
     exports: [TypeOrmModule, ProfileService],
 
 

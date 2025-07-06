@@ -695,21 +695,19 @@ import { Model } from 'mongoose';
     async getMySubscriptionData(user_id: string): Promise<UserSubscriptionData> {
       const user = await this.userRepository.findOne({
         where: { user_id },
-        relations: ['clients', 'merchant']
+        relations: ['clients', 'merchant'],
       });
-    
+
       if (!user) {
         throw new NotFoundException('User not found');
       }
-    
-      const subscriptions = await this.subscriptionRepository.find({
-        where: { user: { user_id } },
-        relations: ['plan'],
+
+      const subscriptions = await this.subscriptionTransactionRepository.find({
+        where: { subscription: { user: { user_id } } },
+        relations: ['subscription', 'subscription.plan'],
       });
-    
-      const subscriptionIds = subscriptions.map(sub => sub.subscription_id);
-    
-      if (subscriptionIds.length === 0) {
+
+      if (subscriptions.length === 0) {
         return {
           history: [],
           customer_stripe_id: false,
@@ -725,79 +723,80 @@ import { Model } from 'mongoose';
             permanent_discount: '0',
             permanent_discount_percentage: '0',
             small_package_permanent_discount: '0',
+            first_shipping_free: false,
             first_shipping_free_threshold: '0',
             is_pro: false,
-            first_shipping_free: false
           },
         };
       }
-    
-      const transactions = await this.subscriptionTransactionRepository.find({
-        where: { subscription: { subscription_id: In(subscriptionIds) } },
-        relations: ['subscription', 'subscription.plan'],
-        order: { year: 'DESC', month: 'DESC' },
-      });
-    
-      const subscriptionHistory = transactions.map(tx => ({
-        id: tx.subscription.subscription_id,
-        month: `${tx.year}-${String(tx.month).padStart(2, '0')}`,
-        status: tx.subscription.status,
-        name: tx.subscription.plan.name,
-        invoiceLink: tx.invoice_url,
-        price: tx.price_at_transaction.toString(),
-      }));
-    
+
+      const history = await Promise.all(
+        subscriptions.map(async (transaction) => ({
+          id: transaction.transaction_id,
+          month: `${transaction.month}/${transaction.year}`,
+          status: 'ok', 
+          name: transaction.subscription.plan.name,
+          invoiceLink: await this.minioService.generateImageUrl('client-documents', transaction.invoice_url || ''),
+        }))
+      );
+
       let customer_stripe_id = false;
-    
       if (user.clients.length > 0) {
         customer_stripe_id = !!user.clients[0].stripe_customer_id;
       } else if (user.merchant) {
         customer_stripe_id = !!user.merchant.stripe_customer_id;
       }
-    
-      const activeSubscription = subscriptions.find(
-        (sub) => sub.status === 'active' || sub.status === 'ok'
-      );
-    
-      const activePlan = activeSubscription?.plan
+
+      const activeSubscription = subscriptions[0];
+
+      const activePlan = activeSubscription?.subscription?.plan
         ? {
-            ...activeSubscription.plan,
-            price: activeSubscription.plan.price?.toString() || '0',
-            priority_shipping_percentage: activeSubscription.plan.priority_shipping_percentage.toString(),
-            max_insurance_coverage: activeSubscription.plan.max_insurance_coverage.toString(),
-            extra_insurance_price: activeSubscription.plan.extra_insurance_price.toString(),
-            shipping_discount: activeSubscription.plan.shipping_discount.toString(),
-            permanent_discount: activeSubscription.plan.permanent_discount.toString(),
-            permanent_discount_percentage: activeSubscription.plan.permanent_discount_percentage.toString(),
-            small_package_permanent_discount: activeSubscription.plan.small_package_permanent_discount.toString(),
-            first_shipping_free_threshold: activeSubscription.plan.first_shipping_free_threshold.toString(),
+            plan_id: activeSubscription.subscription.plan.plan_id,
+            name: activeSubscription.subscription.plan.name,
+            price: (activeSubscription.subscription.plan.price ?? 0).toString(),
+            priority_shipping_percentage: activeSubscription.subscription.plan.priority_shipping_percentage.toString(),
+            priority_months_offered: activeSubscription.subscription.plan.priority_months_offered,
+            max_insurance_coverage: activeSubscription.subscription.plan.max_insurance_coverage.toString(),
+            extra_insurance_price: activeSubscription.subscription.plan.extra_insurance_price.toString(),
+            shipping_discount: activeSubscription.subscription.plan.shipping_discount.toString(),
+            permanent_discount: activeSubscription.subscription.plan.permanent_discount.toString(),
+            permanent_discount_percentage: activeSubscription.subscription.plan.permanent_discount_percentage.toString(),
+            small_package_permanent_discount: activeSubscription.subscription.plan.small_package_permanent_discount.toString(),
+            first_shipping_free: activeSubscription.subscription.plan.first_shipping_free,
+            first_shipping_free_threshold: activeSubscription.subscription.plan.first_shipping_free_threshold.toString(),
+            is_pro: activeSubscription.subscription.plan.is_pro,
           }
         : null;
-    
+
       return {
-        history: subscriptionHistory.map((item) => ({
+        history: history.map((item) => ({
           ...item,
-          status: (['ok', 'wait', 'cancelled'] as const).includes(item.status as any) ? (item.status as 'ok' | 'wait' | 'cancelled') : 'cancelled',
+          status: (['ok', 'wait', 'cancelled'] as const).includes(item.status as any)
+            ? (item.status as 'ok' | 'wait' | 'cancelled')
+            : 'cancelled',
         })),
-        customer_stripe_id: customer_stripe_id,
-        plan: activePlan || {
-          plan_id: 0,
-          name: '',
-          price: '0',
-          priority_shipping_percentage: '0',
-          priority_months_offered: 0,
-          max_insurance_coverage: '0',
-          extra_insurance_price: '0',
-          shipping_discount: '0',
-          permanent_discount: '0',
-          permanent_discount_percentage: '0',
-          small_package_permanent_discount: '0',
-          first_shipping_free_threshold: '0',
-          is_pro: false,
-          first_shipping_free: false,
-        },
+        customer_stripe_id,
+        plan:
+          activePlan ||
+          {
+            plan_id: 0,
+            name: '',
+            price: '0',
+            priority_shipping_percentage: '0',
+            priority_months_offered: 0,
+            max_insurance_coverage: '0',
+            extra_insurance_price: '0',
+            shipping_discount: '0',
+            permanent_discount: '0',
+            permanent_discount_percentage: '0',
+            small_package_permanent_discount: '0',
+            first_shipping_free: false,
+            first_shipping_free_threshold: '0',
+            is_pro: false,
+          },
       };
     }
+
 
     async updateMySubscription(
       user_id: string,

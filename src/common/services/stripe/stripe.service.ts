@@ -156,8 +156,8 @@ export class StripeService {
     try {
       const accountLink = await this.stripeClient.accountLinks.create({
         account: stripeAccountId,
-        refresh_url: 'https://example.com/reauth',
-        return_url: 'https://ecodeli.remythibaut.fr/office/billing-settings',
+        refresh_url: `${process.env.OFFICIAL_WEBSITE}/auth/login`,
+        return_url: `${process.env.OFFICIAL_WEBSITE}/office/billing-settings`,
         type: 'account_onboarding',
       });
 
@@ -174,8 +174,8 @@ export class StripeService {
     try {
       const accountLink = await this.stripeClient.accountLinks.create({
         account: stripeAccountId,
-        refresh_url: 'https://example.com/reauth',
-        return_url: 'https://ecodeli.remythibaut.fr/office/billing-settings',
+        refresh_url: `${process.env.OFFICIAL_WEBSITE}/auth/login`,
+        return_url: `${process.env.OFFICIAL_WEBSITE}/office/billing-settings`,
         type: 'account_onboarding',
       });
 
