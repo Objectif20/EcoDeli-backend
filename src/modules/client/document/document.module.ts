@@ -18,11 +18,12 @@ import { DeliveryTransfer } from "src/common/entities/delivery_transfer.entity";
 import { Appointments } from "src/common/entities/appointments.entity";
 import { Transfer } from "src/common/entities/transfers.entity";
 import { TransferProvider } from "src/common/entities/transfers_provider.entity";
+import { SubscriptionTransaction } from "src/common/entities/subscription_transaction.entity";
 
 @Module({
     imports: [        
             TypeOrmModule.forFeature([Users, DeliveryPerson, Vehicle, VehicleDocument, Providers, DeliveryPersonDocument, ProviderDocuments, ProviderContracts,
-                Shipment, DeliveryTransfer, Appointments, Transfer, TransferProvider
+                Shipment, DeliveryTransfer, Appointments, Transfer, TransferProvider, SubscriptionTransaction
 
             ]),
             JwtModule.register({}),

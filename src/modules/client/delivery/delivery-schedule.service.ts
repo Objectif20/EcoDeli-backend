@@ -1,226 +1,352 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { InjectRepository } from "@nestjs/typeorm";
-import axios from "axios";
-import { Delivery } from "src/common/entities/delivery.entity";
-import { BoxService } from "src/common/services/dataset/boxes.service";
-import { Repository } from "typeorm";
+import { InjectRepository } from '@nestjs/typeorm';
+import axios from 'axios';
+import { Delivery } from 'src/common/entities/delivery.entity';
+import { BoxService } from 'src/common/services/dataset/boxes.service';
+import { Repository } from 'typeorm';
 import * as nodemailer from 'nodemailer';
-import { ExchangePoint } from "src/common/entities/exchange_points.entity";
-import { Trip } from "src/common/entities/trips.entity";
-import { Users } from "src/common/entities/user.entity";
+import { ExchangePoint } from 'src/common/entities/exchange_points.entity';
+import { Trip } from 'src/common/entities/trips.entity';
+import { Users } from 'src/common/entities/user.entity';
+import { Shipment } from 'src/common/entities/shipment.entity';
 
 @Injectable()
 export class DeliveryScheduleService {
+  constructor(
+    @InjectRepository(Delivery)
+    private readonly deliveryRepository: Repository<Delivery>,
+    @InjectRepository(ExchangePoint)
+    private readonly exchangePointRepository: Repository<ExchangePoint>,
+    @InjectRepository(Trip)
+    private readonly tripRepo: Repository<Trip>,
+    private readonly boxService: BoxService,
+    @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
+  ) {}
 
-    constructor(
-        @InjectRepository(Delivery)
-        private readonly deliveryRepository: Repository<Delivery>,
-        @InjectRepository(ExchangePoint)
-        private readonly exchangePointRepository: Repository<ExchangePoint>,
-        @InjectRepository(Trip)
-        private readonly tripRepo: Repository<Trip>,
-        private readonly boxService: BoxService,
-        @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
-        
-    ){}
+  @Cron('0 19 * * *')
+  async handleCheckIncompleteDeliveries() {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const start = new Date(tomorrow.setHours(0, 0, 0, 0));
+    const end = new Date(tomorrow.setHours(23, 59, 59, 999));
 
-        @Cron('0 19 * * *')
-        async handleCheckIncompleteDeliveries() {
-            const tomorrow = new Date();
-            tomorrow.setDate(tomorrow.getDate() + 1);
-            const start = new Date(tomorrow.setHours(0, 0, 0, 0));
-            const end = new Date(tomorrow.setHours(23, 59, 59, 999));
+    const fromEmail = this.mailer.options.auth.user;
 
-            const fromEmail = this.mailer.options.auth.user;
+    const deliveries = await this.deliveryRepository
+      .createQueryBuilder('delivery')
+      .innerJoinAndSelect('delivery.shipment', 'shipment')
+      .leftJoinAndSelect('shipment.stores', 'store')
+      .leftJoin(
+        'shipment.deliveries',
+        'next_step',
+        'next_step.shipment_step = delivery.shipment_step + 1',
+      )
+      .leftJoin('store.exchangePoint', 'exchangePoint')
+      .leftJoinAndSelect('delivery.delivery_person', 'delivery_person')
+      .leftJoinAndSelect('delivery_person.user', 'user')
+      .innerJoinAndSelect('user.clients', 'client')
+      .where('delivery.shipment_step BETWEEN 1 AND 9999')
+      .andWhere('delivery.send_date BETWEEN :start AND :end', { start, end })
+      .andWhere('next_step.delivery_id IS NULL')
+      .andWhere(
+        '(exchangePoint.exchange_point_id IS NULL OR (exchangePoint.isbox = false AND exchangePoint.warehouse_id IS NULL))',
+      )
+      .getMany();
 
+    console.log('Deliveries with no next step:', deliveries);
 
-            const deliveries = await this.deliveryRepository
-                    .createQueryBuilder('delivery')
-                    .innerJoinAndSelect('delivery.shipment', 'shipment')
-                    .leftJoinAndSelect('shipment.stores', 'store')
-                    .leftJoin('shipment.deliveries', 'next_step', 
-                        'next_step.shipment_step = delivery.shipment_step + 1')
-                    .leftJoin('store.exchangePoint', 'exchangePoint')
-                    .leftJoinAndSelect('delivery.delivery_person', 'delivery_person')
-                    .leftJoinAndSelect('delivery_person.user', 'user')
-                    .innerJoinAndSelect('user.clients', 'client')
-                    .where('delivery.shipment_step BETWEEN 1 AND 9999')
-                    .andWhere('delivery.send_date BETWEEN :start AND :end', { start, end })
-                    .andWhere('next_step.delivery_id IS NULL')
-                    .andWhere(
-                        '(exchangePoint.exchange_point_id IS NULL OR (exchangePoint.isbox = false AND exchangePoint.warehouse_id IS NULL))'
-                    )
-                    .getMany();
+    for (const delivery of deliveries) {
+      const store = delivery.shipment.stores.find((s) => s.step === delivery.shipment_step);
+      let [lon, lat] = [0, 0];
+      if (store?.exchangePoint?.coordinates?.coordinates) {
+        [lon, lat] = store.exchangePoint.coordinates.coordinates;
+        console.log(`Delivery ${delivery.delivery_id} coordinates: lat=${lat}, lon=${lon}`);
+      } else {
+        console.log(`Delivery ${delivery.delivery_id}: No valid exchange point coordinates found.`);
+      }
 
-            console.log('Deliveries with no next step:', deliveries);
+      if (lon !== 0 && lat !== 0) {
+        const closestBox = this.boxService.findNearestBox(lat, lon);
+        if (closestBox) {
+          console.log(`Closest box for delivery ${delivery.delivery_id}:`, closestBox);
 
-            for (const delivery of deliveries) {
-                const store = delivery.shipment.stores.find(s => s.step === delivery.shipment_step);
-                let [lon, lat] = [0, 0];
-                if (store?.exchangePoint?.coordinates?.coordinates) {
-                    [lon, lat] = store.exchangePoint.coordinates.coordinates;
-                    console.log(`Delivery ${delivery.delivery_id} coordinates: lat=${lat}, lon=${lon}`);
-                } else {
-                    console.log(`Delivery ${delivery.delivery_id}: No valid exchange point coordinates found.`);
-                }
+          let display_name: string | undefined;
+          let city: string | undefined;
+          let address: string | undefined;
+          let postal_code: string | undefined;
 
-                if (lon !== 0 && lat !== 0) {
-                    const closestBox = this.boxService.findNearestBox(lat, lon);
-                    if (closestBox) {
-                        console.log(`Closest box for delivery ${delivery.delivery_id}:`, closestBox);
+          try {
+            const response = await axios.get('https://nominatim.openstreetmap.org/reverse', {
+              params: {
+                format: 'json',
+                lat,
+                lon,
+              },
+              headers: {
+                'User-Agent': 'EcoDeli/1.0 (contact.ecodeli@gmail.com)',
+              },
+            });
 
-                        let display_name: string | undefined;
-                        let city : string | undefined;
-                        let address : string | undefined;
-                        let postal_code : string | undefined;
+            const data = response.data;
 
-                        try {
-                            const response = await axios.get('https://nominatim.openstreetmap.org/reverse', {
-                                params: {
-                                    format: 'json',
-                                    lat,
-                                    lon,
-                                },
-                                headers: {
-                                    'User-Agent': 'EcoDeli/1.0 (contact.ecodeli@gmail.com)',
-                                },
-                            });
-
-                            const data = response.data;
-
-                            if (data) {
-                                display_name = data.display_name;
-                                city = data.address?.city || data.address?.town || data.address?.village || data.address?.hamlet || "Ville non disponible";
-                                address = data.address?.road || data.address?.residential || "Adresse non disponible";
-                                postal_code = data.address?.postcode || "Code postal non disponible";
-                            }
-
-                            console.log('Adresse récupérée depuis Nominatim:', display_name);
-                        } catch (error) {
-                            console.error('Erreur lors de la récupération de l’adresse depuis Nominatim:', error);
-                        }
-
-                        const dp = delivery.delivery_person;
-                        const user = dp?.user;
-                        const client = user?.clients?.[0];
-
-                        if (user && client) {
-                            
-                            await this.mailer.sendEmail({
-                                from: fromEmail,
-                                to: user.email,
-                                subject: "Aucune réception prévue – Dépôt en boîte recommandé",
-                                text:
-                                    `Bonjour ${client.first_name} ${client.last_name},\n\n` +
-                                    `Nous vous informons qu'aucune personne ne sera présente demain pour réceptionner le colis prévu à l'étape ${delivery.shipment_step} de votre tournée.\n\n` +
-                                    `Afin d'assurer une livraison réussie, merci de bien vouloir déposer ce colis dans la boîte de livraison la plus proche que nous avons identifiée pour vous :\n\n` +
-                                    `📍 Boîte : ${closestBox.name}\n` +
-                                    `📫 Adresse : ${display_name || 'Adresse non disponible'}\n\n` +
-                                    `Merci pour votre réactivité et votre professionnalisme.\n\n` +
-                                    `Cordialement,\nL'équipe EcoDeli`
-                            });
-
-                            const exchangePoint = store?.exchangePoint
-
-                            if (exchangePoint) {
-                                exchangePoint.isbox = true;
-                                exchangePoint.warehouse = null;
-                                exchangePoint.city = city || "Ville non disponible";
-                                exchangePoint.coordinates = {
-                                    type: 'Point',
-                                    coordinates: [closestBox.lon, closestBox.lat]
-                                };
-                                exchangePoint.address = address || "Adresse non disponible";
-                                exchangePoint.postal_code = postal_code || "Code postal non disponible";
-                                await this.exchangePointRepository.save(exchangePoint);
-                            }
-                        } else {
-                            console.log(`⚠️ Informations du livreur incomplètes pour delivery ${delivery.delivery_id}`);
-                        }
-
-                    } else {
-                        console.log(`No boxes found near delivery ${delivery.delivery_id}.`);
-                    }
-                }
+            if (data) {
+              display_name = data.display_name;
+              city =
+                data.address?.city ||
+                data.address?.town ||
+                data.address?.village ||
+                data.address?.hamlet ||
+                'Ville non disponible';
+              address = data.address?.road || data.address?.residential || 'Adresse non disponible';
+              postal_code = data.address?.postcode || 'Code postal non disponible';
             }
-        }
 
-        @Cron('0 20 * * *')
-        async notifyMatchingTrips() {
-        const deliveries = await this.deliveryRepository
-            .createQueryBuilder('delivery')
-            .leftJoinAndSelect('delivery.shipment', 'shipment')
-            .leftJoinAndSelect('shipment.stores', 'store')
-            .leftJoinAndSelect('store.exchangePoint', 'exchangePoint')
-            .where('delivery.send_date >= CURRENT_DATE')
-            .andWhere('delivery.delivery_person_id IS NULL')
-            .andWhere('delivery.shipment_step BETWEEN 1 AND 9999')
-            .andWhere('exchangePoint.coordinates IS NOT NULL')
-            .getMany();
+            console.log('Adresse récupérée depuis Nominatim:', display_name);
+          } catch (error) {
+            console.error('Erreur lors de la récupération de l’adresse depuis Nominatim:', error);
+          }
 
-        if (!deliveries.length) return;
+          const dp = delivery.delivery_person;
+          const user = dp?.user;
+          const client = user?.clients?.[0];
 
-        const trips = await this.tripRepo
-            .createQueryBuilder('trip')
-            .leftJoinAndSelect('trip.delivery_person', 'delivery_person')
-            .leftJoinAndSelect('delivery_person.user', 'user')
-            .where('(trip.date IS NULL OR trip.date >= CURRENT_DATE OR trip.weekday IS NOT NULL)')
-            .getMany();
+          if (user && client) {
+            await this.mailer.sendMail({
+              from: fromEmail,
+              to: user.email,
+              subject: 'Aucune réception prévue – Dépôt en boîte recommandé',
+              html: `
+                                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border-radius: 8px;">
+                                    <h2>Information importante concernant votre tournée</h2>
+                                    <p>Bonjour ${client.first_name} ${client.last_name},</p>
+                                    <p>Nous vous informons qu'aucune personne ne sera présente demain pour réceptionner le colis prévu à l'étape <strong>${delivery.shipment_step}</strong> de votre tournée.</p>
+                                    <p>Pour garantir une livraison réussie, nous vous recommandons de déposer ce colis dans la boîte de livraison la plus proche que nous avons identifiée :</p>
+                                    <div style="border-left: 4px solid #2a9d8f; padding-left: 12px; margin: 16px 0;">
+                                    <p><strong>📍 Boîte :</strong> ${closestBox.name}</p>
+                                    <p><strong>📫 Adresse :</strong> ${display_name || 'Adresse non disponible'}</p>
+                                    </div>
+                                    <p>Merci pour votre réactivité et votre professionnalisme.</p>
+                                    <p style="color: #555;">Cordialement,<br>L'équipe Écodeli</p>
+                                </div>
+                                `,
+            });
 
-        if (!trips.length) return;
+            const exchangePoint = store?.exchangePoint;
 
-        const matchesByUser: Map<Users['user_id'], { user: Users; deliveries: Delivery[] }> = new Map();
-
-        for (const delivery of deliveries) {
-            const relevantStore = delivery.shipment?.stores?.find(store => store.step === delivery.shipment_step);
-            const deliveryCoords = relevantStore?.exchangePoint?.coordinates;
-
-            if (!deliveryCoords) continue;
-
-            for (const trip of trips) {
-            const tripCoords = trip.departure_location;
-            const radiusKm = trip.tolerated_radius ?? 0;
-
-            if (this.isWithinRadius(deliveryCoords, tripCoords, radiusKm)) {
-                const user = trip.delivery_person.user;
-                if (!user?.email) continue;
-
-                if (!matchesByUser.has(user.user_id)) {
-                matchesByUser.set(user.user_id, { user, deliveries: [] });
-                }
-
-                matchesByUser.get(user.user_id)!.deliveries.push(delivery);
+            if (exchangePoint) {
+              exchangePoint.isbox = true;
+              exchangePoint.warehouse = null;
+              exchangePoint.city = city || 'Ville non disponible';
+              exchangePoint.coordinates = {
+                type: 'Point',
+                coordinates: [closestBox.lon, closestBox.lat],
+              };
+              exchangePoint.address = address || 'Adresse non disponible';
+              exchangePoint.postal_code = postal_code || 'Code postal non disponible';
+              await this.exchangePointRepository.save(exchangePoint);
             }
-            }
+          } else {
+            console.log(
+              `⚠️ Informations du livreur incomplètes pour delivery ${delivery.delivery_id}`,
+            );
+          }
+        } else {
+          console.log(`No boxes found near delivery ${delivery.delivery_id}.`);
         }
+      }
+    }
+  }
 
-        for (const { user, deliveries } of matchesByUser.values()) {
-            console.log(`Matching deliveries for user ${user.email}:`, deliveries);
+  @Cron('0 20 * * *')
+  async notifyMatchingTrips() {
+    const deliveries = await this.deliveryRepository
+      .createQueryBuilder('delivery')
+      .leftJoinAndSelect('delivery.shipment', 'shipment')
+      .leftJoinAndSelect('shipment.stores', 'store')
+      .leftJoinAndSelect('store.exchangePoint', 'exchangePoint')
+      .where('delivery.send_date >= CURRENT_DATE')
+      .andWhere('delivery.delivery_person_id IS NULL')
+      .andWhere('delivery.shipment_step BETWEEN 1 AND 9999')
+      .andWhere('exchangePoint.coordinates IS NOT NULL')
+      .getMany();
+
+    if (!deliveries.length) return;
+
+    const trips = await this.tripRepo
+      .createQueryBuilder('trip')
+      .leftJoinAndSelect('trip.delivery_person', 'delivery_person')
+      .leftJoinAndSelect('delivery_person.user', 'user')
+      .where('(trip.date IS NULL OR trip.date >= CURRENT_DATE OR trip.weekday IS NOT NULL)')
+      .getMany();
+
+    if (!trips.length) return;
+
+    const canceledDeliveries = await this.deliveryRepository.find({
+      where: { status: 'canceled' },
+      relations: ['shipment', 'shipment.stores', 'shipment.stores.exchangePoint'],
+    });
+
+    const matchesByUser: Map<Users['user_id'], { user: Users; deliveries: Delivery[] }> = new Map();
+
+    for (const delivery of deliveries) {
+      const relevantStore = delivery.shipment?.stores?.find(
+        (store) => store.step === delivery.shipment_step,
+      );
+      const deliveryCoords = relevantStore?.exchangePoint?.coordinates;
+      if (!deliveryCoords) continue;
+
+      for (const trip of trips) {
+        const tripCoords = trip.departure_location;
+        const radiusKm = trip.tolerated_radius ?? 0;
+
+        if (this.isWithinRadius(deliveryCoords, tripCoords, radiusKm)) {
+          const user = trip.delivery_person.user;
+          if (!user?.email) continue;
+
+          if (!matchesByUser.has(user.user_id)) {
+            matchesByUser.set(user.user_id, { user, deliveries: [] });
+          }
+          matchesByUser.get(user.user_id)!.deliveries.push(delivery);
         }
+      }
+    }
+
+    const getAvailableSteps = (
+      shipment: Shipment,
+      deliveries: Delivery[],
+      canceledDeliveries: Delivery[],
+    ) => {
+      const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
+      const coveredSteps = new Set(
+        deliveries.filter((d) => d.status !== 'canceled').map((d) => d.shipment_step),
+      );
+
+      const shipmentCanceledDeliveries = canceledDeliveries.filter(
+        (d) => d.shipment.shipment_id === shipment.shipment_id,
+      );
+      const mergedCanceledSteps = new Set<number>();
+
+      shipmentCanceledDeliveries.forEach((canceledDelivery) => {
+        const step = canceledDelivery.shipment_step;
+        if (coveredSteps.has(step)) return;
+
+        let nextDelivery = shipmentCanceledDeliveries.find((d) => d.shipment_step === step + 1);
+        if (!nextDelivery || nextDelivery.status !== 'canceled') {
+          mergedCanceledSteps.add(step);
+        } else {
+          let endStep = step;
+          while (
+            nextDelivery &&
+            nextDelivery.status === 'canceled' &&
+            !mergedCanceledSteps.has(nextDelivery.shipment_step)
+          ) {
+            endStep = nextDelivery.shipment_step;
+            mergedCanceledSteps.add(endStep);
+            const nextNextDelivery = shipmentCanceledDeliveries.find(
+              (d) => d.shipment_step === endStep + 1,
+            );
+            if (!nextNextDelivery || nextNextDelivery.status !== 'canceled') break;
+            nextDelivery = nextNextDelivery;
+          }
         }
+      });
 
-        private isWithinRadius(
-            pointA: { x: number; y: number },
-            pointB: { x: number; y: number },
-            radiusKm: number,
-        ): boolean {
-            const toRad = (value: number) => (value * Math.PI) / 180;
-            const R = 6371;
+      const allTakenSteps = new Set([...coveredSteps, ...mergedCanceledSteps]);
 
-            const dLat = toRad(pointB.y - pointA.y);
-            const dLon = toRad(pointB.x - pointA.x);
-            const lat1 = toRad(pointA.y);
-            const lat2 = toRad(pointB.y);
+      const allSteps = storesByStep.map((s) => s.step);
 
-            const a =
-            Math.sin(dLat / 2) ** 2 +
-            Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+      const availableSteps = allSteps.filter(
+        (step) => !allTakenSteps.has(step) && step !== 0 && step !== 1000,
+      );
 
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return availableSteps.map((step) => {
+        const store = storesByStep.find((s) => s.step === step);
+        return {
+          step,
+          city: store?.exchangePoint?.city || 'Ville inconnue',
+          coordinates: store?.exchangePoint?.coordinates || null,
+        };
+      });
+    };
 
-            const distance = R * c;
-            return distance <= radiusKm;
+    for (const { user, deliveries } of matchesByUser.values()) {
+      const fromEmail = this.mailer.options.auth.user;
+
+      const shipmentsMap = new Map<string, { shipment: Shipment; deliveries: Delivery[] }>();
+      for (const delivery of deliveries) {
+        if (!delivery.shipment) continue;
+        if (!shipmentsMap.has(delivery.shipment.shipment_id)) {
+          shipmentsMap.set(delivery.shipment.shipment_id, {
+            shipment: delivery.shipment,
+            deliveries: [],
+          });
         }
+        shipmentsMap.get(delivery.shipment.shipment_id)!.deliveries.push(delivery);
+      }
 
+      // Préparation du contenu des livraisons par shipment avec étapes dispo
+      let deliveriesList = '';
+      for (const { shipment, deliveries: shipmentDeliveries } of shipmentsMap.values()) {
+        // Étapes disponibles dans ce shipment
+        const availableSteps = getAvailableSteps(shipment, shipmentDeliveries, canceledDeliveries);
+
+        // Formatage des étapes disponibles
+        const stepsText = availableSteps.length
+          ? availableSteps.map((s) => `Étape ${s.step} - Ville: ${s.city}`).join('\n')
+          : 'Aucune étape disponible';
+
+        deliveriesList += `
+        <h3>Shipment ID: ${shipment.shipment_id} - ${shipment.description || ''}</h3>
+        <ul>
+          ${shipmentDeliveries.map((d) => `<li>Livraison ID: ${d.delivery_id}, Étape: ${d.shipment_step}</li>`).join('')}
+        </ul>
+        <p>Étapes disponibles :<br><pre style="background:#f9f9f9;padding:10px;border-radius:4px;">${stepsText}</pre></p>
+      `;
+      }
+
+      const mailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border-radius: 8px;">
+        <h2>Livraisons correspondant à votre trajet</h2>
+        <p>Bonjour ${user.clients?.[0]?.first_name || ''},</p>
+        <p>Voici la liste des livraisons qui correspondent à votre trajet :</p>
+        ${deliveriesList}
+        <p>Merci de vérifier et de prendre contact si vous souhaitez prendre en charge une ou plusieurs de ces livraisons.</p>
+        <p>Cordialement,<br>L'équipe EcoDeli</p>
+      </div>
+    `;
+
+      try {
+        await this.mailer.sendMail({
+          from: fromEmail,
+          to: user.email,
+          subject: 'Livraisons correspondantes à votre trajet',
+          html: mailHtml,
+        });
+      } catch (error) {
+        console.error(`Erreur lors de l'envoi de l'email à ${user.email}:`, error);
+      }
+    }
+  }
+
+  private isWithinRadius(
+    pointA: { x: number; y: number },
+    pointB: { x: number; y: number },
+    radiusKm: number,
+  ): boolean {
+    const toRad = (value: number) => (value * Math.PI) / 180;
+    const R = 6371;
+
+    const dLat = toRad(pointB.y - pointA.y);
+    const dLon = toRad(pointB.x - pointA.x);
+    const lat1 = toRad(pointA.y);
+    const lat2 = toRad(pointB.y);
+
+    const a = Math.sin(dLat / 2) ** 2 + Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    const distance = R * c;
+    return distance <= radiusKm;
+  }
 }

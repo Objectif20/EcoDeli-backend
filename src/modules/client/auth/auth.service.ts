@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, Response, Inject, Res } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Response, Inject, Res, BadRequestException } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { JwtService as NestJwtService } from '@nestjs/jwt';
 import { Repository } from 'typeorm';
@@ -35,7 +35,7 @@ export class AuthService {
     @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
   ) {}
 
-  async login(email: string, password: string, @Res() res): Promise<loginResponse | { two_factor_required: boolean } | { message: string }> {
+  async login(email: string, password: string, @Res() res): Promise<loginResponse | { two_factor_required: boolean } | { message: string } | { confirmed : boolean}> {
       const user = await this.userRepository.findOne({
           where: { email },
           relations: ['clients', 'providers', 'subscriptions'],
@@ -46,8 +46,41 @@ export class AuthService {
       }
 
       if (!user.confirmed) {
-          user.confirmed = true;
-          await this.userRepository.save(user);
+        const validateCode = uuidv4();
+
+        user.validate_code = validateCode;
+        const savedUser = await this.userRepository.save(user);
+        if (!savedUser) {
+          throw new BadRequestException('Erreur lors de la génération du code de validation');
+        }
+        const urlWithCode = `${process.env.OFFICIAL_WEBSITE}/auth/validate/${validateCode}`;
+
+        try {
+          const fromEmail = this.mailer.options.auth.user;
+          await this.mailer.sendMail({
+            from: fromEmail,
+            to: email,
+            subject: 'Confirmez votre compte Écodeli',
+            html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border-radius: 8px;">
+              <h2>Validation de votre compte</h2>
+              <p>Bonjour,</p>
+              <p>Merci de votre inscription sur Écodeli.</p>
+              <p>Pour finaliser votre inscription et activer votre compte, veuillez cliquer sur le bouton ci-dessous :</p>
+              <a href="${urlWithCode}" style="display: inline-block; padding: 12px 24px; background-color: #264653; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 10px;">
+                Valider mon compte
+              </a>
+              <p style="margin-top: 20px;">Ce lien est personnel et expirera après un certain délai. Si vous n'êtes pas à l'origine de cette inscription, vous pouvez ignorer cet e-mail.</p>
+              <p style="color: #555;">Merci,<br>L'équipe Écodeli</p>
+            </div>
+            `
+          });
+        } catch (error) {
+          console.error("Erreur lors de l'envoi de l'email:", error);
+          throw new Error(`Erreur lors de l'envoi de l'email: ${error.message}`);
+        }
+
+        return res.json({ message: 'User not confirmed', confirmed: false });
       }
 
       if (user.banned) {
@@ -249,14 +282,26 @@ export class AuthService {
   
     user.password_code = passwordCode;
     await this.userRepository.save(user);
-  
+    const urlWithCode = `${process.env.OFFICIAL_WEBSITE}/auth/new-password/${passwordCode}`;
     try {
       const fromEmail = this.mailer.options.auth.user;
-      const info = await this.mailer.sendMail({
+      await this.mailer.sendMail({
         from: fromEmail,
         to: email,
-        subject: 'Réinitialisation de mot de passe',
-        text: 'Voici votre code temporaire pour réinitialiser votre mot de passe: ' + passwordCode,
+        subject: 'Réinitialisation de votre mot de passe',
+        html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border-radius: 8px;">
+          <h2>Réinitialisation de mot de passe</h2>
+          <p>Bonjour,</p>
+          <p>Vous avez demandé la réinitialisation de votre mot de passe.</p>
+          <p>Pour choisir un nouveau mot de passe, cliquez sur le bouton ci-dessous :</p>
+          <a href="${urlWithCode}" style="display: inline-block; padding: 12px 24px; background-color: #e76f51; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 10px;">
+            Réinitialiser mon mot de passe
+          </a>
+          <p style="margin-top: 20px;">Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet e-mail.</p>
+          <p style="color: #555;">Merci,<br>L'équipe Écodeli</p>
+        </div>
+        `
       });
     } catch (error) {
       throw new Error(`Erreur lors de l'envoi de l'email: ${error.message}`);

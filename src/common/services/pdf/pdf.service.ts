@@ -1,5 +1,5 @@
 import * as PDFDocument from 'pdfkit';
-import { InvoiceDetails, ShipmentDetails } from './type';
+import { BillingData, InvoiceDetails, ShipmentDetails } from './type';
 
 
 export class PdfService {
@@ -323,7 +323,7 @@ export class PdfService {
             .text(`N° Rendez-vous : ${data.appointmentId}`)
             .text(`Date : ${data.appointmentDate}`)
             .text(`Heure : ${data.appointmentTime}`)
-            .text(`Montant total : ${data.amount.toFixed(2)} €`)
+            .text(`Montant total : ${Number(data.amount).toFixed(2)} €`)
             .moveDown();
 
             doc
@@ -365,4 +365,138 @@ export class PdfService {
             doc.end();
         });
     }
+
+    async generateBilling(invoiceData: BillingData): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      try {
+        const doc = new PDFDocument({ margin: 50 });
+        const chunks: Buffer[] = [];
+
+        doc.on('data', (chunk) => chunks.push(chunk));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+        doc.on('error', reject);
+
+        this.addHeader(doc, invoiceData);
+        
+        this.addCustomerInfo(doc, invoiceData);
+        
+        this.addInvoiceDetails(doc, invoiceData);
+        
+        this.addServiceTable(doc, invoiceData);
+        
+        this.addTotal(doc, invoiceData);
+        
+        this.addFooter(doc);
+
+        doc.end();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  private addHeader(doc: PDFDocument.PDFDocument, invoiceData: BillingData): void {
+    doc.fontSize(20)
+       .text('EcoDeli', 50, 50)
+       .fontSize(10)
+       .text('242 Rue du Faubourg Saint-Antoine', 50, 80)
+       .text('75012, Paris', 50, 95)
+       .text('Téléphone: (+33) 12 34 56 78 90', 50, 110)
+       .text('Email: contact.ecodeli@gmail.com', 50, 125);
+
+    doc.fontSize(24)
+       .text('FACTURE', 400, 50)
+       .fontSize(12)
+       .text(`N° ${invoiceData.invoiceNumber}`, 400, 85)
+       .text(`Date: ${invoiceData.invoiceDate.toLocaleDateString('fr-FR')}`, 400, 105);
+
+    doc.moveTo(50, 150)
+       .lineTo(550, 150)
+       .stroke();
+  }
+
+  private addCustomerInfo(doc: PDFDocument.PDFDocument, invoiceData: BillingData): void {
+    doc.fontSize(12)
+       .text('Facturé à:', 50, 170)
+       .fontSize(10)
+       .text(invoiceData.customer.name, 50, 190)
+       .text(invoiceData.customer.email, 50, 205)
+       .text(invoiceData.customer.address, 50, 220);
+  }
+
+  private addInvoiceDetails(doc: PDFDocument.PDFDocument, invoiceData: BillingData): void {
+    doc.fontSize(12)
+       .text('Détails de l\'abonnement:', 300, 170)
+       .fontSize(10)
+       .text(`Période: ${invoiceData.periodLabel}`, 300, 190)
+       .text(`Plan: ${invoiceData.plan.name}`, 300, 205)
+       .text(`ID Abonnement: ${invoiceData.subscription.id.slice(-8)}`, 300, 220);
+  }
+
+
+private ensureNumericPrice(price: any): number {
+  const numericPrice = parseFloat(price);
+  return isNaN(numericPrice) ? 0 : numericPrice;
+}
+
+private formatPrice(price: any): string {
+  const numericPrice = this.ensureNumericPrice(price);
+  return numericPrice.toFixed(2);
+}
+
+private addServiceTable(doc: PDFDocument.PDFDocument, invoiceData: BillingData): void {
+  const tableTop = 280;
+  const tableLeft = 50;
+  const tableWidth = 500;
+  
+  doc.fontSize(10)
+     .text('Description', tableLeft, tableTop)
+     .text('Période', tableLeft + 250, tableTop)
+     .text('Prix', tableLeft + 400, tableTop, { align: 'right' });
+  doc.moveTo(tableLeft, tableTop + 15)
+     .lineTo(tableLeft + tableWidth, tableTop + 15)
+     .stroke();
+  
+  const serviceTop = tableTop + 25;
+  
+  doc.text(invoiceData.plan.description, tableLeft, serviceTop)
+     .text(invoiceData.periodLabel, tableLeft + 250, serviceTop)
+     .text(`${this.formatPrice(invoiceData.plan.price)} €`, tableLeft + 400, serviceTop, { align: 'right' });
+  
+  doc.moveTo(tableLeft, serviceTop + 15)
+     .lineTo(tableLeft + tableWidth, serviceTop + 15)
+     .stroke();
+}
+
+private addTotal(doc: PDFDocument.PDFDocument, invoiceData: BillingData): void {
+    const totalTop = 350;
+
+    const totalTTC = this.ensureNumericPrice(invoiceData.plan.price);
+
+    const baseHT = totalTTC / 1.2;
+
+    const tvaAmount = totalTTC - baseHT;
+
+    doc.fontSize(10)
+         .text('Prix HT:', 400, totalTop)
+         .text(`${this.formatPrice(baseHT)} €`, 480, totalTop, { align: 'right' });
+
+    doc.text('TVA (20%):', 400, totalTop + 15)
+         .text(`${this.formatPrice(tvaAmount)} €`, 480, totalTop + 15, { align: 'right' });
+
+    doc.fontSize(12)
+         .text('Total TTC:', 400, totalTop + 35)
+         .text(`${this.formatPrice(totalTTC)} €`, 480, totalTop + 35, { align: 'right' });
+
+    doc.moveTo(400, totalTop + 55)
+         .lineTo(550, totalTop + 55)
+         .stroke();
+}
+
+private addFooter(doc: PDFDocument.PDFDocument): void {
+  doc.fontSize(8)
+     .text('Merci pour votre confiance !', 50, 700)
+     .text('Cette facture a été générée automatiquement.', 50, 715)
+     .text('Pour toute question, contactez-nous à contact.ecodeli@gmail.com', 50, 730);
+}
 }
