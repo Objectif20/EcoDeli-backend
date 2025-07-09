@@ -144,10 +144,10 @@ export class DeliveryService {
       totalAmount = 0;
     }
 
-    if (shipment_step === 0 && shipment.departure_handling) {
+    if (shipment_step < 2 && shipment.departure_handling) {
       totalAmount += 29;
     }
-    if ((shipment_step === 0 || shipment_step === 1000) && shipment.arrival_handling) {
+    if ((shipment_step === 0 || shipment_step) && shipment.arrival_handling) {
       totalAmount += 29;
     }
 
@@ -418,52 +418,127 @@ export class DeliveryService {
         delivery_person: { delivery_person_id: user.deliveryPerson.delivery_person_id },
         status: In(['taken', 'pending', 'finished']),
       },
-      relations: ['shipment', 'shipment.stores', 'shipment.stores.exchangePoint'],
+      relations: [
+        'shipment',
+        'shipment.stores',
+        'shipment.stores.exchangePoint',
+        'shipment.stores.exchangePoint.warehouse',
+      ],
     });
 
     const ongoingDeliveries: DeliveryOnGoing[] = deliveries.map((delivery) => {
       const shipment = delivery.shipment;
       const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
+      const step = delivery.shipment_step;
 
       let currentCoordinates: [number, number] = [0, 0];
+      let fromCity: string = '';
+      let toCity: string = '';
+      let pickupDate: string | null = null;
+      let estimatedDeliveryDate: string | null = null;
       let progress = 0;
 
-      if (delivery.shipment_step === 0) {
-        currentCoordinates = shipment.departure_location.coordinates.slice().reverse() as [
+      if (step === 0) {
+        // Étape 0: Origine → Premier store ou destination finale
+        fromCity = shipment.departure_city || 'Unknown';
+        currentCoordinates = shipment.departure_location?.coordinates?.slice().reverse() as [
           number,
           number,
         ];
+
+        const firstStore = storesByStep[0];
+        if (firstStore?.exchangePoint) {
+          toCity = firstStore.exchangePoint.city;
+        } else {
+          toCity = shipment.arrival_city || 'Unknown';
+        }
+
+        pickupDate = delivery.send_date?.toISOString().split('T')[0] || null;
+        estimatedDeliveryDate =
+          storesByStep[0]?.end_date?.toISOString().split('T')[0] ||
+          shipment.deadline_date?.toISOString().split('T')[0] ||
+          null;
         progress = 0;
-      } else if (delivery.shipment_step === 1000) {
-        currentCoordinates = shipment.arrival_location.coordinates.slice().reverse() as [
-          number,
-          number,
-        ];
+      } else if (step === 1000) {
+        // Étape finale: Dernier store → Destination finale
+        const lastStore = storesByStep[storesByStep.length - 1];
+        if (lastStore?.exchangePoint) {
+          fromCity = lastStore.exchangePoint.city;
+          currentCoordinates = lastStore.exchangePoint.coordinates.coordinates
+            ?.slice()
+            .reverse() as [number, number];
+        } else {
+          fromCity = shipment.departure_city || 'Unknown';
+          currentCoordinates = shipment.departure_location?.coordinates?.slice().reverse() as [
+            number,
+            number,
+          ];
+        }
+
+        toCity = shipment.arrival_city || 'Unknown';
+
+        pickupDate =
+          lastStore?.start_date?.toISOString().split('T')[0] ||
+          delivery.send_date?.toISOString().split('T')[0] ||
+          null;
+        estimatedDeliveryDate =
+          delivery.delivery_date?.toISOString().split('T')[0] ||
+          shipment.deadline_date?.toISOString().split('T')[0] ||
+          null;
         progress = 100;
       } else {
-        const currentStore = storesByStep.find((store) => store.step === delivery.shipment_step);
-        if (currentStore) {
-          currentCoordinates = currentStore.exchangePoint.coordinates.coordinates
-            .slice()
+        // Étape intermédiaire: Store précédent → Store actuel
+        const prevStore = storesByStep.find((s) => s.step === step - 1);
+        const currStore = storesByStep.find((s) => s.step === step);
+
+        if (prevStore?.exchangePoint) {
+          fromCity = prevStore.exchangePoint.city;
+          currentCoordinates = prevStore.exchangePoint.coordinates.coordinates
+            ?.slice()
             .reverse() as [number, number];
-          progress = (delivery.shipment_step / 1000) * 100;
+        } else {
+          fromCity = shipment.departure_city || 'Unknown';
+          currentCoordinates = shipment.departure_location?.coordinates?.slice().reverse() as [
+            number,
+            number,
+          ];
         }
+
+        if (currStore?.exchangePoint) {
+          toCity = currStore.exchangePoint.city;
+        } else {
+          toCity = shipment.arrival_city || 'Unknown';
+        }
+
+        pickupDate =
+          prevStore?.start_date?.toISOString().split('T')[0] ||
+          delivery.send_date?.toISOString().split('T')[0] ||
+          null;
+        estimatedDeliveryDate =
+          currStore?.end_date?.toISOString().split('T')[0] ||
+          shipment.deadline_date?.toISOString().split('T')[0] ||
+          null;
+
+        const totalSteps = storesByStep.length + 1;
+        progress = (step / totalSteps) * 100;
       }
 
       return {
         id: delivery.delivery_id,
-        from: shipment.departure_city ?? 'Unknown',
-        to: shipment.arrival_city ?? 'Unknown',
+        from: fromCity,
+        to: toCity,
         status: delivery.status,
-        pickupDate: shipment.deadline_date
-          ? shipment.deadline_date.toISOString().split('T')[0]
-          : null,
-        estimatedDeliveryDate: shipment.deadline_date
-          ? shipment.deadline_date.toISOString().split('T')[0]
-          : null,
+        pickupDate: pickupDate,
+        estimatedDeliveryDate: estimatedDeliveryDate,
         coordinates: {
-          origin: shipment.departure_location.coordinates.slice().reverse() as [number, number],
-          destination: shipment.arrival_location.coordinates.slice().reverse() as [number, number],
+          origin: (shipment.departure_location?.coordinates?.slice().reverse() as [
+            number,
+            number,
+          ]) ?? [0, 0],
+          destination: (shipment.arrival_location?.coordinates?.slice().reverse() as [
+            number,
+            number,
+          ]) ?? [0, 0],
           current: currentCoordinates,
         },
         progress: progress,
@@ -625,6 +700,46 @@ export class DeliveryService {
         relations: ['delivery_person', 'delivery_person.user', 'delivery_person.user.clients'],
       });
 
+      const allDeliveries = await this.deliveryRepository.find({
+        where: {
+          shipment: { shipment_id: shipment.shipment_id },
+        },
+      });
+
+      const formatDate = (date: Date | null | undefined): string => {
+        if (!date) return new Date().toISOString().split('T')[0];
+        return `${date.getFullYear()}-${(date.getMonth() + 1)
+          .toString()
+          .padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+      };
+
+      let departure_date: string;
+      let arrival_date: string;
+
+      const step0 = allDeliveries.find((delivery) => delivery.shipment_step === 0);
+      const step1 = allDeliveries.find((delivery) => delivery.shipment_step === 1);
+      const step1000 = allDeliveries.find((delivery) => delivery.shipment_step === 1000);
+
+      if (step0) {
+        departure_date = formatDate(step0.send_date);
+        arrival_date = formatDate(step0.send_date);
+      } else {
+        departure_date = formatDate(shipment.deadline_date);
+        arrival_date = formatDate(shipment.deadline_date);
+
+        if (step1) {
+          departure_date = formatDate(step1.send_date);
+        }
+
+        if (step1000) {
+          arrival_date = formatDate(step1000.send_date);
+        }
+      }
+
+      if (departure_date > arrival_date) {
+        arrival_date = departure_date;
+      }
+
       return Promise.all(
         deliveries.map(async (delivery) => {
           const deliveryPersonUser = delivery.delivery_person?.user;
@@ -645,8 +760,8 @@ export class DeliveryService {
             id: delivery.delivery_id,
             arrival_city: shipment.arrival_city ?? '',
             departure_city: shipment.departure_city ?? '',
-            date_departure: shipment.deadline_date?.toISOString().split('T')[0] || '',
-            date_arrival: shipment.deadline_date?.toISOString().split('T')[0] || '',
+            date_departure: departure_date,
+            date_arrival: arrival_date,
             photo: deliveryPicture,
             deliveryman: deliveryPersonClient
               ? {
@@ -762,6 +877,7 @@ export class DeliveryService {
         'shipment.user',
         'shipment.stores',
         'shipment.stores.exchangePoint',
+        'shipment.stores.exchangePoint.warehouse',
         'shipment.parcels',
         'shipment.parcels.images',
       ],
@@ -789,15 +905,26 @@ export class DeliveryService {
     let departureCoords: [number, number] | undefined;
     let departureAddress: string | undefined;
     let departurePostal: string | undefined;
+    let departureHandling: boolean = false;
+    let departureFloor: number = 0;
+    let departureElevator: boolean = false;
+    let departureIsWarehouse: boolean = false;
+    let departureIsBox: boolean = false;
+
     let arrivalCity: string | undefined;
     let arrivalCoords: [number, number] | undefined;
     let arrivalAddress: string | undefined;
     let arrivalPostal: string | undefined;
-    let isBox: boolean | undefined;
+    let arrivalHandling: boolean = false;
+    let arrivalFloor: number = 0;
+    let arrivalElevator: boolean = false;
+    let arrivalIsWarehouse: boolean = false;
+    let arrivalIsBox: boolean = false;
 
     const step = delivery.shipment_step;
 
     if (step === 0) {
+      // Departure - origine du shipment
       departureCity = shipment.departure_city || '';
       departureCoords = shipment.departure_location?.coordinates?.slice().reverse() as [
         number,
@@ -805,57 +932,129 @@ export class DeliveryService {
       ];
       departureAddress = shipment.departure_address || '';
       departurePostal = shipment.departure_postal || '';
+      departureHandling = shipment.departure_handling || false;
+      departureFloor = shipment.floor_departure_handling || 0;
+      departureElevator = shipment.elevator_departure || false;
+      departureIsWarehouse = false;
+      departureIsBox = false;
 
-      arrivalCity = storesByStep[0]?.exchangePoint?.city ?? shipment.arrival_city;
-      arrivalCoords =
-        storesByStep[0]?.exchangePoint?.coordinates.coordinates?.slice().reverse() ??
-        shipment.arrival_location?.coordinates?.slice().reverse();
-      arrivalAddress = storesByStep[0]?.exchangePoint?.address ?? shipment.arrival_address;
-      arrivalPostal = storesByStep[0]?.exchangePoint?.postal_code ?? shipment.arrival_postal;
-      isBox = storesByStep[0]?.exchangePoint?.isbox;
+      // Arrival - premier store ou destination finale
+      const firstStore = storesByStep[0];
+      if (firstStore?.exchangePoint) {
+        arrivalCity = firstStore.exchangePoint.city;
+        arrivalCoords = firstStore.exchangePoint.coordinates.coordinates?.slice().reverse() as [
+          number,
+          number,
+        ];
+        arrivalAddress = firstStore.exchangePoint.address;
+        arrivalPostal = firstStore.exchangePoint.postal_code;
+        arrivalHandling = false; // Pas de manutention dans les exchange points
+        arrivalFloor = 0;
+        arrivalElevator = false;
+        arrivalIsWarehouse = !!firstStore.exchangePoint.warehouse;
+        arrivalIsBox = firstStore.exchangePoint.isbox || false;
+      } else {
+        arrivalCity = shipment.arrival_city || '';
+        arrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse() as [
+          number,
+          number,
+        ];
+        arrivalAddress = shipment.arrival_address || '';
+        arrivalPostal = shipment.arrival_postal || '';
+        arrivalHandling = shipment.arrival_handling || false;
+        arrivalFloor = shipment.floor_arrival_handling || 0;
+        arrivalElevator = shipment.elevator_arrival || false;
+        arrivalIsWarehouse = false;
+        arrivalIsBox = false;
+      }
     } else if (step === 1000) {
-      const lastStore = storesByStep.find((s) => s.step === step - 1);
-      departureCity = lastStore?.exchangePoint?.city ?? shipment.departure_city ?? undefined;
-      departureCoords =
-        lastStore?.exchangePoint?.coordinates.coordinates?.slice().reverse() ??
-        shipment.departure_location?.coordinates?.slice().reverse();
-      departureAddress = lastStore?.exchangePoint?.address ?? shipment.departure_address ?? '';
-      departurePostal = lastStore?.exchangePoint?.postal_code ?? shipment.departure_postal ?? '';
-
-      arrivalCity = shipment.arrival_city ?? undefined;
-      arrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse();
-      arrivalAddress = shipment.arrival_address || '';
-      arrivalPostal = shipment.arrival_postal || '';
-    } else {
-      const prevStore = storesByStep.find((s) => s.step === step - 1);
-      const currStore = storesByStep.find((s) => s.step === step);
-
-      if (!prevStore) {
-        departureCity = shipment.departure_city ?? undefined;
+      // Departure - dernier store
+      const lastStore = storesByStep[storesByStep.length - 1];
+      if (lastStore?.exchangePoint) {
+        departureCity = lastStore.exchangePoint.city;
+        departureCoords = lastStore.exchangePoint.coordinates.coordinates?.slice().reverse() as [
+          number,
+          number,
+        ];
+        departureAddress = lastStore.exchangePoint.address;
+        departurePostal = lastStore.exchangePoint.postal_code;
+        departureHandling = false; // Pas de manutention dans les exchange points
+        departureFloor = 0;
+        departureElevator = false;
+        departureIsWarehouse = !!lastStore.exchangePoint.warehouse;
+        departureIsBox = lastStore.exchangePoint.isbox || false;
+      } else {
+        departureCity = shipment.departure_city || '';
         departureCoords = shipment.departure_location?.coordinates?.slice().reverse() as [
           number,
           number,
         ];
         departureAddress = shipment.departure_address || '';
         departurePostal = shipment.departure_postal || '';
-      } else {
-        departureCity = prevStore.exchangePoint?.city;
-        departureCoords = prevStore.exchangePoint?.coordinates.coordinates?.slice().reverse() as [
+        departureHandling = shipment.departure_handling || false;
+        departureFloor = shipment.floor_departure_handling || 0;
+        departureElevator = shipment.elevator_departure || false;
+        departureIsWarehouse = false;
+        departureIsBox = false;
+      }
+
+      // Arrival - destination finale
+      arrivalCity = shipment.arrival_city || '';
+      arrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse() as [number, number];
+      arrivalAddress = shipment.arrival_address || '';
+      arrivalPostal = shipment.arrival_postal || '';
+      arrivalHandling = shipment.arrival_handling || false;
+      arrivalFloor = shipment.floor_arrival_handling || 0;
+      arrivalElevator = shipment.elevator_arrival || false;
+      arrivalIsWarehouse = false;
+      arrivalIsBox = false;
+    } else {
+      // Departure - store précédent ou origine
+      const prevStore = storesByStep.find((s) => s.step === step - 1);
+      if (prevStore?.exchangePoint) {
+        departureCity = prevStore.exchangePoint.city;
+        departureCoords = prevStore.exchangePoint.coordinates.coordinates?.slice().reverse() as [
           number,
           number,
         ];
-        departureAddress = prevStore.exchangePoint?.address;
-        departurePostal = prevStore.exchangePoint?.postal_code;
+        departureAddress = prevStore.exchangePoint.address;
+        departurePostal = prevStore.exchangePoint.postal_code;
+        departureHandling = false; // Pas de manutention dans les exchange points
+        departureFloor = 0;
+        departureElevator = false;
+        departureIsWarehouse = !!prevStore.exchangePoint.warehouse;
+        departureIsBox = prevStore.exchangePoint.isbox || false;
+      } else {
+        departureCity = shipment.departure_city || '';
+        departureCoords = shipment.departure_location?.coordinates?.slice().reverse() as [
+          number,
+          number,
+        ];
+        departureAddress = shipment.departure_address || '';
+        departurePostal = shipment.departure_postal || '';
+        departureHandling = shipment.departure_handling || false;
+        departureFloor = shipment.floor_departure_handling || 0;
+        departureElevator = shipment.elevator_departure || false;
+        departureIsWarehouse = false;
+        departureIsBox = false;
       }
 
-      arrivalCity = currStore?.exchangePoint?.city;
-      arrivalCoords = currStore?.exchangePoint?.coordinates.coordinates?.slice().reverse() as [
-        number,
-        number,
-      ];
-      arrivalAddress = currStore?.exchangePoint?.address;
-      arrivalPostal = currStore?.exchangePoint?.postal_code;
-      isBox = currStore?.exchangePoint?.isbox;
+      // Arrival - store actuel
+      const currStore = storesByStep.find((s) => s.step === step);
+      if (currStore?.exchangePoint) {
+        arrivalCity = currStore.exchangePoint.city;
+        arrivalCoords = currStore.exchangePoint.coordinates.coordinates?.slice().reverse() as [
+          number,
+          number,
+        ];
+        arrivalAddress = currStore.exchangePoint.address;
+        arrivalPostal = currStore.exchangePoint.postal_code;
+        arrivalHandling = false; // Pas de manutention dans les exchange points
+        arrivalFloor = 0;
+        arrivalElevator = false;
+        arrivalIsWarehouse = !!currStore.exchangePoint.warehouse;
+        arrivalIsBox = currStore.exchangePoint.isbox || false;
+      }
     }
 
     const deliveryDetails: DeliveryDetails = {
@@ -864,21 +1063,31 @@ export class DeliveryService {
         address: departureAddress || '',
         postalCode: departurePostal || '',
         coordinates: departureCoords ?? [0, 0],
+        handling: departureHandling,
+        floor: departureFloor,
+        elevator: departureElevator,
+        isWarehouse: departureIsWarehouse,
+        isBox: departureIsBox,
       },
       arrival: {
         city: arrivalCity || '',
         address: arrivalAddress || '',
         postalCode: arrivalPostal || '',
         coordinates: arrivalCoords ?? [0, 0],
+        handling: arrivalHandling,
+        floor: arrivalFloor,
+        elevator: arrivalElevator,
+        isWarehouse: arrivalIsWarehouse,
+        isBox: arrivalIsBox,
       },
       departure_date: delivery.send_date?.toISOString() || '',
-      arrival_date: delivery.delivery_date?.toISOString() || '',
+      arrival_date:
+        delivery.delivery_date?.toISOString() || delivery.send_date?.toISOString() || '',
       status: (['pending', 'taken', 'finished', 'validated'].includes(delivery.status)
         ? delivery.status
         : 'pending') as 'pending' | 'taken' | 'finished' | 'validated',
       total_price: Number(delivery.delivery_price ?? delivery.amount),
       cart_dropped: shipment.trolleydrop,
-      isBox: isBox || false,
       packages: await Promise.all(
         (shipment.parcels || []).map(async (parcel: any) => ({
           id: parcel.parcel_id,
