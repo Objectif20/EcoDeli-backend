@@ -267,7 +267,7 @@ export class DeliveryManService {
       console.log("Delivery person is not validated");
       return false;
     }
-
+    /*
     const shipmentWeight = shipment.weight || 0;
     const shipmentVolume = shipment.volume || 0;
 
@@ -308,7 +308,7 @@ export class DeliveryManService {
     if (!isAdmissibleVehicle) {
       console.log("No admissible vehicle found with margin");
       return false;
-    }
+    }*/
 
     return true;
   }
