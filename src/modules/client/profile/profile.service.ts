@@ -730,40 +730,29 @@ export class ProfileService {
       throw new NotFoundException('User not found');
     }
 
-    const subscriptions = await this.subscriptionTransactionRepository.find({
-      where: { subscription: { user: { user_id } } },
-      relations: ['subscription', 'subscription.plan'],
+    const subscription = await this.subscriptionRepository.findOne({
+      where: { user: { user_id }, status: 'active' },
+      relations: ['plan'],
     });
 
-    if (subscriptions.length === 0) {
+    if (!subscription) {
       return {
         history: [],
-        customer_stripe_id: false,
-        plan: {
-          plan_id: 0,
-          name: '',
-          price: '0',
-          priority_shipping_percentage: '0',
-          priority_months_offered: 0,
-          max_insurance_coverage: '0',
-          extra_insurance_price: '0',
-          shipping_discount: '0',
-          permanent_discount: '0',
-          permanent_discount_percentage: '0',
-          small_package_permanent_discount: '0',
-          first_shipping_free: false,
-          first_shipping_free_threshold: '0',
-          is_pro: false,
-        },
+        customer_stripe_id: this.getCustomerStripeId(user),
+        plan: this.emptyPlan(),
       };
     }
 
+    const transactions = await this.subscriptionTransactionRepository.find({
+      where: { subscription: { subscription_id: subscription.subscription_id } },
+    });
+
     const history = await Promise.all(
-      subscriptions.map(async (transaction) => ({
+      transactions.map(async (transaction) => ({
         id: transaction.transaction_id,
         month: `${transaction.month}/${transaction.year}`,
         status: 'ok',
-        name: transaction.subscription.plan.name,
+        name: subscription.plan.name,
         invoiceLink: await this.minioService.generateImageUrl(
           'client-documents',
           transaction.invoice_url || '',
@@ -771,39 +760,23 @@ export class ProfileService {
       })),
     );
 
-    let customer_stripe_id = false;
-    if (user.clients.length > 0) {
-      customer_stripe_id = !!user.clients[0].stripe_customer_id;
-    } else if (user.merchant) {
-      customer_stripe_id = !!user.merchant.stripe_customer_id;
-    }
-
-    const activeSubscription = subscriptions[0];
-
-    const activePlan = activeSubscription?.subscription?.plan
-      ? {
-          plan_id: activeSubscription.subscription.plan.plan_id,
-          name: activeSubscription.subscription.plan.name,
-          price: (activeSubscription.subscription.plan.price ?? 0).toString(),
-          priority_shipping_percentage:
-            activeSubscription.subscription.plan.priority_shipping_percentage.toString(),
-          priority_months_offered: activeSubscription.subscription.plan.priority_months_offered,
-          max_insurance_coverage:
-            activeSubscription.subscription.plan.max_insurance_coverage.toString(),
-          extra_insurance_price:
-            activeSubscription.subscription.plan.extra_insurance_price.toString(),
-          shipping_discount: activeSubscription.subscription.plan.shipping_discount.toString(),
-          permanent_discount: activeSubscription.subscription.plan.permanent_discount.toString(),
-          permanent_discount_percentage:
-            activeSubscription.subscription.plan.permanent_discount_percentage.toString(),
-          small_package_permanent_discount:
-            activeSubscription.subscription.plan.small_package_permanent_discount.toString(),
-          first_shipping_free: activeSubscription.subscription.plan.first_shipping_free,
-          first_shipping_free_threshold:
-            activeSubscription.subscription.plan.first_shipping_free_threshold.toString(),
-          is_pro: activeSubscription.subscription.plan.is_pro,
-        }
-      : null;
+    const activePlan = {
+      plan_id: subscription.plan.plan_id,
+      name: subscription.plan.name,
+      price: (subscription.plan.price ?? 0).toString(),
+      priority_shipping_percentage: subscription.plan.priority_shipping_percentage.toString(),
+      priority_months_offered: subscription.plan.priority_months_offered,
+      max_insurance_coverage: subscription.plan.max_insurance_coverage.toString(),
+      extra_insurance_price: subscription.plan.extra_insurance_price.toString(),
+      shipping_discount: subscription.plan.shipping_discount.toString(),
+      permanent_discount: subscription.plan.permanent_discount.toString(),
+      permanent_discount_percentage: subscription.plan.permanent_discount_percentage.toString(),
+      small_package_permanent_discount:
+        subscription.plan.small_package_permanent_discount.toString(),
+      first_shipping_free: subscription.plan.first_shipping_free,
+      first_shipping_free_threshold: subscription.plan.first_shipping_free_threshold.toString(),
+      is_pro: subscription.plan.is_pro,
+    };
 
     return {
       history: history.map((item) => ({
@@ -812,23 +785,36 @@ export class ProfileService {
           ? (item.status as 'ok' | 'wait' | 'cancelled')
           : 'cancelled',
       })),
-      customer_stripe_id,
-      plan: activePlan || {
-        plan_id: 0,
-        name: '',
-        price: '0',
-        priority_shipping_percentage: '0',
-        priority_months_offered: 0,
-        max_insurance_coverage: '0',
-        extra_insurance_price: '0',
-        shipping_discount: '0',
-        permanent_discount: '0',
-        permanent_discount_percentage: '0',
-        small_package_permanent_discount: '0',
-        first_shipping_free: false,
-        first_shipping_free_threshold: '0',
-        is_pro: false,
-      },
+      customer_stripe_id: this.getCustomerStripeId(user),
+      plan: activePlan,
+    };
+  }
+
+  private getCustomerStripeId(user: Users): boolean {
+    if (user.clients.length > 0) {
+      return !!user.clients[0].stripe_customer_id;
+    } else if (user.merchant) {
+      return !!user.merchant.stripe_customer_id;
+    }
+    return false;
+  }
+
+  private emptyPlan() {
+    return {
+      plan_id: 0,
+      name: '',
+      price: '0',
+      priority_shipping_percentage: '0',
+      priority_months_offered: 0,
+      max_insurance_coverage: '0',
+      extra_insurance_price: '0',
+      shipping_discount: '0',
+      permanent_discount: '0',
+      permanent_discount_percentage: '0',
+      small_package_permanent_discount: '0',
+      first_shipping_free: false,
+      first_shipping_free_threshold: '0',
+      is_pro: false,
     };
   }
 
