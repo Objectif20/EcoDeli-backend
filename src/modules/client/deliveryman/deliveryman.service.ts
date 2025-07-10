@@ -306,7 +306,6 @@ export class DeliveryManService {
       console.log('Delivery person is not validated');
       return false;
     }
-
     /*
     const shipmentWeight = shipment.weight || 0;
     const shipmentVolume = shipment.volume || 0;
