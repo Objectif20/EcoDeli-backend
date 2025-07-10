@@ -17,6 +17,8 @@ import { ProviderKeywordsList } from 'src/common/entities/provider_keywords_list
 import { JwtModule } from '@nestjs/jwt';
 import { ProviderCommission } from 'src/common/entities/provider_commissions.entity';
 import { ServiceScheduleService } from './service-schedule.service';
+import { MongooseModule } from '@nestjs/mongoose';
+import { Message, MessageSchema } from 'src/common/schemas/message.schema';
 
 @Module({
   imports: [
@@ -32,10 +34,11 @@ import { ServiceScheduleService } from './service-schedule.service';
       PrestaReviewResponse,
       ProviderKeywordsList,
       Client,
-      ProviderCommission
+      ProviderCommission,
     ]),
+    MongooseModule.forFeature([{ name: Message.name, schema: MessageSchema }]),
     SharedModule,
-    JwtModule.register({})
+    JwtModule.register({}),
   ],
   controllers: [ServiceController],
   providers: [ServiceService, ServiceScheduleService],

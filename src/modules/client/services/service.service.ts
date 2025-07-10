@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, In } from 'typeorm';
+import { Repository, In } from 'typeorm';
 
 import { ServicesList } from 'src/common/entities/services_list.entity';
 import { ServiceImage } from 'src/common/entities/services_image.entity';
@@ -17,12 +17,14 @@ import { ProviderKeywordsList } from 'src/common/entities/provider_keywords_list
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { ProviderCommission } from 'src/common/entities/provider_commissions.entity';
-import { Users } from 'src/common/entities/user.entity';
 import { StripeService } from 'src/common/services/stripe/stripe.service';
 import { FutureAppointmentProvider } from './type';
 import { PdfService } from 'src/common/services/pdf/pdf.service';
 import * as nodemailer from 'nodemailer';
 import { Readable } from 'stream';
+import { InjectModel } from '@nestjs/mongoose';
+import { Message } from 'src/common/schemas/message.schema';
+import { Model } from 'mongoose';
 
 @Injectable()
 export class ServiceService {
@@ -38,7 +40,6 @@ export class ServiceService {
     private reviewResponseRepo: Repository<PrestaReviewResponse>,
     @InjectRepository(ProviderCommission) private commissionRepo: Repository<ProviderCommission>,
     @InjectRepository(Client) private clientRepo: Repository<Client>,
-    @InjectRepository(Users) private userRepo: Repository<Users>,
     @InjectRepository(ProviderKeywordsList)
     private keywordListRepo: Repository<ProviderKeywordsList>,
     @InjectRepository(ProviderKeywords)
@@ -47,6 +48,7 @@ export class ServiceService {
     private readonly stripeService: StripeService,
     private readonly pdfService: PdfService,
     @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
+    @InjectModel(Message.name) private messageModel: Model<Message>,
   ) {}
 
   async createService(data: any, files: Express.Multer.File[], user_id: string) {
@@ -413,6 +415,7 @@ export class ServiceService {
   async createAppointment(service_id: string, data: { user_id: string; service_date: Date }) {
     const client = await this.clientRepo.findOne({
       where: { user: { user_id: data.user_id } },
+      relations: ['user'],
     });
     if (!client) throw new NotFoundException('Client non trouvé');
 
@@ -423,6 +426,7 @@ export class ServiceService {
 
     const provider = await this.providerRepo.findOne({
       where: { services: { service_id } },
+      relations: ['user'],
     });
     if (!provider) throw new NotFoundException('Prestataire non trouvé');
 
@@ -443,6 +447,23 @@ export class ServiceService {
     });
 
     const savedAppointment = await this.appointmentRepo.save(appointment);
+
+    const date = new Date(data.service_date);
+    const formattedDate = date.toLocaleString('fr-FR', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    await this.messageModel.create({
+      senderId: client.user.user_id,
+      receiverId: provider.user.user_id,
+      content: `Bonjour, j'ai rendez-vous avec vous pour la prestation : ${service.name} le ${formattedDate}, bonne journée !`,
+      appointment_id: savedAppointment.appointment_id,
+    });
 
     if (!savedAppointment) {
       throw new NotFoundException('Erreur lors de la création du rendez-vous');

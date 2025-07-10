@@ -1,106 +1,102 @@
-import { Shipment } from "src/common/entities/shipment.entity";
+import { Shipment } from 'src/common/entities/shipment.entity';
 
 export interface DeliveryOnGoing {
- 
-    id: string;
-    from: string;
-    to: string;
-    status: string;
-    pickupDate: string | null;
-    estimatedDeliveryDate: string | null;
-    coordinates: {
-      origin: [number, number];
-      destination: [number, number];
-    };
-    progress: number;
-  
-  }
+  id: string;
+  from: string;
+  to: string;
+  status: string;
+  pickupDate: string | null;
+  estimatedDeliveryDate: string | null;
+  coordinates: {
+    origin: [number, number];
+    destination: [number, number];
+  };
+  progress: number;
+}
 
-  export interface HistoryDelivery {
-    id: string;
-    departure_city: string;
-    arrival_city: string;
-    price: number;
-    client: {
-      name: string;
-      photo_url: string;
-    };
-    status: string;
-  }
+export interface HistoryDelivery {
+  id: string;
+  departure_city: string;
+  arrival_city: string;
+  price: number;
+  client: {
+    name: string;
+    photo_url: string;
+  };
+  status: string;
+}
 
-  export interface ReviewAsDeliveryPerson {
+export interface ReviewAsDeliveryPerson {
+  id: string;
+  content: string;
+  author: {
     id: string;
-    content: string;
-    author: {
-      id: string;
-      name: string;
-      photo: string;
-    };
-    reply: boolean;
-    reply_content: string | null;
-    delivery_name: string;
-    rate: number;
-  }
+    name: string;
+    photo: string;
+  };
+  reply: boolean;
+  reply_content: string | null;
+  delivery_name: string;
+  rate: number;
+}
 
-  export interface ReviewAsClient {
+export interface ReviewAsClient {
+  id: string;
+  content: string;
+  delivery: {
     id: string;
-    content: string;
-    delivery: {
-      id: string;
-      deliveryman: {
-        id: string;
-        name: string;
-        photo: string;
-        email: string;
-      };
-    };
-    services_name: string;
-    rate: number;
-  }
-
-
-  export interface DeliveriesLocation {
-    id: string;
-    coordinates: {
-      lat: number;
-      lng: number;
-    };
-    deliveryman?: {
+    deliveryman: {
       id: string;
       name: string;
       photo: string;
       email: string;
     };
-    potential_address?: string;
-  }
+  };
+  services_name: string;
+  rate: number;
+}
 
-  export interface CurrentDeliveryAsClient {
+export interface DeliveriesLocation {
+  id: string;
+  coordinates: {
+    lat: number;
+    lng: number;
+  };
+  deliveryman?: {
     id: string;
-    arrival_city: string;
-    departure_city: string;
-    date_departure: string;
-    date_arrival: string;
+    name: string;
     photo: string;
-    deliveryman: {
-      name: string;
-      photo: string;
-    };
-  }
+    email: string;
+  };
+  potential_address?: string;
+}
 
+export interface CurrentDeliveryAsClient {
+  id: string;
+  arrival_city: string;
+  departure_city: string;
+  date_departure: string;
+  date_arrival: string;
+  photo: string;
+  deliveryman: {
+    name: string;
+    photo: string;
+  };
+}
 
-  export interface SubscriptionForClient {
-    planName: string;
-    discountRate?: number; 
-    priorityRate: number;
-    insuranceLimit?: number | null; 
-    additionalInsuranceCost?: number | null; 
-    freeShipmentAvailable?: boolean;
-    freePriorityShipmentsPerMonth?: number;
-    freePriotiryShipmentsIfLower?: number;
-    permanentDiscount?: number; 
-    hasUsedFreeShipment?: boolean; 
-    remainingPriorityShipments?: number; 
-  }
+export interface SubscriptionForClient {
+  planName: string;
+  discountRate?: number;
+  priorityRate: number;
+  insuranceLimit?: number | null;
+  additionalInsuranceCost?: number | null;
+  freeShipmentAvailable?: boolean;
+  freePriorityShipmentsPerMonth?: number;
+  freePriotiryShipmentsIfLower?: number;
+  permanentDiscount?: number;
+  hasUsedFreeShipment?: boolean;
+  remainingPriorityShipments?: number;
+}
 
 export interface DeliveryDetailsOffice {
   details: {
@@ -177,7 +173,6 @@ export interface DeliveryDetailsOffice {
   }[];
 }
 
-  
 export interface ShipmentListItem {
   id: string;
   name: string;
@@ -235,19 +230,28 @@ export interface DeliveryDetails {
     address: string;
     postalCode: string;
     coordinates: [number, number];
+    handling: boolean;
+    floor: number;
+    elevator: boolean;
+    isWarehouse: boolean;
+    isBox: boolean;
   };
   arrival: {
     city: string;
     address: string;
     postalCode: string;
     coordinates: [number, number];
+    handling: boolean;
+    floor: number;
+    elevator: boolean;
+    isWarehouse: boolean;
+    isBox: boolean;
   };
   departure_date: string;
   arrival_date: string;
-  status: "pending" | "taken" | "finished" | "validated";
+  status: 'pending' | 'taken' | 'finished' | 'validated';
   total_price: number;
   cart_dropped: boolean;
-  isBox: boolean;
   packages: {
     id: string;
     name: string;
@@ -258,7 +262,6 @@ export interface DeliveryDetails {
     picture: string[];
   }[];
 }
-
 
 export interface ShipmentWithCoveredSteps extends Omit<Shipment, 'covered_steps'> {
   covered_steps?: number[];
