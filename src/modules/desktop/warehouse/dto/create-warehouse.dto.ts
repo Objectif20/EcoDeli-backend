@@ -1,14 +1,17 @@
-import { IsString, IsNumber, IsOptional } from 'class-validator';
-import { Point } from 'geojson';
+import { IsString, IsNumber, IsOptional, IsArray, ArrayMinSize } from 'class-validator';
 
 export class CreateWarehouseDto {
   @IsString()
   city: string;
 
-  @IsNumber()
-  capacity: number;
+  @IsString()
+  capacity: string;
 
-  coordinates: Point;
+  @IsArray()
+  @ArrayMinSize(2)
+  @IsString({ each: true })
+  @IsOptional()
+  coordinates?: string[];
 
   @IsOptional()
   @IsString()

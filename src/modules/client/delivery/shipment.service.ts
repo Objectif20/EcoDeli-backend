@@ -514,6 +514,7 @@ export class ShipmentService {
         'deliveries',
         'deliveries.delivery_person',
         'deliveries.delivery_person.user',
+        'deliveries.delivery_person.user.clients',
         'stores',
         'stores.exchangePoint',
         'user',
@@ -523,6 +524,13 @@ export class ShipmentService {
     });
 
     if (!shipment) throw new Error('Shipment not found');
+
+    const formatDate = (date: Date | null | undefined): string => {
+      if (!date) return new Date().toISOString().split('T')[0];
+      return `${date.getFullYear()}-${(date.getMonth() + 1)
+        .toString()
+        .padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+    };
 
     const parcels = await Promise.all(
       shipment.parcels.map(async (parcel) => ({
@@ -543,7 +551,9 @@ export class ShipmentService {
     const deliveries = shipment.deliveries.sort((a, b) => a.shipment_step - b.shipment_step);
     const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
 
-    const initialPrice = Number(shipment.estimated_total_price ?? 0);
+    let totalPrice = Number(
+      shipment.proposed_delivery_price ?? shipment.estimated_total_price ?? 0,
+    );
     const priceWithStep = deliveries.map((delivery) => ({
       step: `Step ${delivery.shipment_step}`,
       price: Number(delivery.delivery_price ?? delivery.amount),
@@ -578,112 +588,93 @@ export class ShipmentService {
         description: "Aucune étape de livraison n'existe.",
         date: undefined,
         departure: {
-          city: null,
-          coordinates: null,
-          address: null,
-          postal_code: null,
+          city: shipment.departure_city,
+          coordinates: shipment.departure_location?.coordinates?.slice().reverse(),
+          address: shipment.departure_address,
+          postal_code: shipment.departure_postal,
         },
         arrival: {
-          city: null,
-          coordinates: null,
-          address: null,
-          postal_code: null,
+          city: shipment.arrival_city,
+          coordinates: shipment.arrival_location?.coordinates?.slice().reverse(),
+          address: shipment.arrival_address,
+          postal_code: shipment.arrival_postal,
         },
         courier: null,
         end_time: undefined,
         idLink: undefined,
       });
     } else {
-      for (let i = 0; i < deliveries.length; i++) {
-        const delivery = deliveries[i];
+      for (const delivery of deliveries) {
         const store = storesByStep.find((s) => s.step === delivery.shipment_step);
         const courier = delivery.delivery_person;
 
-        let departureCity,
-          departureCoords,
-          departureAddress,
-          departurePostalCode,
-          arrivalCity,
-          arrivalCoords,
-          arrivalAddress,
-          arrivalPostalCode;
+        let departure, arrival;
 
         if (delivery.shipment_step === 1) {
-          departureCity = shipment.departure_city;
-          departureCoords = shipment.departure_location?.coordinates?.slice().reverse();
-          departureAddress = shipment.departure_address;
-          departurePostalCode = shipment.departure_postal;
-          arrivalCity = store?.exchangePoint?.city;
-          arrivalCoords = store?.exchangePoint?.coordinates.coordinates?.slice().reverse();
-          arrivalAddress = store?.exchangePoint?.address;
-          arrivalPostalCode = store?.exchangePoint?.postal_code;
+          departure = {
+            city: shipment.departure_city,
+            coordinates: shipment.departure_location?.coordinates?.slice().reverse(),
+            address: shipment.departure_address,
+            postal_code: shipment.departure_postal,
+          };
+          arrival = {
+            city: store?.exchangePoint?.city || null,
+            coordinates: store?.exchangePoint?.coordinates.coordinates?.slice().reverse(),
+            address: store?.exchangePoint?.address || null,
+            postal_code: store?.exchangePoint?.postal_code || null,
+          };
         } else {
           const prevStore = storesByStep.find((s) => s.step === delivery.shipment_step - 1);
-          departureCity = prevStore?.exchangePoint?.city;
-          departureCoords = prevStore?.exchangePoint?.coordinates.coordinates?.slice().reverse();
-          departureAddress = prevStore?.exchangePoint?.address;
-          departurePostalCode = prevStore?.exchangePoint?.postal_code;
-          arrivalCity = store?.exchangePoint?.city;
-          arrivalCoords = store?.exchangePoint?.coordinates.coordinates?.slice().reverse();
-          arrivalAddress = store?.exchangePoint?.address;
-          arrivalPostalCode = store?.exchangePoint?.postal_code;
+          departure = {
+            city: prevStore?.exchangePoint?.city || null,
+            coordinates: prevStore?.exchangePoint?.coordinates.coordinates?.slice().reverse(),
+            address: prevStore?.exchangePoint?.address || null,
+            postal_code: prevStore?.exchangePoint?.postal_code || null,
+          };
+          arrival = {
+            city: store?.exchangePoint?.city || null,
+            coordinates: store?.exchangePoint?.coordinates.coordinates?.slice().reverse(),
+            address: store?.exchangePoint?.address || null,
+            postal_code: store?.exchangePoint?.postal_code || null,
+          };
         }
 
-        let clientOrMerchant;
-        if (shipment.user?.clients?.length) {
-          clientOrMerchant = shipment.user.clients[0];
-        } else if (shipment.user?.merchant) {
-          clientOrMerchant = shipment.user.merchant[0];
-        }
+        const client = courier?.user.clients?.[0];
 
         steps.push({
           id: delivery.shipment_step,
           title: `Step ${delivery.shipment_step}`,
           description: store?.exchangePoint?.description || 'Étape intermédiaire de livraison',
           date: delivery.send_date?.toISOString(),
-          departure: {
-            city: departureCity,
-            coordinates: departureCoords,
-            address: departureAddress,
-            postal_code: departurePostalCode,
-          },
-          arrival: {
-            city: arrivalCity,
-            coordinates: arrivalCoords,
-            address: arrivalAddress,
-            postal_code: arrivalPostalCode,
-          },
+          departure,
+          arrival,
           courier: {
-            name: clientOrMerchant
-              ? `${clientOrMerchant.first_name} ${clientOrMerchant.last_name}`
-              : 'Unknown',
-            photoUrl: courier?.user.profile_picture || null,
+            name: client ? `${client.first_name} ${client.last_name}` : 'Unknown',
+            photoUrl: await this.minioService.generateImageUrl(
+              'client-images',
+              courier?.user.profile_picture || 'default-profile-picture.png',
+            ),
           },
           end_time: store?.end_date?.toISOString(),
+          idLink: delivery.delivery_id,
         });
       }
 
       const finalDelivery = deliveries.find((delivery) => delivery.shipment_step === 1000);
       if (finalDelivery) {
         const lastStore = storesByStep.find((s) => s.step === finalDelivery.shipment_step - 1);
-
-        let clientOrMerchant;
-        if (shipment.user?.clients?.length) {
-          clientOrMerchant = shipment.user.clients[0];
-        } else if (shipment.user?.merchant) {
-          clientOrMerchant = shipment.user.merchant[0];
-        }
+        const client = finalDelivery.delivery_person?.user.clients?.[0];
 
         steps.push({
           id: 1000,
           title: 'Step finale',
-          description: 'Dernière étape de la livraison jusqu’au destinataire.',
+          description: "Dernière étape de la livraison jusqu'au destinataire.",
           date: finalDelivery.send_date?.toISOString(),
           departure: {
-            city: lastStore?.exchangePoint?.city || '',
+            city: lastStore?.exchangePoint?.city || null,
             coordinates: lastStore?.exchangePoint?.coordinates.coordinates?.slice().reverse(),
-            address: lastStore?.exchangePoint?.address || '',
-            postal_code: lastStore?.exchangePoint?.postal_code || '',
+            address: lastStore?.exchangePoint?.address || null,
+            postal_code: lastStore?.exchangePoint?.postal_code || null,
           },
           arrival: {
             city: shipment.arrival_city,
@@ -692,21 +683,22 @@ export class ShipmentService {
             postal_code: shipment.arrival_postal,
           },
           courier: {
-            name: clientOrMerchant
-              ? `${clientOrMerchant.first_name} ${clientOrMerchant.last_name}`
-              : 'Unknown',
-            photoUrl: clientOrMerchant?.user.profile_picture || null,
+            name: client ? `${client.first_name} ${client.last_name}` : 'Unknown',
+            photoUrl: await this.minioService.generateImageUrl(
+              'client-images',
+              finalDelivery.delivery_person?.user.profile_picture || 'default-profile-picture.png',
+            ),
           },
           end_time: shipment.deadline_date?.toISOString(),
+          idLink: finalDelivery.delivery_id,
         });
       }
-
-      // Mettre à jour le end_time de la dernière étape
-      if (steps.length > 0) {
-        const lastStepIndex = steps.length - 1;
-        steps[lastStepIndex].end_time = shipment.deadline_date?.toISOString();
-      }
     }
+
+    let realDepartureCity = shipment.departure_city;
+    let realDepartureCoords = shipment.departure_location?.coordinates?.slice().reverse();
+    let realDepartureAddress = shipment.departure_address;
+    let realDeparturePostalCode = shipment.departure_postal;
 
     let realArrivalCity = shipment.arrival_city;
     let realArrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse();
@@ -715,49 +707,63 @@ export class ShipmentService {
 
     if (deliveries.length > 0) {
       const lastDelivery = deliveries[deliveries.length - 1];
+
       if (lastDelivery.shipment_step === 1000) {
-        realArrivalCity = shipment.arrival_city;
-        realArrivalCoords = shipment.arrival_location?.coordinates?.slice().reverse();
-        realArrivalAddress = shipment.arrival_address;
-        realArrivalPostalCode = shipment.arrival_postal;
+        realDepartureCity = shipment.departure_city;
+        realDepartureCoords = shipment.departure_location?.coordinates?.slice().reverse();
+        realDepartureAddress = shipment.departure_address;
+        realDeparturePostalCode = shipment.departure_postal;
       } else {
         const lastStore = storesByStep.find((s) => s.step === lastDelivery.shipment_step);
-        realArrivalCity = lastStore?.exchangePoint?.city ?? shipment.arrival_city;
-        realArrivalCoords =
+        realDepartureCity = lastStore?.exchangePoint?.city ?? shipment.departure_city;
+        realDepartureCoords =
           lastStore?.exchangePoint?.coordinates.coordinates?.slice().reverse() ??
-          shipment.arrival_location?.coordinates?.slice().reverse();
-        realArrivalAddress = lastStore?.exchangePoint?.address ?? shipment.arrival_address;
-        realArrivalPostalCode = lastStore?.exchangePoint?.postal_code ?? shipment.arrival_postal;
+          shipment.departure_location?.coordinates?.slice().reverse();
+        realDepartureAddress = lastStore?.exchangePoint?.address ?? shipment.departure_address;
+        realDeparturePostalCode =
+          lastStore?.exchangePoint?.postal_code ?? shipment.departure_postal;
       }
     }
 
-    let finished = false;
-    if (deliveries.some((delivery) => delivery.shipment_step === 0)) {
-      finished = true;
-    }
-
+    const finished = deliveries.some((delivery) => delivery.shipment_step === 0);
     const showArrivalHandling =
-      shipment.arrival_handling && !deliveries.some((delivery) => delivery.shipment_step === 1);
+      shipment.arrival_handling && !deliveries.some((delivery) => delivery.shipment_step === 1000);
 
     const showDepartureHandling =
-      shipment.departure_handling &&
-      !deliveries.some((delivery) => delivery.shipment_step === 1000);
+      shipment.departure_handling && !deliveries.some((delivery) => delivery.shipment_step === 1);
 
-    let totalPrice = shipment.estimated_total_price ?? 0;
     if (showArrivalHandling) {
-      totalPrice += 29;
+      totalPrice = Number(totalPrice) + 29;
     }
     if (showDepartureHandling) {
-      totalPrice += 29;
+      totalPrice = Number(totalPrice) + 29;
     }
 
-    // Mettre à jour le departure_date dans les détails
-    let departureDate = shipment.deadline_date?.toISOString().split('T')[0];
-    if (steps.length > 0) {
-      const lastStep = steps[steps.length - 1];
-      if (lastStep.date) {
-        departureDate = lastStep.date.split('T')[0];
+    let departure_date: string;
+    let arrival_date: string;
+
+    const step0 = deliveries.find((delivery) => delivery.shipment_step === 0);
+    const step1 = deliveries.find((delivery) => delivery.shipment_step === 1);
+    const step1000 = deliveries.find((delivery) => delivery.shipment_step === 1000);
+
+    if (step0) {
+      departure_date = formatDate(step0.send_date);
+      arrival_date = formatDate(step0.send_date);
+    } else {
+      departure_date = formatDate(shipment.deadline_date);
+      arrival_date = formatDate(shipment.deadline_date);
+
+      if (step1) {
+        departure_date = formatDate(step1.send_date);
       }
+
+      if (step1000) {
+        arrival_date = formatDate(step1000.send_date);
+      }
+    }
+
+    if (departure_date > arrival_date) {
+      arrival_date = departure_date;
     }
 
     const result = {
@@ -765,10 +771,10 @@ export class ShipmentService {
         id: shipment.shipment_id,
         name: shipment.description,
         departure: {
-          city: shipment.departure_city,
-          coordinates: shipment.departure_location?.coordinates?.slice().reverse(),
-          address: shipment.departure_address,
-          postal_code: shipment.departure_postal,
+          city: realDepartureCity,
+          coordinates: realDepartureCoords,
+          address: realDepartureAddress,
+          postal_code: realDeparturePostalCode,
         },
         arrival: {
           city: realArrivalCity,
@@ -776,8 +782,8 @@ export class ShipmentService {
           address: realArrivalAddress,
           postal_code: realArrivalPostalCode,
         },
-        departure_date: departureDate,
-        arrival_date: shipment.deadline_date?.toISOString().split('T')[0],
+        departure_date: departure_date,
+        arrival_date: arrival_date,
         time_slot: shipment.time_slot,
         status: shipment.status ?? 'In Progress',
         initial_price: totalPrice,
@@ -986,7 +992,7 @@ export class ShipmentService {
     const deliveries = shipment.deliveries.sort((a, b) => a.shipment_step - b.shipment_step);
     const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
 
-    const initialPrice = Number(shipment.estimated_total_price ?? 0);
+    const initialPrice = Number(shipment.proposed_delivery_price ?? shipment.estimated_total_price);
     const priceWithStep = deliveries.map((delivery) => ({
       step: `Step ${delivery.shipment_step}`,
       price: Number(delivery.delivery_price ?? delivery.amount),
@@ -1167,7 +1173,6 @@ export class ShipmentService {
     if (showArrivalHandling) totalPrice += 29;
     if (showDepartureHandling) totalPrice += 29;
 
-    // Calcul des dates de départ et d'arrivée selon la logique demandée
     let departure_date: string;
     let arrival_date: string;
 
