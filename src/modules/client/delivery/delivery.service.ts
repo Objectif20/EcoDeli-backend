@@ -33,6 +33,9 @@ import { PdfService } from 'src/common/services/pdf/pdf.service';
 import { ShipmentDetails } from 'src/common/services/pdf/type';
 import * as nodemailer from 'nodemailer';
 import { Readable } from 'stream';
+import { InjectModel } from '@nestjs/mongoose';
+import { Message } from 'src/common/schemas/message.schema';
+import { Model } from 'mongoose';
 
 @Injectable()
 export class DeliveryService {
@@ -82,6 +85,7 @@ export class DeliveryService {
     @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
     private readonly pdfService: PdfService,
     private readonly minioService: MinioService,
+    @InjectModel(Message.name) private messageModel: Model<Message>,
   ) {}
 
   async bookDelivery(id: string, user_id: string): Promise<Delivery> {
@@ -115,9 +119,6 @@ export class DeliveryService {
     const departureCoords = reverseCoords(shipment.departure_location);
     const arrivalCoords = reverseCoords(shipment.arrival_location);
 
-    console.log('DEPARTURE:', departureCoords);
-    console.log('ARRIVAL:', arrivalCoords);
-
     const commissions = await this.deliveryCommissionRepository.findOne({ where: {} });
 
     let existingDelivery = await this.deliveryRepository.findOne({
@@ -134,9 +135,6 @@ export class DeliveryService {
     }
 
     const qrCodeBase64 = await QRCode.toDataURL(delivery_code);
-
-    console.log('Delivery Code:', delivery_code);
-    console.log('QR Code Base64:', qrCodeBase64);
 
     let totalAmount = shipment.proposed_delivery_price ?? 0;
 
@@ -217,13 +215,17 @@ export class DeliveryService {
 
     const savedDelivery = await this.deliveryRepository.save(delivery);
 
+    const message = new this.messageModel({
+      senderId: user.user_id,
+      recipientId: shipment.user.user_id,
+      content: `Bonjour, j'ai pris en charge votre livraison pour le colis ${shipment.description}. Si vous avez des questions, n'hésitez pas à me contacter.`,
+    });
+    await message.save();
+
     return savedDelivery;
   }
 
   async bookPartial(dto: BookPartialDTO, shipment_id: string): Promise<Delivery> {
-    console.log('Book Partial DTO:', dto);
-    console.log('Shipment ID:', shipment_id);
-
     const shipment = await this.shipmentRepository.findOne({
       where: { shipment_id },
       relations: ['stores', 'stores.exchangePoint', 'user', 'parcels'],
