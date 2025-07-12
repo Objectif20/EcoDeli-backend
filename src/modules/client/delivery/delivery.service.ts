@@ -221,6 +221,9 @@ export class DeliveryService {
   }
 
   async bookPartial(dto: BookPartialDTO, shipment_id: string): Promise<Delivery> {
+    console.log('Book Partial DTO:', dto);
+    console.log('Shipment ID:', shipment_id);
+
     const shipment = await this.shipmentRepository.findOne({
       where: { shipment_id },
       relations: ['stores', 'stores.exchangePoint', 'user', 'parcels'],
@@ -289,7 +292,7 @@ export class DeliveryService {
           postal_code = data.address.postcode || undefined;
         }
       } catch (error) {
-        console.error('Erreur lors de la récupération de l’adresse depuis Nominatim:', error);
+        console.error("Erreur lors de la récupération de l'adresse depuis Nominatim:", error);
       }
     } else {
       throw new Error('You must provide either a warehouse_id or city, latitude, and longitude.');
@@ -314,18 +317,20 @@ export class DeliveryService {
     }
 
     const endDate = dto.end_date || undefined;
+    startDate = endDate ? new Date(endDate) : startDate;
 
-    const store = this.storeRepository.create({
-      exchangePoint,
+    await this.storeRepository.insert({
+      shipment_id: shipment.shipment_id,
+      exchange_point_id: exchangePoint.exchange_point_id,
       step: nextStep,
       start_date: startDate,
       end_date: endDate,
-      shipment_id: shipment.shipment_id,
     });
 
-    await this.storeRepository.save(store);
-
-    shipment.proposed_delivery_price = dto.new_price;
+    await this.shipmentRepository.update(
+      { shipment_id: shipment.shipment_id },
+      { proposed_delivery_price: dto.new_price },
+    );
 
     const delivery_code = crypto
       .createHmac('sha256', 'secret')
@@ -366,15 +371,15 @@ export class DeliveryService {
         to: shipment.user.email,
         subject: 'Votre Bordereau de Colis',
         html: `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border-radius: 8px; background-color: #f9f9f9;">
-      <h2 style="color: #2a9d8f;">📄 Bordereau de Colis</h2>
-      <p>Bonjour,</p>
-      <p>Veuillez trouver en pièce jointe votre bordereau de colis.</p>
-      <p><strong>Merci d'imprimer ce document et de le coller sur chaque carton à expédier.</strong></p>
-      <p>Cette étape est essentielle pour assurer un suivi optimal de vos envois.</p>
-      <p style="margin-top: 20px;">Cordialement,<br>L'équipe Écodeli</p>
-    </div>
-  `,
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border-radius: 8px; background-color: #f9f9f9;">
+        <h2 style="color: #2a9d8f;">📄 Bordereau de Colis</h2>
+        <p>Bonjour,</p>
+        <p>Veuillez trouver en pièce jointe votre bordereau de colis.</p>
+        <p><strong>Merci d'imprimer ce document et de le coller sur chaque carton à expédier.</strong></p>
+        <p>Cette étape est essentielle pour assurer un suivi optimal de vos envois.</p>
+        <p style="margin-top: 20px;">Cordialement,<br>L'équipe Écodeli</p>
+      </div>
+    `,
         attachments: [
           {
             filename: `bordereau_${shipment.shipment_id}.pdf`,
@@ -740,6 +745,8 @@ export class DeliveryService {
         arrival_date = departure_date;
       }
 
+      const storesByStep = (shipment.stores || []).sort((a, b) => a.step - b.step);
+
       return Promise.all(
         deliveries.map(async (delivery) => {
           const deliveryPersonUser = delivery.delivery_person?.user;
@@ -756,10 +763,49 @@ export class DeliveryService {
             ? await this.minioService.generateImageUrl('client-images', shipment.image)
             : '';
 
+          let departureCity: string;
+          let arrivalCity: string;
+
+          const step = delivery.shipment_step;
+
+          if (step === 0) {
+            departureCity = shipment.departure_city || '';
+
+            const firstStore = storesByStep[0];
+            if (firstStore?.exchangePoint) {
+              arrivalCity = firstStore.exchangePoint.city;
+            } else {
+              arrivalCity = shipment.arrival_city || '';
+            }
+          } else if (step === 1000) {
+            const lastStore = storesByStep[storesByStep.length - 1];
+            if (lastStore?.exchangePoint) {
+              departureCity = lastStore.exchangePoint.city;
+            } else {
+              departureCity = shipment.departure_city || '';
+            }
+
+            arrivalCity = shipment.arrival_city || '';
+          } else {
+            const prevStore = storesByStep.find((s) => s.step === step - 1);
+            if (prevStore?.exchangePoint) {
+              departureCity = prevStore.exchangePoint.city;
+            } else {
+              departureCity = shipment.departure_city || '';
+            }
+
+            const currStore = storesByStep.find((s) => s.step === step);
+            if (currStore?.exchangePoint) {
+              arrivalCity = currStore.exchangePoint.city;
+            } else {
+              arrivalCity = shipment.arrival_city || '';
+            }
+          }
+
           return {
             id: delivery.delivery_id,
-            arrival_city: shipment.arrival_city ?? '',
-            departure_city: shipment.departure_city ?? '',
+            arrival_city: arrivalCity,
+            departure_city: departureCity,
             date_departure: departure_date,
             date_arrival: arrival_date,
             photo: deliveryPicture,
