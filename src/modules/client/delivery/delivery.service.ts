@@ -33,6 +33,9 @@ import { PdfService } from 'src/common/services/pdf/pdf.service';
 import { ShipmentDetails } from 'src/common/services/pdf/type';
 import * as nodemailer from 'nodemailer';
 import { Readable } from 'stream';
+import { InjectModel } from '@nestjs/mongoose';
+import { Message } from 'src/common/schemas/message.schema';
+import { Model } from 'mongoose';
 
 @Injectable()
 export class DeliveryService {
@@ -82,6 +85,7 @@ export class DeliveryService {
     @Inject('NodeMailer') private readonly mailer: nodemailer.Transporter,
     private readonly pdfService: PdfService,
     private readonly minioService: MinioService,
+    @InjectModel(Message.name) private messageModel: Model<Message>,
   ) {}
 
   async bookDelivery(id: string, user_id: string): Promise<Delivery> {
@@ -104,19 +108,13 @@ export class DeliveryService {
     }
 
     const existingSteps = shipment.deliveries.map((d) => d.shipment_step);
-    const isFinalStep = existingSteps.includes(1000);
+    const isFinalStep = existingSteps.includes(1);
     const shipment_step = isFinalStep ? 1000 : 0;
 
     const reverseCoords = (point: any) => {
       if (!point || !point.coordinates) return null;
       return [...point.coordinates].reverse();
     };
-
-    const departureCoords = reverseCoords(shipment.departure_location);
-    const arrivalCoords = reverseCoords(shipment.arrival_location);
-
-    console.log('DEPARTURE:', departureCoords);
-    console.log('ARRIVAL:', arrivalCoords);
 
     const commissions = await this.deliveryCommissionRepository.findOne({ where: {} });
 
@@ -130,13 +128,8 @@ export class DeliveryService {
     if (existingDelivery && existingDelivery.delivery_code) {
       delivery_code = existingDelivery.delivery_code;
     } else {
-      delivery_code = crypto.randomBytes(16).toString('hex');
+      delivery_code = crypto.randomBytes(5).toString('hex').slice(0, 10);
     }
-
-    const qrCodeBase64 = await QRCode.toDataURL(delivery_code);
-
-    console.log('Delivery Code:', delivery_code);
-    console.log('QR Code Base64:', qrCodeBase64);
 
     let totalAmount = shipment.proposed_delivery_price ?? 0;
 
@@ -217,13 +210,17 @@ export class DeliveryService {
 
     const savedDelivery = await this.deliveryRepository.save(delivery);
 
+    const message = new this.messageModel({
+      senderId: user.user_id,
+      receiverId: shipment.user.user_id,
+      content: `Bonjour, j'ai pris en charge votre livraison pour le colis ${shipment.description}. Si vous avez des questions, n'hésitez pas à me contacter.`,
+    });
+    await message.save();
+
     return savedDelivery;
   }
 
   async bookPartial(dto: BookPartialDTO, shipment_id: string): Promise<Delivery> {
-    console.log('Book Partial DTO:', dto);
-    console.log('Shipment ID:', shipment_id);
-
     const shipment = await this.shipmentRepository.findOne({
       where: { shipment_id },
       relations: ['stores', 'stores.exchangePoint', 'user', 'parcels'],
@@ -335,7 +332,8 @@ export class DeliveryService {
     const delivery_code = crypto
       .createHmac('sha256', 'secret')
       .update(shipment.shipment_id)
-      .digest('hex');
+      .digest('hex')
+      .slice(0, 10);
 
     const commissions = await this.deliveryCommissionRepository.findOne({ where: {} });
 
@@ -436,6 +434,8 @@ export class DeliveryService {
       const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
       const step = delivery.shipment_step;
 
+      let originCoordinates: [number, number] = [0, 0];
+      let destinationCoordinates: [number, number] = [0, 0];
       let currentCoordinates: [number, number] = [0, 0];
       let fromCity: string = '';
       let toCity: string = '';
@@ -446,16 +446,24 @@ export class DeliveryService {
       if (step === 0) {
         // Étape 0: Origine → Premier store ou destination finale
         fromCity = shipment.departure_city || 'Unknown';
-        currentCoordinates = shipment.departure_location?.coordinates?.slice().reverse() as [
+        originCoordinates = shipment.departure_location?.coordinates?.slice().reverse() as [
           number,
           number,
         ];
+        currentCoordinates = originCoordinates;
 
         const firstStore = storesByStep[0];
         if (firstStore?.exchangePoint) {
           toCity = firstStore.exchangePoint.city;
+          destinationCoordinates = firstStore.exchangePoint.coordinates.coordinates
+            ?.slice()
+            .reverse() as [number, number];
         } else {
           toCity = shipment.arrival_city || 'Unknown';
+          destinationCoordinates = shipment.arrival_location?.coordinates?.slice().reverse() as [
+            number,
+            number,
+          ];
         }
 
         pickupDate = delivery.send_date?.toISOString().split('T')[0] || null;
@@ -469,18 +477,24 @@ export class DeliveryService {
         const lastStore = storesByStep[storesByStep.length - 1];
         if (lastStore?.exchangePoint) {
           fromCity = lastStore.exchangePoint.city;
-          currentCoordinates = lastStore.exchangePoint.coordinates.coordinates
+          originCoordinates = lastStore.exchangePoint.coordinates.coordinates
             ?.slice()
             .reverse() as [number, number];
+          currentCoordinates = originCoordinates;
         } else {
           fromCity = shipment.departure_city || 'Unknown';
-          currentCoordinates = shipment.departure_location?.coordinates?.slice().reverse() as [
+          originCoordinates = shipment.departure_location?.coordinates?.slice().reverse() as [
             number,
             number,
           ];
+          currentCoordinates = originCoordinates;
         }
 
         toCity = shipment.arrival_city || 'Unknown';
+        destinationCoordinates = shipment.arrival_location?.coordinates?.slice().reverse() as [
+          number,
+          number,
+        ];
 
         pickupDate =
           lastStore?.start_date?.toISOString().split('T')[0] ||
@@ -498,21 +512,30 @@ export class DeliveryService {
 
         if (prevStore?.exchangePoint) {
           fromCity = prevStore.exchangePoint.city;
-          currentCoordinates = prevStore.exchangePoint.coordinates.coordinates
+          originCoordinates = prevStore.exchangePoint.coordinates.coordinates
             ?.slice()
             .reverse() as [number, number];
+          currentCoordinates = originCoordinates;
         } else {
           fromCity = shipment.departure_city || 'Unknown';
-          currentCoordinates = shipment.departure_location?.coordinates?.slice().reverse() as [
+          originCoordinates = shipment.departure_location?.coordinates?.slice().reverse() as [
             number,
             number,
           ];
+          currentCoordinates = originCoordinates;
         }
 
         if (currStore?.exchangePoint) {
           toCity = currStore.exchangePoint.city;
+          destinationCoordinates = currStore.exchangePoint.coordinates.coordinates
+            ?.slice()
+            .reverse() as [number, number];
         } else {
           toCity = shipment.arrival_city || 'Unknown';
+          destinationCoordinates = shipment.arrival_location?.coordinates?.slice().reverse() as [
+            number,
+            number,
+          ];
         }
 
         pickupDate =
@@ -536,14 +559,8 @@ export class DeliveryService {
         pickupDate: pickupDate,
         estimatedDeliveryDate: estimatedDeliveryDate,
         coordinates: {
-          origin: (shipment.departure_location?.coordinates?.slice().reverse() as [
-            number,
-            number,
-          ]) ?? [0, 0],
-          destination: (shipment.arrival_location?.coordinates?.slice().reverse() as [
-            number,
-            number,
-          ]) ?? [0, 0],
+          origin: originCoordinates,
+          destination: destinationCoordinates,
           current: currentCoordinates,
         },
         progress: progress,
@@ -705,45 +722,12 @@ export class DeliveryService {
         relations: ['delivery_person', 'delivery_person.user', 'delivery_person.user.clients'],
       });
 
-      const allDeliveries = await this.deliveryRepository.find({
-        where: {
-          shipment: { shipment_id: shipment.shipment_id },
-        },
-      });
-
       const formatDate = (date: Date | null | undefined): string => {
         if (!date) return new Date().toISOString().split('T')[0];
         return `${date.getFullYear()}-${(date.getMonth() + 1)
           .toString()
           .padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
       };
-
-      let departure_date: string;
-      let arrival_date: string;
-
-      const step0 = allDeliveries.find((delivery) => delivery.shipment_step === 0);
-      const step1 = allDeliveries.find((delivery) => delivery.shipment_step === 1);
-      const step1000 = allDeliveries.find((delivery) => delivery.shipment_step === 1000);
-
-      if (step0) {
-        departure_date = formatDate(step0.send_date);
-        arrival_date = formatDate(step0.send_date);
-      } else {
-        departure_date = formatDate(shipment.deadline_date);
-        arrival_date = formatDate(shipment.deadline_date);
-
-        if (step1) {
-          departure_date = formatDate(step1.send_date);
-        }
-
-        if (step1000) {
-          arrival_date = formatDate(step1000.send_date);
-        }
-      }
-
-      if (departure_date > arrival_date) {
-        arrival_date = departure_date;
-      }
 
       const storesByStep = (shipment.stores || []).sort((a, b) => a.step - b.step);
 
@@ -765,10 +749,13 @@ export class DeliveryService {
 
           let departureCity: string;
           let arrivalCity: string;
+          let departure_date: string;
+          let arrival_date: string;
 
           const step = delivery.shipment_step;
 
           if (step === 0) {
+            // Étape 0: Origine → Premier store ou destination finale
             departureCity = shipment.departure_city || '';
 
             const firstStore = storesByStep[0];
@@ -777,7 +764,12 @@ export class DeliveryService {
             } else {
               arrivalCity = shipment.arrival_city || '';
             }
+
+            departure_date = formatDate(delivery.send_date);
+            arrival_date =
+              formatDate(storesByStep[0]?.end_date) || formatDate(shipment.deadline_date);
           } else if (step === 1000) {
+            // Étape finale: Dernier store → Destination finale
             const lastStore = storesByStep[storesByStep.length - 1];
             if (lastStore?.exchangePoint) {
               departureCity = lastStore.exchangePoint.city;
@@ -786,20 +778,33 @@ export class DeliveryService {
             }
 
             arrivalCity = shipment.arrival_city || '';
+
+            departure_date = formatDate(lastStore?.start_date) || formatDate(delivery.send_date);
+            arrival_date = formatDate(delivery.delivery_date) || formatDate(shipment.deadline_date);
           } else {
+            // Étape intermédiaire: Store précédent → Store actuel
             const prevStore = storesByStep.find((s) => s.step === step - 1);
+            const currStore = storesByStep.find((s) => s.step === step);
+
             if (prevStore?.exchangePoint) {
               departureCity = prevStore.exchangePoint.city;
             } else {
               departureCity = shipment.departure_city || '';
             }
 
-            const currStore = storesByStep.find((s) => s.step === step);
             if (currStore?.exchangePoint) {
               arrivalCity = currStore.exchangePoint.city;
             } else {
               arrivalCity = shipment.arrival_city || '';
             }
+
+            departure_date = formatDate(prevStore?.start_date) || formatDate(delivery.send_date);
+            arrival_date = formatDate(currStore?.end_date) || formatDate(shipment.deadline_date);
+          }
+
+          // Vérification de cohérence des dates
+          if (departure_date > arrival_date) {
+            arrival_date = departure_date;
           }
 
           return {

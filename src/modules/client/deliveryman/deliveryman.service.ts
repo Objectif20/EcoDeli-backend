@@ -144,7 +144,7 @@ export class DeliveryManService {
       date: trip.date ? trip.date.toISOString().split('T')[0] : undefined,
       weekday: trip.weekday ?? undefined,
       tolerate_radius: trip.tolerated_radius,
-      comeback_today_or_tomorrow: trip.comeback_today_or_tomorrow as 'today' | 'tomorrow' | 'later', // <--- ici, cast propre
+      comeback_today_or_tomorrow: trip.comeback_today_or_tomorrow as 'today' | 'tomorrow' | 'later',
     }));
   }
 

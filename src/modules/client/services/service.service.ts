@@ -912,11 +912,11 @@ export class ServiceService {
       await this.mailer.sendMail({
         from: fromEmail,
         to: appointment.client.user.email,
-        subject: 'Votre Facture de Livraison',
+        subject: 'Votre Facture de Prestation',
         html: `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border-radius: 8px; background: #f7f9f8;">
       <p>Bonjour,</p>
-      <p>Veuillez trouver ci-joint votre <strong>facture de livraison</strong>.</p>
+      <p>Veuillez trouver ci-joint votre <strong>facture de prestation</strong>.</p>
       <p>Merci de conserver ce document pour vos archives.</p>
       <p>Cordialement,<br>L'équipe EcoDeli</p>
     </div>
