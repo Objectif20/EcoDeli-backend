@@ -316,18 +316,18 @@ export class ShipmentService {
     if (filters.latitude && filters.longitude && filters.radius) {
       queryBuilder.andWhere(
         `ST_DWithin(
-      shipment.departure_location::geography,
-      ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
-      :radius
-    )`,
+    shipment.departure_location::geography,
+    ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
+    :radius
+  )`,
         { latitude: filters.latitude, longitude: filters.longitude, radius: filters.radius },
       );
     } else {
       queryBuilder.andWhere(
         `ST_Intersects(
-      shipment.departure_location::geography,
-      ST_SetSRID(ST_MakeEnvelope(-5, 41, 10, 52, 4326), 4326)::geography
-    )`,
+    shipment.departure_location::geography,
+    ST_SetSRID(ST_MakeEnvelope(-5, 41, 10, 52, 4326), 4326)::geography
+  )`,
       );
     }
 
@@ -340,10 +340,10 @@ export class ShipmentService {
     ) {
       queryBuilder.andWhere(
         `ST_DWithin(
-      shipment.departure_location::geography,
-      ST_SetSRID(ST_MakeLine(ST_MakePoint(:startLon, :startLat), ST_MakePoint(:endLon, :endLat)), 4326)::geography,
-      :routeRadius
-    )`,
+    shipment.departure_location::geography,
+    ST_SetSRID(ST_MakeLine(ST_MakePoint(:startLon, :startLat), ST_MakePoint(:endLon, :endLat)), 4326)::geography,
+    :routeRadius
+  )`,
         {
           startLat: filters.routeStartLatitude,
           startLon: filters.routeStartLongitude,
@@ -380,6 +380,7 @@ export class ShipmentService {
       });
     }
 
+    // Condition principale pour exclure les shipments avec des deliveries step 0 ou 1000
     queryBuilder.andWhere(
       'NOT EXISTS (SELECT 1 FROM deliveries WHERE deliveries.shipment_id = shipment.shipment_id AND (deliveries.shipment_step = 0 OR deliveries.shipment_step = 1000))',
     );
@@ -391,13 +392,22 @@ export class ShipmentService {
 
     const shipments = await queryBuilder.getMany();
 
+    // Filtrage supplémentaire côté application pour être sûr
+    const filteredShipments = shipments.filter((shipment) => {
+      // Vérifier qu'aucune delivery n'a step 0 ou 1000
+      const hasInvalidSteps = shipment.deliveries.some(
+        (delivery) => delivery.shipment_step === 0 || delivery.shipment_step === 1000,
+      );
+      return !hasInvalidSteps;
+    });
+
     const canceledDeliveries = await this.deliveryRepository.find({
       where: { status: 'canceled' },
       relations: ['shipment', 'shipment.stores', 'shipment.stores.exchangePoint'],
     });
 
     const updatedShipments = await Promise.all(
-      shipments.map(async (shipment) => {
+      filteredShipments.map(async (shipment) => {
         const deliveries = shipment.deliveries.sort((a, b) => a.shipment_step - b.shipment_step);
         const storesByStep = shipment.stores.sort((a, b) => a.step - b.step);
 
@@ -1075,16 +1085,47 @@ export class ShipmentService {
         const courier = delivery.delivery_person;
 
         let departure, arrival;
+        let stepTitle: string;
+        let stepDescription: string;
 
-        if (delivery.shipment_step === 1) {
+        if (delivery.shipment_step === 1000) {
+          // Étape finale : du dernier store vers la destination finale
+          const lastStore = storesByStep[storesByStep.length - 1];
+
           departure = {
-            city: shipment.departure_city,
+            city: lastStore?.exchangePoint?.city ?? shipment.departure_city ?? '',
+            coordinates:
+              (lastStore?.exchangePoint?.coordinates.coordinates?.slice().reverse() as [
+                number,
+                number,
+              ]) ??
+              (shipment.departure_location?.coordinates?.slice().reverse() as [number, number]),
+            address: lastStore?.exchangePoint?.address ?? shipment.departure_address ?? '',
+            postalCode: lastStore?.exchangePoint?.postal_code ?? shipment.departure_postal ?? '',
+          };
+
+          arrival = {
+            city: shipment.arrival_city || '',
+            coordinates: shipment.arrival_location?.coordinates?.slice().reverse() as [
+              number,
+              number,
+            ],
+            address: shipment.arrival_address || '',
+            postalCode: shipment.arrival_postal || '',
+          };
+
+          stepTitle = 'Étape finale';
+          stepDescription = "Dernière étape de la livraison jusqu'au destinataire.";
+        } else if (delivery.shipment_step === 1) {
+          // Première étape : du départ vers le premier store
+          departure = {
+            city: shipment.departure_city || '',
             coordinates: shipment.departure_location?.coordinates?.slice().reverse() as [
               number,
               number,
             ],
-            address: shipment.departure_address,
-            postalCode: shipment.departure_postal,
+            address: shipment.departure_address || '',
+            postalCode: shipment.departure_postal || '',
           };
           arrival = {
             city: store?.exchangePoint?.city ?? '',
@@ -1095,7 +1136,11 @@ export class ShipmentService {
             address: store?.exchangePoint?.address ?? '',
             postalCode: store?.exchangePoint?.postal_code ?? '',
           };
+
+          stepTitle = `Step ${delivery.shipment_step}`;
+          stepDescription = store?.exchangePoint?.description || 'Première étape de livraison';
         } else {
+          // Étapes intermédiaires : d'un store vers le suivant
           const prevStore = storesByStep.find((s) => s.step === delivery.shipment_step - 1);
           departure = {
             city: prevStore?.exchangePoint?.city ?? '',
@@ -1115,16 +1160,18 @@ export class ShipmentService {
             address: store?.exchangePoint?.address ?? '',
             postalCode: store?.exchangePoint?.postal_code ?? '',
           };
+
+          stepTitle = `Step ${delivery.shipment_step}`;
+          stepDescription = store?.exchangePoint?.description || 'Étape intermédiaire de livraison';
         }
 
         const client = courier?.user.clients?.[0];
-
         const stepDate = formatDate(delivery.send_date);
 
         steps.push({
           id: delivery.shipment_step,
-          title: `Step ${delivery.shipment_step}`,
-          description: store?.exchangePoint?.description || 'Étape intermédiaire de livraison',
+          title: stepTitle,
+          description: stepDescription,
           date: stepDate,
           departure,
           arrival,
@@ -1139,44 +1186,8 @@ export class ShipmentService {
         });
       }
 
-      const finalDelivery = deliveries.find((delivery) => delivery.shipment_step === 1000);
-      if (finalDelivery) {
-        const lastStore = storesByStep.find((s) => s.step === finalDelivery.shipment_step - 1);
-        const client = finalDelivery.delivery_person?.user.clients?.[0];
-
-        steps.push({
-          id: 1000,
-          title: 'Step finale',
-          description: "Dernière étape de la livraison jusqu'au destinataire.",
-          date: formatDate(shipment.deadline_date),
-          departure: {
-            city: lastStore?.exchangePoint?.city ?? '',
-            coordinates: lastStore?.exchangePoint?.coordinates.coordinates?.slice().reverse() as [
-              number,
-              number,
-            ],
-            address: lastStore?.exchangePoint?.address ?? '',
-            postalCode: lastStore?.exchangePoint?.postal_code ?? '',
-          },
-          arrival: {
-            city: shipment.arrival_city || '',
-            coordinates: shipment.arrival_location?.coordinates?.slice().reverse() as [
-              number,
-              number,
-            ],
-            address: shipment.arrival_address || '',
-            postalCode: shipment.arrival_postal || '',
-          },
-          courier: {
-            name: client ? `${client.first_name} ${client.last_name}` : 'Unknown',
-            photoUrl: await this.minioService.generateImageUrl(
-              'client-images',
-              finalDelivery.delivery_person?.user.profile_picture,
-            ),
-          },
-          idLink: finalDelivery.delivery_id,
-        });
-      }
+      // SUPPRIMÉ : Plus besoin d'ajouter une étape finale supplémentaire
+      // car le step 1000 est déjà traité comme l'étape finale dans la boucle
     }
 
     const finished = deliveries.some((delivery) => delivery.shipment_step === 0);
