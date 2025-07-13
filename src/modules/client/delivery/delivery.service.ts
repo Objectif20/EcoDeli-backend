@@ -116,9 +116,6 @@ export class DeliveryService {
       return [...point.coordinates].reverse();
     };
 
-    const departureCoords = reverseCoords(shipment.departure_location);
-    const arrivalCoords = reverseCoords(shipment.arrival_location);
-
     const commissions = await this.deliveryCommissionRepository.findOne({ where: {} });
 
     let existingDelivery = await this.deliveryRepository.findOne({
@@ -131,10 +128,8 @@ export class DeliveryService {
     if (existingDelivery && existingDelivery.delivery_code) {
       delivery_code = existingDelivery.delivery_code;
     } else {
-      delivery_code = crypto.randomBytes(16).toString('hex');
+      delivery_code = crypto.randomBytes(5).toString('hex').slice(0, 10);
     }
-
-    const qrCodeBase64 = await QRCode.toDataURL(delivery_code);
 
     let totalAmount = shipment.proposed_delivery_price ?? 0;
 
@@ -217,7 +212,7 @@ export class DeliveryService {
 
     const message = new this.messageModel({
       senderId: user.user_id,
-      recipientId: shipment.user.user_id,
+      receiverId: shipment.user.user_id,
       content: `Bonjour, j'ai pris en charge votre livraison pour le colis ${shipment.description}. Si vous avez des questions, n'hésitez pas à me contacter.`,
     });
     await message.save();
@@ -337,7 +332,8 @@ export class DeliveryService {
     const delivery_code = crypto
       .createHmac('sha256', 'secret')
       .update(shipment.shipment_id)
-      .digest('hex');
+      .digest('hex')
+      .slice(0, 10);
 
     const commissions = await this.deliveryCommissionRepository.findOne({ where: {} });
 

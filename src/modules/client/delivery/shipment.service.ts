@@ -316,18 +316,18 @@ export class ShipmentService {
     if (filters.latitude && filters.longitude && filters.radius) {
       queryBuilder.andWhere(
         `ST_DWithin(
-                        shipment.departure_location::geography,
-                        ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
-                        :radius
-                    )`,
+      shipment.departure_location::geography,
+      ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
+      :radius
+    )`,
         { latitude: filters.latitude, longitude: filters.longitude, radius: filters.radius },
       );
     } else {
       queryBuilder.andWhere(
         `ST_Intersects(
-                        shipment.departure_location::geography,
-                        ST_SetSRID(ST_MakeEnvelope(-5, 41, 10, 52, 4326), 4326)::geography
-                    )`,
+      shipment.departure_location::geography,
+      ST_SetSRID(ST_MakeEnvelope(-5, 41, 10, 52, 4326), 4326)::geography
+    )`,
       );
     }
 
@@ -340,10 +340,10 @@ export class ShipmentService {
     ) {
       queryBuilder.andWhere(
         `ST_DWithin(
-                        shipment.departure_location::geography,
-                        ST_SetSRID(ST_MakeLine(ST_MakePoint(:startLon, :startLat), ST_MakePoint(:endLon, :endLat)), 4326)::geography,
-                        :routeRadius
-                    )`,
+      shipment.departure_location::geography,
+      ST_SetSRID(ST_MakeLine(ST_MakePoint(:startLon, :startLat), ST_MakePoint(:endLon, :endLat)), 4326)::geography,
+      :routeRadius
+    )`,
         {
           startLat: filters.routeStartLatitude,
           startLon: filters.routeStartLongitude,
@@ -413,14 +413,12 @@ export class ShipmentService {
         const shipmentCanceledDeliveries = canceledDeliveries.filter(
           (d) => d.shipment.shipment_id === shipment.shipment_id,
         );
+
         const mergedDeliveries: Delivery[] = [];
 
         shipmentCanceledDeliveries.forEach((canceledDelivery) => {
           const step = canceledDelivery.shipment_step;
-
-          if (coveredSteps.has(step)) {
-            return;
-          }
+          if (coveredSteps.has(step)) return;
 
           let nextDelivery = canceledDeliveries.find(
             (d) => d.shipment_step === step + 1 && d.shipment.shipment_id === shipment.shipment_id,
@@ -440,13 +438,12 @@ export class ShipmentService {
             ) {
               endStep = nextDelivery.shipment_step;
               coveredSteps.add(endStep);
-              const nextNextDelivery = canceledDeliveries.find(
+
+              nextDelivery = canceledDeliveries.find(
                 (d) =>
                   d.shipment_step === endStep + 1 &&
                   d.shipment.shipment_id === shipment.shipment_id,
               );
-              if (!nextNextDelivery || nextNextDelivery.status !== 'canceled') break;
-              nextDelivery = nextNextDelivery;
             }
 
             const mergedDelivery = {
@@ -469,6 +466,7 @@ export class ShipmentService {
             deliveries.length > 0
               ? deliveries[deliveries.length - 1]
               : mergedDeliveries[mergedDeliveries.length - 1];
+
           if (lastDelivery.shipment_step !== 1000) {
             const lastStore = storesByStep.find((s) => s.step === lastDelivery.shipment_step);
             departureCity = lastStore?.exchangePoint?.city ?? shipment.departure_city;
@@ -484,11 +482,29 @@ export class ShipmentService {
             arrivalCity = nextStore?.exchangePoint?.city ?? shipment.arrival_city;
             arrivalLocation = nextStore?.exchangePoint?.coordinates ?? shipment.arrival_location;
           }
+        } else if (storesByStep.length > 0) {
+          const firstStore = storesByStep[0];
+          const lastStore = storesByStep[storesByStep.length - 1];
+
+          departureCity = firstStore.exchangePoint?.city ?? shipment.departure_city;
+          departureLocation = firstStore.exchangePoint?.coordinates ?? shipment.departure_location;
+
+          arrivalCity = lastStore.exchangePoint?.city ?? shipment.arrival_city;
+          arrivalLocation = lastStore.exchangePoint?.coordinates ?? shipment.arrival_location;
         }
 
         const shipmentImageUrl = shipment.image
           ? await this.minioService.generateImageUrl('client-images', shipment.image)
           : null;
+
+        let totalPrice = Number(
+          shipment.proposed_delivery_price ?? shipment.estimated_total_price ?? 0,
+        );
+
+        // N'appliquer le departure_handling que s'il n'y a PAS de store au step 1
+        if (shipment.departure_handling && !storesByStep.some((s) => s.step === 1)) {
+          totalPrice += 29;
+        }
 
         return {
           ...shipment,
@@ -498,6 +514,7 @@ export class ShipmentService {
           arrival_location: arrivalLocation,
           image: shipmentImageUrl,
           covered_steps: Array.from(coveredSteps),
+          estimated_total_price: totalPrice,
         };
       }),
     );
