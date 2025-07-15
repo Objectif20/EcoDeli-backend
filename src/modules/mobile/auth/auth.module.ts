@@ -8,12 +8,9 @@ import { Users } from 'src/common/entities/user.entity';
 import { Client } from 'src/common/entities/client.entity';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Users, Client]),
-    JwtModule.register({}),
-  ],
-  providers: [AuthService, JwtService], 
-  controllers: [AuthController], 
+  imports: [TypeOrmModule.forFeature([Users, Client]), JwtModule.register({})],
+  providers: [AuthService, JwtService],
+  controllers: [AuthController],
   exports: [AuthService, TypeOrmModule, JwtModule],
 })
 export class ClientAuthModule {}
