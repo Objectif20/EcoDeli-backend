@@ -30,7 +30,7 @@ export class AuthController {
 
   @Post('validate-2fa')
   @UseGuards(MobileJwtGuard)
-  @ApiOperation({ summary: 'Valider l\'activation 2FA avec le code OTP' })
+  @ApiOperation({ summary: "Valider l'activation 2FA avec le code OTP" })
   async validate2FA(@Req() req, @Body() body: { code: string }) {
     return this.authService.validateA2F(req.body.user_id, body.code);
   }
@@ -43,7 +43,7 @@ export class AuthController {
   }
 
   @Post('refresh')
-  async refresh(@Body() body : {refresh_token : string}): Promise<{ access_token: string }> {
+  async refresh(@Body() body: { refresh_token: string }): Promise<{ access_token: string }> {
     const refreshToken = body.refresh_token;
     const access_token = await this.authService.refresh(refreshToken);
     return access_token;

@@ -88,7 +88,12 @@ export class DeliveryService {
     @InjectModel(Message.name) private messageModel: Model<Message>,
   ) {}
 
-  async bookDelivery(id: string, user_id: string): Promise<Delivery> {
+  async bookDelivery(
+    id: string,
+    user_id: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<Delivery> {
     const shipment = await this.shipmentRepository.findOne({
       where: { shipment_id: id },
       relations: ['deliveries', 'stores', 'stores.exchangePoint', 'user', 'parcels'],
@@ -145,7 +150,8 @@ export class DeliveryService {
     }
 
     const delivery = this.deliveryRepository.create({
-      send_date: new Date(),
+      send_date: new Date(startDate),
+      delivery_date: new Date(endDate),
       status: 'pending',
       amount: totalAmount,
       shipment: shipment,
@@ -305,16 +311,8 @@ export class DeliveryService {
 
     await this.exchangePointRepository.save(exchangePoint);
 
-    let startDate: Date;
-    if (shipment.stores.length > 0) {
-      const lastStep = shipment.stores[shipment.stores.length - 1];
-      startDate = lastStep.end_date || new Date();
-    } else {
-      startDate = shipment.deadline_date || new Date();
-    }
-
-    const endDate = dto.end_date || undefined;
-    startDate = endDate ? new Date(endDate) : startDate;
+    const endDate = dto.endDate || undefined;
+    const startDate = dto.startDate || undefined;
 
     await this.storeRepository.insert({
       shipment_id: shipment.shipment_id,
@@ -338,7 +336,8 @@ export class DeliveryService {
     const commissions = await this.deliveryCommissionRepository.findOne({ where: {} });
 
     const delivery = this.deliveryRepository.create({
-      send_date: new Date(),
+      send_date: startDate,
+      delivery_date: endDate,
       status: 'pending',
       amount: dto.price,
       shipment: shipment,
@@ -467,10 +466,7 @@ export class DeliveryService {
         }
 
         pickupDate = delivery.send_date?.toISOString().split('T')[0] || null;
-        estimatedDeliveryDate =
-          storesByStep[0]?.end_date?.toISOString().split('T')[0] ||
-          shipment.deadline_date?.toISOString().split('T')[0] ||
-          null;
+        estimatedDeliveryDate = delivery.delivery_date?.toISOString().split('T')[0] || null;
         progress = 0;
       } else if (step === 1000) {
         // Étape finale: Dernier store → Destination finale
@@ -496,14 +492,8 @@ export class DeliveryService {
           number,
         ];
 
-        pickupDate =
-          lastStore?.start_date?.toISOString().split('T')[0] ||
-          delivery.send_date?.toISOString().split('T')[0] ||
-          null;
-        estimatedDeliveryDate =
-          delivery.delivery_date?.toISOString().split('T')[0] ||
-          shipment.deadline_date?.toISOString().split('T')[0] ||
-          null;
+        pickupDate = delivery.send_date?.toISOString().split('T')[0] || null;
+        estimatedDeliveryDate = delivery.delivery_date?.toISOString().split('T')[0] || null;
         progress = 100;
       } else {
         // Étape intermédiaire: Store précédent → Store actuel
@@ -538,14 +528,8 @@ export class DeliveryService {
           ];
         }
 
-        pickupDate =
-          prevStore?.start_date?.toISOString().split('T')[0] ||
-          delivery.send_date?.toISOString().split('T')[0] ||
-          null;
-        estimatedDeliveryDate =
-          currStore?.end_date?.toISOString().split('T')[0] ||
-          shipment.deadline_date?.toISOString().split('T')[0] ||
-          null;
+        pickupDate = delivery.send_date?.toISOString().split('T')[0] || null;
+        estimatedDeliveryDate = delivery.delivery_date?.toISOString().split('T')[0] || null;
 
         const totalSteps = storesByStep.length + 1;
         progress = (step / totalSteps) * 100;
@@ -670,7 +654,7 @@ export class DeliveryService {
         relations: ['delivery_person', 'delivery_person.user', 'delivery_person.user.clients'],
       });
 
-      return deliveries.map((delivery) => {
+      return deliveries.map(async (delivery) => {
         const deliveryPersonClient = delivery.delivery_person?.user.clients[0];
         return {
           id: delivery.delivery_id,
@@ -682,7 +666,11 @@ export class DeliveryService {
             ? {
                 id: delivery.delivery_person.user.user_id,
                 name: `${deliveryPersonClient?.first_name} ${deliveryPersonClient?.last_name}`,
-                photo: delivery.delivery_person.user.profile_picture,
+                photo:
+                  (await this.minioService.generateImageUrl(
+                    'client-images',
+                    delivery.delivery_person.user.profile_picture || '',
+                  )) || '',
                 email: delivery.delivery_person.user.email,
               }
             : undefined,
@@ -692,8 +680,9 @@ export class DeliveryService {
     });
 
     const deliveries = (await Promise.all(deliveriesPromises)).flat();
+    const resolvedDeliveries = await Promise.all(deliveries);
 
-    return deliveries;
+    return resolvedDeliveries;
   }
 
   async getCurrentDeliveriesAsClient(user_id: string): Promise<CurrentDeliveryAsClient[]> {
@@ -766,8 +755,7 @@ export class DeliveryService {
             }
 
             departure_date = formatDate(delivery.send_date);
-            arrival_date =
-              formatDate(storesByStep[0]?.end_date) || formatDate(shipment.deadline_date);
+            arrival_date = formatDate(delivery.delivery_date);
           } else if (step === 1000) {
             // Étape finale: Dernier store → Destination finale
             const lastStore = storesByStep[storesByStep.length - 1];
@@ -779,8 +767,8 @@ export class DeliveryService {
 
             arrivalCity = shipment.arrival_city || '';
 
-            departure_date = formatDate(lastStore?.start_date) || formatDate(delivery.send_date);
-            arrival_date = formatDate(delivery.delivery_date) || formatDate(shipment.deadline_date);
+            departure_date = formatDate(delivery.send_date);
+            arrival_date = formatDate(delivery.delivery_date);
           } else {
             // Étape intermédiaire: Store précédent → Store actuel
             const prevStore = storesByStep.find((s) => s.step === step - 1);
@@ -798,8 +786,8 @@ export class DeliveryService {
               arrivalCity = shipment.arrival_city || '';
             }
 
-            departure_date = formatDate(prevStore?.start_date) || formatDate(delivery.send_date);
-            arrival_date = formatDate(currStore?.end_date) || formatDate(shipment.deadline_date);
+            departure_date = formatDate(delivery.send_date);
+            arrival_date = formatDate(delivery.delivery_date);
           }
 
           // Vérification de cohérence des dates
@@ -1132,8 +1120,7 @@ export class DeliveryService {
         isBox: arrivalIsBox,
       },
       departure_date: delivery.send_date?.toISOString() || '',
-      arrival_date:
-        delivery.delivery_date?.toISOString() || delivery.send_date?.toISOString() || '',
+      arrival_date: delivery.delivery_date?.toISOString() || '',
       status: (['pending', 'taken', 'finished', 'validated'].includes(delivery.status)
         ? delivery.status
         : 'pending') as 'pending' | 'taken' | 'finished' | 'validated',

@@ -682,7 +682,7 @@ export class ShipmentService {
               courier?.user.profile_picture || 'default-profile-picture.png',
             ),
           },
-          end_time: store?.end_date?.toISOString(),
+          end_time: delivery.delivery_date?.toISOString(),
           idLink: delivery.delivery_id,
         });
       }
@@ -716,7 +716,7 @@ export class ShipmentService {
               finalDelivery.delivery_person?.user.profile_picture || 'default-profile-picture.png',
             ),
           },
-          end_time: shipment.deadline_date?.toISOString(),
+          end_time: finalDelivery.delivery_date?.toISOString(),
           idLink: finalDelivery.delivery_id,
         });
       }
@@ -775,7 +775,7 @@ export class ShipmentService {
 
     if (step0) {
       departure_date = formatDate(step0.send_date);
-      arrival_date = formatDate(step0.send_date);
+      arrival_date = formatDate(step0.delivery_date);
     } else {
       departure_date = formatDate(shipment.deadline_date);
       arrival_date = formatDate(shipment.deadline_date);
@@ -785,12 +785,51 @@ export class ShipmentService {
       }
 
       if (step1000) {
-        arrival_date = formatDate(step1000.send_date);
+        arrival_date = formatDate(step1000.delivery_date);
       }
     }
 
     if (departure_date > arrival_date) {
       arrival_date = departure_date;
+    }
+
+    // Calcul des dates de livraison disponibles
+    let startDeliveryDate: string;
+    let endDeliveryDate: string;
+
+    if (deliveries.length > 0) {
+      // Trouver la dernière livraison par date de fin
+      const lastDeliveryByDate = deliveries
+        .filter((d) => d.delivery_date)
+        .sort(
+          (a, b) => new Date(b.delivery_date!).getTime() - new Date(a.delivery_date!).getTime(),
+        )[0];
+
+      if (lastDeliveryByDate?.delivery_date) {
+        const lastDeliveryEndDate = new Date(lastDeliveryByDate.delivery_date);
+        const shipmentDeadline = shipment.deadline_date ? new Date(shipment.deadline_date) : null;
+
+        if (shipmentDeadline && lastDeliveryEndDate <= shipmentDeadline) {
+          // La dernière livraison se termine avant ou à la date limite du shipment
+          startDeliveryDate = formatDate(lastDeliveryEndDate);
+          endDeliveryDate = formatDate(shipmentDeadline);
+        } else {
+          // La dernière livraison se termine après la date limite du shipment
+          // On prend la date de fin de la dernière livraison + 1 semaine
+          const oneWeekLater = new Date(lastDeliveryEndDate);
+          oneWeekLater.setDate(oneWeekLater.getDate() + 7);
+          startDeliveryDate = formatDate(lastDeliveryEndDate);
+          endDeliveryDate = formatDate(oneWeekLater);
+        }
+      } else {
+        // Pas de date de fin de livraison, on utilise la date limite du shipment
+        startDeliveryDate = formatDate(shipment.deadline_date);
+        endDeliveryDate = formatDate(shipment.deadline_date);
+      }
+    } else {
+      // Pas de livraisons, on utilise la date limite du shipment
+      startDeliveryDate = formatDate(shipment.deadline_date);
+      endDeliveryDate = formatDate(shipment.deadline_date);
     }
 
     const result = {
@@ -811,6 +850,8 @@ export class ShipmentService {
         },
         departure_date: departure_date,
         arrival_date: arrival_date,
+        startDeliveryDate: startDeliveryDate,
+        endDeliveryDate: endDeliveryDate,
         time_slot: shipment.time_slot,
         status: shipment.status ?? 'In Progress',
         initial_price: totalPrice,
@@ -1185,9 +1226,6 @@ export class ShipmentService {
           idLink: delivery.delivery_id,
         });
       }
-
-      // SUPPRIMÉ : Plus besoin d'ajouter une étape finale supplémentaire
-      // car le step 1000 est déjà traité comme l'étape finale dans la boucle
     }
 
     const finished = deliveries.some((delivery) => delivery.shipment_step === 0);
@@ -1210,7 +1248,7 @@ export class ShipmentService {
 
     if (step0) {
       departure_date = formatDate(step0.send_date);
-      arrival_date = formatDate(step0.send_date);
+      arrival_date = formatDate(step0.delivery_date);
     } else {
       departure_date = formatDate(shipment.deadline_date);
       arrival_date = formatDate(shipment.deadline_date);
@@ -1220,12 +1258,50 @@ export class ShipmentService {
       }
 
       if (step1000) {
-        arrival_date = formatDate(step1000.send_date);
+        arrival_date = formatDate(step1000.delivery_date);
       }
     }
 
     if (departure_date > arrival_date) {
       arrival_date = departure_date;
+    }
+
+    let startDeliveryDate: string;
+    let endDeliveryDate: string;
+
+    if (deliveries.length > 0) {
+      // Trouver la dernière livraison par date de fin
+      const lastDeliveryByDate = deliveries
+        .filter((d) => d.delivery_date)
+        .sort(
+          (a, b) => new Date(b.delivery_date!).getTime() - new Date(a.delivery_date!).getTime(),
+        )[0];
+
+      if (lastDeliveryByDate?.delivery_date) {
+        const lastDeliveryEndDate = new Date(lastDeliveryByDate.delivery_date);
+        const shipmentDeadline = shipment.deadline_date ? new Date(shipment.deadline_date) : null;
+
+        if (shipmentDeadline && lastDeliveryEndDate <= shipmentDeadline) {
+          // La dernière livraison se termine avant ou à la date limite du shipment
+          startDeliveryDate = formatDate(lastDeliveryEndDate);
+          endDeliveryDate = formatDate(shipmentDeadline);
+        } else {
+          // La dernière livraison se termine après la date limite du shipment
+          // On prend la date de fin de la dernière livraison + 1 semaine
+          const oneWeekLater = new Date(lastDeliveryEndDate);
+          oneWeekLater.setDate(oneWeekLater.getDate() + 7);
+          startDeliveryDate = formatDate(lastDeliveryEndDate);
+          endDeliveryDate = formatDate(oneWeekLater);
+        }
+      } else {
+        // Pas de date de fin de livraison, on utilise la date limite du shipment
+        startDeliveryDate = formatDate(shipment.deadline_date);
+        endDeliveryDate = formatDate(shipment.deadline_date);
+      }
+    } else {
+      // Pas de livraisons, on utilise la date limite du shipment
+      startDeliveryDate = formatDate(shipment.deadline_date);
+      endDeliveryDate = formatDate(shipment.deadline_date);
     }
 
     const result: DeliveryDetailsOffice = {
@@ -1253,6 +1329,8 @@ export class ShipmentService {
         },
         departure_date: departure_date,
         arrival_date: arrival_date,
+        startDeliveryDate: startDeliveryDate,
+        endDeliveryDate: endDeliveryDate,
         status: shipment.status ?? 'In Progress',
         initial_price: totalPrice,
         price_with_step: priceWithStep,

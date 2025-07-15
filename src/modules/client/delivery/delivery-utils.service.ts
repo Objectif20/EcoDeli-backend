@@ -105,6 +105,8 @@ export class DeliveryUtilsService {
       description: string;
       date: string;
       estimated_total_price: number;
+      startDeliveryDate: string;
+      endDeliveryDate: string;
     }[]
   > {
     const user = await this.userRepository.findOne({
@@ -126,84 +128,89 @@ export class DeliveryUtilsService {
 
     const formatDate = (date: Date | null | undefined): string => {
       if (!date) return new Date().toISOString().split('T')[0];
-      return `${date.getFullYear()}-${(date.getMonth() + 1)
-        .toString()
-        .padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+      return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
     };
 
-    const calculateDepartureDate = (shipment: any): string => {
-      const deliveries = shipment.deliveries;
+    return shipments
+      .filter(
+        (shipment) =>
+          !shipment.deliveries.some(
+            (delivery) => delivery.shipment_step === 0 || delivery.shipment_step === 1000,
+          ),
+      )
+      .map((shipment) => {
+        const deliveries = shipment.deliveries;
 
-      const sortedDeliveries = deliveries.sort(
-        (a: any, b: any) => a.shipment_step - b.shipment_step,
-      );
+        const step0 = deliveries.find((d) => d.shipment_step === 0);
+        const step1 = deliveries.find((d) => d.shipment_step === 1);
+        const step1000 = deliveries.find((d) => d.shipment_step === 1000);
 
-      const step0 = sortedDeliveries.find((delivery: any) => delivery.shipment_step === 0);
-      const step1 = sortedDeliveries.find((delivery: any) => delivery.shipment_step === 1);
+        let departure_date: string;
+        let arrival_date: string;
 
-      let departure_date: string;
+        if (step0) {
+          departure_date = formatDate(step0.send_date);
+          arrival_date = formatDate(step0.delivery_date);
+        } else {
+          departure_date = formatDate(shipment.deadline_date);
+          arrival_date = formatDate(shipment.deadline_date);
 
-      if (step0) {
-        departure_date = formatDate(step0.send_date);
-      } else {
-        departure_date = formatDate(shipment.deadline_date);
+          if (step1) {
+            departure_date = formatDate(step1.send_date);
+          }
 
-        if (step1) {
-          departure_date = formatDate(step1.send_date);
+          if (step1000) {
+            arrival_date = formatDate(step1000.delivery_date);
+          }
         }
-      }
 
-      return departure_date;
-    };
+        if (departure_date > arrival_date) {
+          arrival_date = departure_date;
+        }
 
-    const calculateTotalPrice = (shipment: any): number => {
-      console.log('Calculating total price for shipment:', shipment);
-      console.log('Proposed Delivery Price:', shipment.proposed_delivery_price);
-      console.log('Estimated Total Price:', shipment.estimated_total_price);
+        let startDeliveryDate: string;
+        let endDeliveryDate: string;
 
-      // Convertir les prix en nombre de manière sécurisée
-      let initialPrice = Number(shipment.proposed_delivery_price);
-      if (isNaN(initialPrice) || initialPrice <= 0) {
-        initialPrice = Number(shipment.estimated_total_price);
-      }
+        if (deliveries.length > 0) {
+          const lastDeliveryByDate = deliveries
+            .filter((d) => d.delivery_date)
+            .sort(
+              (a, b) => new Date(b.delivery_date!).getTime() - new Date(a.delivery_date!).getTime(),
+            )[0];
 
-      if (isNaN(initialPrice) || initialPrice < 0) {
-        console.error('Invalid initial price, setting to 0');
-        initialPrice = 0;
-      }
+          if (lastDeliveryByDate?.delivery_date) {
+            const lastDeliveryEndDate = new Date(lastDeliveryByDate.delivery_date);
+            const shipmentDeadline = shipment.deadline_date
+              ? new Date(shipment.deadline_date)
+              : null;
 
-      const deliveries = shipment.deliveries || [];
+            if (shipmentDeadline && lastDeliveryEndDate <= shipmentDeadline) {
+              startDeliveryDate = formatDate(lastDeliveryEndDate);
+              endDeliveryDate = formatDate(shipmentDeadline);
+            } else {
+              const oneWeekLater = new Date(lastDeliveryEndDate);
+              oneWeekLater.setDate(oneWeekLater.getDate() + 7);
+              startDeliveryDate = formatDate(lastDeliveryEndDate);
+              endDeliveryDate = formatDate(oneWeekLater);
+            }
+          } else {
+            startDeliveryDate = formatDate(shipment.deadline_date);
+            endDeliveryDate = formatDate(shipment.deadline_date);
+          }
+        } else {
+          startDeliveryDate = formatDate(shipment.deadline_date);
+          endDeliveryDate = formatDate(shipment.deadline_date);
+        }
 
-      const showArrivalHandling =
-        shipment.arrival_handling &&
-        !deliveries.some((delivery: any) => delivery.shipment_step === 1);
-      const showDepartureHandling =
-        shipment.departure_handling &&
-        !deliveries.some((delivery: any) => delivery.shipment_step === 1000);
-
-      let totalPrice = initialPrice;
-      if (showArrivalHandling) totalPrice += 29;
-      if (showDepartureHandling) totalPrice += 29;
-
-      console.log('Initial Price:', initialPrice);
-      console.log('Show Arrival Handling:', showArrivalHandling);
-      console.log('Show Departure Handling:', showDepartureHandling);
-      console.log('Total Price:', totalPrice);
-
-      if (isNaN(totalPrice)) {
-        console.error('Total price calculation resulted in NaN, setting to 0');
-        totalPrice = 0;
-      }
-
-      return totalPrice;
-    };
-
-    return shipments.map((shipment) => ({
-      shipment_id: shipment.shipment_id,
-      description: shipment.description || '',
-      date: calculateDepartureDate(shipment),
-      estimated_total_price: calculateTotalPrice(shipment),
-    }));
+        return {
+          shipment_id: shipment.shipment_id,
+          description: shipment.description ?? '',
+          date: departure_date,
+          estimated_total_price: Number(shipment.estimated_total_price),
+          startDeliveryDate,
+          endDeliveryDate,
+        };
+      });
   }
 
   async getReviewsForDeliveryPerson(

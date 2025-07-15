@@ -20,15 +20,24 @@ export class AuthService {
     private readonly configService: JwtService,
   ) {}
 
-  async login(email: string, password: string): Promise<{ access_token: string; refresh_token: string } | { two_factor_required: boolean } | { valid: boolean }> {
+  async login(
+    email: string,
+    password: string,
+  ): Promise<
+    | { access_token: string; refresh_token: string }
+    | { two_factor_required: boolean }
+    | { valid: boolean }
+  > {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new UnauthorizedException('User not found');
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) throw new UnauthorizedException('Incorrect password');
 
-    const client = await this.clientRepository.findOne({ where: { user: { user_id: user.user_id } } });
-    if (!client) return { valid : false};
+    const client = await this.clientRepository.findOne({
+      where: { user: { user_id: user.user_id } },
+    });
+    if (!client) return { valid: false };
 
     if (user.two_factor_enabled) {
       return { two_factor_required: true };
@@ -38,15 +47,21 @@ export class AuthService {
     return { access_token, refresh_token };
   }
 
-  async loginA2F(email: string, password: string, code: string): Promise<{ access_token: string; refresh_token: string } | { valid: boolean }> {
+  async loginA2F(
+    email: string,
+    password: string,
+    code: string,
+  ): Promise<{ access_token: string; refresh_token: string } | { valid: boolean }> {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user || !user.two_factor_enabled) throw new UnauthorizedException('2FA not enabled');
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) throw new UnauthorizedException('Incorrect password');
 
-    const client = await this.clientRepository.findOne({ where: { user: { user_id: user.user_id } } });
-    if (!client) return { valid : false};
+    const client = await this.clientRepository.findOne({
+      where: { user: { user_id: user.user_id } },
+    });
+    if (!client) return { valid: false };
 
     const isValidOtp = speakeasy.totp.verify({
       secret: user.secret_totp,
@@ -61,7 +76,7 @@ export class AuthService {
     return { access_token, refresh_token };
   }
 
-  async enableA2F(userId: string): Promise<{ secret: string, qrCode: string }> {
+  async enableA2F(userId: string): Promise<{ secret: string; qrCode: string }> {
     const secret = speakeasy.generateSecret({ length: 20 });
     const qrCodeImageUrl = await qrcode.toDataURL(secret.otpauth_url);
 
@@ -120,7 +135,7 @@ export class AuthService {
       const accessSecret = this.configService.getJwtAccessSecret();
       const accessToken = this.jwtService.sign(
         { user_id: user.user_id },
-        { secret: accessSecret, expiresIn: '15m' }
+        { secret: accessSecret, expiresIn: '15m' },
       );
 
       return { access_token: accessToken };

@@ -214,6 +214,135 @@ export class AuthService {
     return res.json(response);
   }
 
+  async loginExtension(
+    email: string,
+    password: string,
+  ): Promise<{ access_token: string; profile: any } | { message: string }> {
+    const user = await this.userRepository.findOne({
+      where: { email },
+      relations: ['clients', 'providers', 'subscriptions'],
+    });
+
+    if (!user) {
+      return { message: 'User not found' };
+    }
+
+    if (!user.confirmed) {
+      return { message: 'User not confirmed' };
+    }
+
+    if (user.banned) {
+      if (user.ban_date && user.ban_date < new Date()) {
+        user.banned = false;
+        await this.userRepository.save(user);
+      } else {
+        return { message: 'User is banned' };
+      }
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return { message: 'Incorrect password' };
+    }
+
+    if (user.two_factor_enabled) {
+      return { message: '2FA required' };
+    }
+
+    const accessToken = this.jwtService.sign(
+      { user_id: user.user_id },
+      { secret: this.configService.getJwtAccessSecret(), expiresIn: '7d' },
+    );
+
+    const clientExists = await this.clientRepository.count({
+      where: { user: { user_id: user.user_id } },
+    });
+    const deliverymanExists = await this.deliveryPersonRepository.count({
+      where: { user: { user_id: user.user_id } },
+    });
+    const merchantExists = await this.merchantRepository.count({
+      where: { user: { user_id: user.user_id } },
+    });
+    const providerExists = await this.providerRepository.count({
+      where: { user: { user_id: user.user_id } },
+    });
+
+    const profile = {
+      provider: providerExists > 0,
+      merchant: merchantExists > 0,
+      client: clientExists > 0,
+      deliveryman: deliverymanExists > 0,
+    };
+
+    return { access_token: accessToken, profile };
+  }
+
+  async loginA2FExtension(
+    email: string,
+    password: string,
+    code: string,
+  ): Promise<{ access_token: string; profile: any } | { message: string }> {
+    const user = await this.userRepository.findOne({
+      where: { email },
+      relations: ['clients', 'providers', 'subscriptions'],
+    });
+
+    if (!user || !user.two_factor_enabled) {
+      return { message: '2FA not enabled or user not found' };
+    }
+
+    if (user.banned) {
+      if (user.ban_date && user.ban_date < new Date()) {
+        user.banned = false;
+        await this.userRepository.save(user);
+      } else {
+        return { message: 'User is banned' };
+      }
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return { message: 'Incorrect password' };
+    }
+
+    const isValidOtp = speakeasy.totp.verify({
+      secret: user.secret_totp,
+      encoding: 'base32',
+      token: code,
+      window: 1,
+    });
+
+    if (!isValidOtp) {
+      return { message: 'Invalid OTP code' };
+    }
+
+    const clientExists = await this.clientRepository.count({
+      where: { user: { user_id: user.user_id } },
+    });
+    const deliverymanExists = await this.deliveryPersonRepository.count({
+      where: { user: { user_id: user.user_id } },
+    });
+    const merchantExists = await this.merchantRepository.count({
+      where: { user: { user_id: user.user_id } },
+    });
+    const providerExists = await this.providerRepository.count({
+      where: { user: { user_id: user.user_id } },
+    });
+
+    const profile = {
+      provider: providerExists > 0,
+      merchant: merchantExists > 0,
+      client: clientExists > 0,
+      deliveryman: deliverymanExists > 0,
+    };
+    const accessToken = this.jwtService.sign(
+      { user_id: user.user_id },
+      { secret: this.configService.getJwtAccessSecret(), expiresIn: '7d' },
+    );
+
+    return { access_token: accessToken, profile };
+  }
+
   async validateAccount(validate_code: string): Promise<{ message: string }> {
     const user = await this.userRepository.findOne({ where: { validate_code: validate_code } });
     if (!user) throw new UnauthorizedException('Invalid code');

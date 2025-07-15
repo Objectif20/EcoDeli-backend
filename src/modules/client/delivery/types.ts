@@ -138,6 +138,8 @@ export interface DeliveryDetailsOffice {
     elevator_departure: boolean;
     floor_arrival_handling: number;
     floor_departure_handling: number;
+    startDeliveryDate: string;
+    endDeliveryDate: string;
   };
   package: {
     id: string;
