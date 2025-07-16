@@ -66,7 +66,7 @@ export class AuthService {
       if (!savedUser) {
         throw new BadRequestException('Erreur lors de la génération du code de validation');
       }
-      const urlWithCode = `${process.env.OFFICIAL_BACKOFFICE_WEBSITE}/auth/validate/${validateCode}`;
+      const urlWithCode = `${process.env.OFFICIAL_WEBSITE}/auth/validate/${validateCode}`;
 
       try {
         const fromEmail = this.mailer.options.auth.user;

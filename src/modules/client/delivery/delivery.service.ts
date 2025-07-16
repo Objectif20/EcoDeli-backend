@@ -223,6 +223,8 @@ export class DeliveryService {
     });
     await message.save();
 
+    await this.notifyPreviousDeliveryPersonIfNeeded(savedDelivery, shipment);
+
     return savedDelivery;
   }
 
@@ -402,7 +404,63 @@ export class DeliveryService {
       await this.minioService.uploadFileToBucket('client-images', filePath, file);
     }
 
-    return await this.deliveryRepository.save(delivery);
+    const savedDelivery = await this.deliveryRepository.save(delivery);
+    await this.notifyPreviousDeliveryPersonIfNeeded(savedDelivery, shipment);
+    return savedDelivery;
+  }
+
+  private async notifyPreviousDeliveryPersonIfNeeded(
+    currentDelivery: Delivery,
+    shipment: Shipment,
+  ) {
+    if (currentDelivery.shipment_step <= 0) return;
+
+    const previousStep = currentDelivery.shipment_step - 1;
+
+    const previousDelivery = await this.deliveryRepository.findOne({
+      where: {
+        shipment: { shipment_id: shipment.shipment_id },
+        shipment_step: previousStep,
+      },
+      relations: ['delivery_person', 'shipment'],
+    });
+
+    if (!previousDelivery) return;
+
+    const previousStore = await this.storeRepository.findOne({
+      where: {
+        shipment_id: shipment.shipment_id,
+        step: previousStep,
+      },
+      relations: ['exchangePoint'],
+    });
+
+    if (!previousStore || !previousStore.exchangePoint) return;
+
+    const exchangePoint = previousStore.exchangePoint;
+
+    if (exchangePoint.warehouse_id || exchangePoint.isbox) return;
+
+    const sameDay =
+      previousDelivery.delivery_date &&
+      currentDelivery.send_date &&
+      previousDelivery.delivery_date.toDateString() === currentDelivery.send_date.toDateString();
+
+    if (!sameDay) return;
+
+    if (
+      previousDelivery.delivery_person.user.user_id === currentDelivery.delivery_person.user.user_id
+    ) {
+      return;
+    }
+
+    const message = new this.messageModel({
+      senderId: currentDelivery.delivery_person.user.user_id,
+      receiverId: previousDelivery.delivery_person.user.user_id,
+      content: `Bonjour, je suis le prochain livreur pour le colis "${shipment.description}". Nous devons nous coordonner pour l'échange prévu le ${currentDelivery.send_date.toLocaleDateString()}.`,
+    });
+
+    await message.save();
   }
 
   async getOngoingDeliveries(user_id: string): Promise<DeliveryOnGoing[]> {

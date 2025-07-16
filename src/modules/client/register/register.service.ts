@@ -137,7 +137,7 @@ export class RegisterService {
 
     if (plan_id && stripeCustomerId) {
       const plan = await this.planRepository.findOne({ where: { plan_id } });
-      if (plan && plan.stripe_product_id && plan.stripe_price_id && (plan.price ?? 0) > 0) {
+      if (plan && plan.stripe_product_id && plan.stripe_price_id && (Number(plan.price) ?? 0) > 0) {
         try {
           const subscription = await this.stripeService.createSubscription(
             stripeCustomerId,
@@ -215,6 +215,9 @@ export class RegisterService {
       stripe_temp_key,
       language_id,
       plan_id,
+      firstName,
+      lastName,
+      signature,
     } = merchantDto;
 
     const existingUser = await this.userRepository.findOne({ where: { email } });
@@ -264,6 +267,7 @@ export class RegisterService {
       }
     }
 
+    // 1ère sauvegarde du merchant en BDD pour obtenir son ID
     const newMerchant = this.merchantRepository.create({
       company_name,
       siret,
@@ -273,8 +277,8 @@ export class RegisterService {
       city,
       country,
       phone,
-      first_name: merchantDto.firstName,
-      last_name: merchantDto.lastName,
+      first_name: firstName,
+      last_name: lastName,
       stripe_customer_id: stripeCustomerId ?? null,
       user: savedUser,
       contract_url: null,
@@ -282,6 +286,7 @@ export class RegisterService {
 
     const savedMerchant = await this.merchantRepository.save(newMerchant);
 
+    // Génération du contrat après que le merchant soit bien enregistré (donc avec un ID)
     try {
       const contratUrl = await this.contractMerchant(
         {
@@ -292,11 +297,12 @@ export class RegisterService {
           city,
           country,
           phone,
-          last_name: merchantDto.lastName,
-          first_name: merchantDto.firstName,
+          last_name: lastName,
+          first_name: firstName,
           user: savedUser,
+          merchant_id: savedMerchant.merchant_id, // ID disponible ici
         },
-        merchantDto.signature,
+        signature,
       );
 
       savedMerchant.contract_url = contratUrl;
@@ -306,13 +312,29 @@ export class RegisterService {
       throw new BadRequestException('Erreur lors de la génération du contrat PDF');
     }
 
+    // Subscription Stripe
     if (plan_id && stripeCustomerId) {
+      console.log('[registerMerchant] Plan ID:', plan_id);
+      console.log('[registerMerchant] Stripe Customer ID:', stripeCustomerId);
       const plan = await this.planRepository.findOne({ where: { plan_id } });
-      if (plan && plan.stripe_product_id && plan.stripe_price_id && (plan.price ?? 0) > 0) {
+      console.log('[registerMerchant] Plan found:', !!plan, plan?.name);
+      if (plan && plan.stripe_product_id && plan.stripe_price_id && (Number(plan.price) ?? 0) > 0) {
         try {
+          console.log(
+            '[registerMerchant] Creating Stripe subscription for customer:',
+            stripeCustomerId,
+            'with price:',
+            plan.stripe_price_id,
+          );
           const subscription = await this.stripeService.createSubscription(
             stripeCustomerId,
             plan.stripe_price_id,
+          );
+          console.log(
+            '[registerMerchant] Stripe subscription created:',
+            subscription.id,
+            'status:',
+            subscription.status,
           );
 
           const newSubscription = this.subscriptionRepository.create({
@@ -326,15 +348,21 @@ export class RegisterService {
           });
 
           await this.subscriptionRepository.save(newSubscription);
+          console.log(
+            '[registerMerchant] Subscription saved in DB:',
+            newSubscription.stripe_subscription_id,
+          );
         } catch (error) {
-          console.log(error);
+          console.log('[registerMerchant] Error creating Stripe subscription:', error);
           throw new BadRequestException("Erreur lors de la création de l'abonnement Stripe");
         }
+      } else {
+        console.log('[registerMerchant] Plan is not valid for subscription:', plan);
       }
     }
 
+    // Code de validation
     const validateCode = uuidv4();
-
     const savedValidateCode = await this.userRepository.save({
       user_id: savedUser.user_id,
       validate_code: validateCode,
@@ -343,8 +371,8 @@ export class RegisterService {
     if (!savedValidateCode) {
       throw new BadRequestException('Erreur lors de la génération du code de validation');
     }
-    const urlWithCode = `${process.env.OFFICIAL_WEBSITE}/auth/validate/${validateCode}`;
 
+    const urlWithCode = `${process.env.OFFICIAL_WEBSITE}/auth/validate/${validateCode}`;
     try {
       const fromEmail = this.mailer.options.auth.user;
       await this.mailer.sendMail({
@@ -352,17 +380,17 @@ export class RegisterService {
         to: email,
         subject: 'Validez votre compte Écodeli',
         html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border-radius: 8px; background-color: #f9fdfc;">
-            <h2 style="color: #2a9d8f;">Bienvenue chez Écodeli !</h2>
-            <p>Bonjour,</p>
-            <p>Pour finaliser la création de votre compte, merci de cliquer sur le bouton ci-dessous pour valider votre adresse email :</p>
-            <a href="${urlWithCode}" style="display: inline-block; padding: 12px 24px; background-color: #2a9d8f; color: #fff; text-decoration: none; border-radius: 6px; font-weight: bold;">
-              Valider mon compte
-            </a>
-            <p style="margin-top: 20px; color: #555;">Si vous n’avez pas demandé cette validation, vous pouvez ignorer cet email.</p>
-            <p>Cordialement,<br>L’équipe Écodeli</p>
-          </div>
-        `,
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border-radius: 8px; background-color: #f9fdfc;">
+          <h2 style="color: #2a9d8f;">Bienvenue chez Écodeli !</h2>
+          <p>Bonjour,</p>
+          <p>Pour finaliser la création de votre compte, merci de cliquer sur le bouton ci-dessous pour valider votre adresse email :</p>
+          <a href="${urlWithCode}" style="display: inline-block; padding: 12px 24px; background-color: #2a9d8f; color: #fff; text-decoration: none; border-radius: 6px; font-weight: bold;">
+            Valider mon compte
+          </a>
+          <p style="margin-top: 20px; color: #555;">Si vous n’avez pas demandé cette validation, vous pouvez ignorer cet email.</p>
+          <p>Cordialement,<br>L’équipe Écodeli</p>
+        </div>
+      `,
       });
     } catch (error) {
       throw new Error(`Erreur lors de l'envoi de l'email: ${error.message}`);

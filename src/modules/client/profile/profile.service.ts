@@ -735,58 +735,64 @@ export class ProfileService {
       relations: ['plan'],
     });
 
-    if (!subscription) {
+    if (subscription) {
+      const transactions = await this.subscriptionTransactionRepository.find({
+        where: { subscription: { subscription_id: subscription.subscription_id } },
+      });
+
+      const history = await Promise.all(
+        transactions.map(async (transaction) => ({
+          id: transaction.transaction_id,
+          month: `${transaction.month}/${transaction.year}`,
+          status: 'ok',
+          name: subscription.plan.name,
+          invoiceLink: await this.minioService.generateImageUrl(
+            'client-documents',
+            transaction.invoice_url || '',
+          ),
+        })),
+      );
+
+      const activePlan = this.formatPlan(subscription.plan);
+
       return {
-        history: [],
+        history: history.map((item) => ({
+          ...item,
+          status: (['ok', 'wait', 'cancelled'] as const).includes(item.status as any)
+            ? (item.status as 'ok' | 'wait' | 'cancelled')
+            : 'cancelled',
+        })),
         customer_stripe_id: this.getCustomerStripeId(user),
-        plan: this.emptyPlan(),
+        plan: activePlan,
       };
     }
 
-    const transactions = await this.subscriptionTransactionRepository.find({
-      where: { subscription: { subscription_id: subscription.subscription_id } },
-    });
-
-    const history = await Promise.all(
-      transactions.map(async (transaction) => ({
-        id: transaction.transaction_id,
-        month: `${transaction.month}/${transaction.year}`,
-        status: 'ok',
-        name: subscription.plan.name,
-        invoiceLink: await this.minioService.generateImageUrl(
-          'client-documents',
-          transaction.invoice_url || '',
-        ),
-      })),
-    );
-
-    const activePlan = {
-      plan_id: subscription.plan.plan_id,
-      name: subscription.plan.name,
-      price: (subscription.plan.price ?? 0).toString(),
-      priority_shipping_percentage: subscription.plan.priority_shipping_percentage.toString(),
-      priority_months_offered: subscription.plan.priority_months_offered,
-      max_insurance_coverage: subscription.plan.max_insurance_coverage.toString(),
-      extra_insurance_price: subscription.plan.extra_insurance_price.toString(),
-      shipping_discount: subscription.plan.shipping_discount.toString(),
-      permanent_discount: subscription.plan.permanent_discount.toString(),
-      permanent_discount_percentage: subscription.plan.permanent_discount_percentage.toString(),
-      small_package_permanent_discount:
-        subscription.plan.small_package_permanent_discount.toString(),
-      first_shipping_free: subscription.plan.first_shipping_free,
-      first_shipping_free_threshold: subscription.plan.first_shipping_free_threshold.toString(),
-      is_pro: subscription.plan.is_pro,
-    };
+    // Pas d'abonnement actif => chercher un plan gratuit
+    const freePlan = await this.planRepository.findOne({ where: { price: 0 } });
 
     return {
-      history: history.map((item) => ({
-        ...item,
-        status: (['ok', 'wait', 'cancelled'] as const).includes(item.status as any)
-          ? (item.status as 'ok' | 'wait' | 'cancelled')
-          : 'cancelled',
-      })),
+      history: [],
       customer_stripe_id: this.getCustomerStripeId(user),
-      plan: activePlan,
+      plan: freePlan ? this.formatPlan(freePlan) : this.emptyPlan(),
+    };
+  }
+
+  private formatPlan(plan: Plan) {
+    return {
+      plan_id: plan.plan_id,
+      name: plan.name,
+      price: Number(plan.price ?? 0).toString(),
+      priority_shipping_percentage: Number(plan.priority_shipping_percentage).toString(),
+      priority_months_offered: plan.priority_months_offered,
+      max_insurance_coverage: Number(plan.max_insurance_coverage).toString(),
+      extra_insurance_price: Number(plan.extra_insurance_price).toString(),
+      shipping_discount: Number(plan.shipping_discount).toString(),
+      permanent_discount: Number(plan.permanent_discount).toString(),
+      permanent_discount_percentage: Number(plan.permanent_discount_percentage).toString(),
+      small_package_permanent_discount: Number(plan.small_package_permanent_discount).toString(),
+      first_shipping_free: plan.first_shipping_free,
+      first_shipping_free_threshold: Number(plan.first_shipping_free_threshold).toString(),
+      is_pro: plan.is_pro,
     };
   }
 
